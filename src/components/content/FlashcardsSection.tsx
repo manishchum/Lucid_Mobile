@@ -1,6 +1,18 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useState, useRef } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Animated,
+  PanResponder,
+  Dimensions,
+  ScrollView,
+} from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
+const SWIPE_THRESHOLD = 0.25 * SCREEN_WIDTH;
 
 interface Flashcard {
   heading: string;
@@ -13,34 +25,135 @@ interface Props {
   flashcardData: Flashcard[] | null;
 }
 
-export default function FlashcardsSection({ isExpanded, onToggle, flashcardData }: Props) {
+export default function FlashcardsSection({
+  isExpanded,
+  onToggle,
+  flashcardData,
+}: Props) {
   const [cardIdx, setCardIdx] = useState(0);
-  const [isFlipped, setFlipped] = useState(false);
-
   const cards: Flashcard[] = flashcardData ?? [];
   const total = cards.length;
   const current = cards[cardIdx];
 
-  const goNext = () => {
-    setFlipped(false);
-    setCardIdx((i) => Math.min(i + 1, total - 1));
+  // ── Refs so PanResponder always reads the LIVE value, never a stale closure ──
+  const cardIdxRef = useRef(0);
+  const totalRef = useRef(total);
+  cardIdxRef.current = cardIdx;
+  totalRef.current = total;
+
+  const position = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  const handleResetCard = () => {
+    Animated.parallel([
+      Animated.spring(position, {
+        toValue: 0,
+        friction: 5,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+    ]).start();
   };
-  const goPrev = () => {
-    setFlipped(false);
-    setCardIdx((i) => Math.max(i - 1, 0));
+
+  const animateToCard = (direction: -1 | 1, newIdx: number) => {
+    Animated.parallel([
+      Animated.timing(position, {
+        toValue: direction * -SCREEN_WIDTH,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setCardIdx(newIdx);
+      cardIdxRef.current = newIdx;
+      // Incoming card starts on the opposite side
+      position.setValue(direction * SCREEN_WIDTH);
+      Animated.parallel([
+        Animated.spring(position, {
+          toValue: 0,
+          friction: 6,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  };
+
+  const handleNextCard = () => {
+    const idx = cardIdxRef.current;
+    const tot = totalRef.current;
+    // Next → card exits LEFT (-SCREEN_WIDTH), new card enters from RIGHT (+SCREEN_WIDTH)
+    if (idx < tot - 1) animateToCard(1, idx + 1);
+    else handleResetCard();
+  };
+
+  const handlePrevCard = () => {
+    const idx = cardIdxRef.current;
+    // Prev → card exits RIGHT (+SCREEN_WIDTH), new card enters from LEFT (-SCREEN_WIDTH)
+    if (idx > 0) animateToCard(-1, idx - 1);
+    else handleResetCard();
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gs) =>
+        Math.abs(gs.dx) > 8 && Math.abs(gs.dx) > Math.abs(gs.dy),
+      onPanResponderMove: (_, gs) => {
+        position.setValue(gs.dx);
+      },
+      onPanResponderRelease: (_, gs) => {
+        const idx = cardIdxRef.current;
+        const tot = totalRef.current;
+        if (gs.dx > SWIPE_THRESHOLD) {
+          // Swiped RIGHT → go to PREVIOUS card (card exits RIGHT, new enters from LEFT)
+          if (idx > 0) animateToCard(-1, idx - 1);
+          else handleResetCard();
+        } else if (gs.dx < -SWIPE_THRESHOLD) {
+          // Swiped LEFT → go to NEXT card (card exits LEFT, new enters from RIGHT)
+          if (idx < tot - 1) animateToCard(1, idx + 1);
+          else handleResetCard();
+        } else {
+          handleResetCard();
+        }
+      },
+      onPanResponderTerminate: () => handleResetCard(),
+    }),
+  ).current;
+
+  const animatedStyle = {
+    transform: [{ translateX: position }],
+    opacity: opacity,
   };
 
   return (
     <View style={styles.card}>
       <TouchableOpacity onPress={onToggle} style={styles.header}>
-        <View style={[styles.iconBox, { backgroundColor: '#ECFDF5' }]}>
-          <MaterialCommunityIcons name="cards-outline" size={22} color="#10B981" />
+        <View style={[styles.iconBox, { backgroundColor: "#ECFDF5" }]}>
+          <MaterialCommunityIcons
+            name="cards-outline"
+            size={22}
+            color="#10B981"
+          />
         </View>
         <Text style={styles.title}>Flashcards</Text>
         {total > 0 && <Text style={styles.count}>{total} cards</Text>}
         <MaterialCommunityIcons
-          name={isExpanded ? 'chevron-up' : 'chevron-down'}
-          size={22} color="#94A3B8"
+          name={isExpanded ? "chevron-up" : "chevron-down"}
+          size={22}
+          color="#94A3B8"
         />
       </TouchableOpacity>
 
@@ -52,55 +165,80 @@ export default function FlashcardsSection({ isExpanded, onToggle, flashcardData 
             </View>
           ) : (
             <>
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={() => setFlipped(!isFlipped)}
-                style={[styles.flashcard, isFlipped && styles.cardBack]}
-              >
-                <Text style={[styles.tag, isFlipped && { color: '#D1FAE5' }]}>
-                  {isFlipped ? 'POINTS' : 'TOPIC'}
-                </Text>
-                {isFlipped ? (
-                  <View style={styles.pointsList}>
-                    {current.points.map((point, i) => (
-                      <View key={i} style={styles.pointRow}>
-                        <Text style={styles.pointBullet}>•</Text>
-                        <Text style={styles.pointText}>{point}</Text>
-                      </View>
-                    ))}
+              {/* FIXED HEIGHT CAROUSEL WRAPPER */}
+              <View style={styles.carouselContainer}>
+                <Animated.View
+                  style={[styles.flashcard, animatedStyle]}
+                  {...panResponder.panHandlers}
+                >
+                  <View style={styles.topicHeader}>
+                    <Text style={styles.tag}>TOPIC</Text>
+                    <Text
+                      style={styles.mainText}
+                      numberOfLines={2}
+                      adjustsFontSizeToFit
+                    >
+                      {current.heading}
+                    </Text>
                   </View>
-                ) : (
-                  <Text style={styles.mainText}>{current.heading}</Text>
-                )}
-                <View style={styles.flipBtn}>
-                  <MaterialCommunityIcons
-                    name="sync" size={14}
-                    color={isFlipped ? 'white' : '#10B981'}
-                  />
-                  <Text style={[styles.flipLabel, isFlipped && { color: 'white' }]}>
-                    Tap to flip
-                  </Text>
-                </View>
-              </TouchableOpacity>
+
+                  <View style={styles.divider} />
+
+                  <ScrollView
+                    style={styles.pointsScroll}
+                    showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled
+                  >
+                    <View style={styles.pointsList}>
+                      {current.points.map((point, i) => (
+                        <View key={i} style={styles.pointRow}>
+                          <Text style={styles.pointBullet}>•</Text>
+                          <Text style={styles.pointText}>{point}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </ScrollView>
+
+                  <View style={styles.swipeHintRow}>
+                    <MaterialCommunityIcons
+                      name="gesture-swipe-horizontal"
+                      size={16}
+                      color="#A7F3D0"
+                    />
+                    <Text style={styles.swipeHint}>
+                      Swipe left / right to browse
+                    </Text>
+                  </View>
+                </Animated.View>
+              </View>
 
               <View style={styles.controls}>
                 <TouchableOpacity
                   style={[styles.ctrl, cardIdx === 0 && styles.ctrlDisabled]}
-                  onPress={goPrev} disabled={cardIdx === 0}
+                  onPress={handlePrevCard}
+                  disabled={cardIdx === 0}
                 >
                   <MaterialCommunityIcons
-                    name="chevron-left" size={24}
-                    color={cardIdx === 0 ? '#CBD5E1' : '#1E293B'}
+                    name="chevron-left"
+                    size={24}
+                    color={cardIdx === 0 ? "#CBD5E1" : "#1E293B"}
                   />
                 </TouchableOpacity>
-                <Text style={styles.pageCount}>{cardIdx + 1} / {total}</Text>
+                <Text style={styles.pageCount}>
+                  {cardIdx + 1} / {total}
+                </Text>
                 <TouchableOpacity
-                  style={[styles.ctrl, cardIdx === total - 1 && styles.ctrlDisabled]}
-                  onPress={goNext} disabled={cardIdx === total - 1}
+                  style={[
+                    styles.ctrl,
+                    cardIdx === total - 1 && styles.ctrlDisabled,
+                  ]}
+                  onPress={handleNextCard}
+                  disabled={cardIdx === total - 1}
                 >
                   <MaterialCommunityIcons
-                    name="chevron-right" size={24}
-                    color={cardIdx === total - 1 ? '#CBD5E1' : '#1E293B'}
+                    name="chevron-right"
+                    size={24}
+                    color={cardIdx === total - 1 ? "#CBD5E1" : "#1E293B"}
                   />
                 </TouchableOpacity>
               </View>
@@ -113,41 +251,114 @@ export default function FlashcardsSection({ isExpanded, onToggle, flashcardData 
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: 'white', borderRadius: 20, borderWidth: 1, borderColor: '#F1F5F9' },
-  header: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
-  iconBox: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  title: { flex: 1, fontSize: 16, fontWeight: '700', color: '#1E293B' },
-  count: { fontSize: 12, color: '#64748B', fontWeight: '600', marginRight: 4 },
-
-  body: { padding: 20, paddingTop: 0 },
-  emptyState: { alignItems: 'center', paddingVertical: 30 },
-  emptyText: { color: '#94A3B8', fontSize: 14 },
-
-  flashcard: {
-    minHeight: 200, backgroundColor: '#F0FDF4', borderRadius: 24,
-    padding: 24, justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, borderColor: '#D1FAE5', borderStyle: 'dashed',
+  card: {
+    backgroundColor: "white",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    overflow: "hidden",
   },
-  cardBack: { backgroundColor: '#10B981', borderColor: '#10B981', borderStyle: 'solid' },
-  tag: { fontSize: 11, fontWeight: '800', color: '#10B981', letterSpacing: 1, marginBottom: 12 },
-  mainText: { fontSize: 18, fontWeight: '700', color: '#064E3B', textAlign: 'center', lineHeight: 26 },
+  header: { flexDirection: "row", alignItems: "center", padding: 16, gap: 12 },
+  iconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: { flex: 1, fontSize: 16, fontWeight: "700", color: "#1E293B" },
+  count: { fontSize: 12, color: "#64748B", fontWeight: "600", marginRight: 4 },
 
-  pointsList: { width: '100%', gap: 8 },
-  pointRow: { flexDirection: 'row', gap: 8 },
-  pointBullet: { color: 'white', fontSize: 14, lineHeight: 20 },
-  pointText: { flex: 1, color: 'white', fontSize: 14, lineHeight: 20 },
+  body: { padding: 16, paddingTop: 0 },
+  emptyState: { alignItems: "center", paddingVertical: 30 },
+  emptyText: { color: "#94A3B8", fontSize: 14 },
 
-  flipBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 16 },
-  flipLabel: { fontSize: 12, fontWeight: '600', color: '#10B981' },
+  /* ENFORCED FIXED HEIGHT ELEMENT */
+  carouselContainer: { height: 280, borderRadius: 24 },
+  flashcard: {
+    flex: 1,
+    backgroundColor: "#10B981",
+    borderRadius: 24,
+    padding: 20,
+    justifyContent: "flex-start",
+    alignItems: "stretch",
+    elevation: 2,
+    shadowColor: "#064E3B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  topicHeader: {
+    alignItems: "center",
+    minHeight: 48,
+    justifyContent: "center",
+  },
+  tag: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#D1FAE5",
+    letterSpacing: 1.5,
+    marginBottom: 2,
+  },
+  mainText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "white",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+
+  divider: {
+    height: 1,
+    backgroundColor: "#10B981",
+    borderBottomWidth: 1,
+    borderBottomColor: "#A7F3D0",
+    opacity: 0.3,
+    marginVertical: 10,
+  },
+
+  pointsScroll: { flex: 1 },
+  pointsList: { gap: 8, paddingBottom: 4 },
+  pointRow: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
+  pointBullet: {
+    color: "#D1FAE5",
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  pointText: {
+    flex: 1,
+    color: "white",
+    fontSize: 13,
+    lineHeight: 20,
+    fontWeight: "500",
+  },
+
+  swipeHintRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 10,
+    opacity: 0.85,
+  },
+  swipeHint: { color: "#D1FAE5", fontSize: 11, fontWeight: "600" },
 
   controls: {
-    flexDirection: 'row', justifyContent: 'center',
-    alignItems: 'center', gap: 30, marginTop: 16,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 30,
+    marginTop: 16,
   },
   ctrl: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#F8FAFC",
+    alignItems: "center",
+    justifyContent: "center",
   },
   ctrlDisabled: { opacity: 0.4 },
-  pageCount: { fontSize: 14, fontWeight: '700', color: '#64748B' },
+  pageCount: { fontSize: 14, fontWeight: "700", color: "#64748B" },
 });

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from "react";
 import {
   View,
   Text,
@@ -6,47 +6,16 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import Svg, { Circle } from 'react-native-svg';
-import { useAuth } from '../../../contex/AuthContext';
-import {
-  useGetUserByPhone,
-  useGetDashboardSummary,
-} from '../../../api/users';
-import createStyles from './style';
-import { APP_ROUTES } from '../../../navigations/Routes';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import Svg, { Circle } from "react-native-svg";
+import { useAuth } from "../../../contex/AuthContext";
+import { useGetUserByPhone, useGetDashboardSummary } from "../../../api/users";
+import createStyles from "./style";
+import { APP_ROUTES } from "../../../navigations/Routes";
 
 const styles = createStyles();
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-/**
- * normalizeProcessedModuleIds
- * The dashboard returns processed_module_ids as either:
- *  - string[]  (normal case)
- *  - a JSON-encoded string  (some backend versions)
- * Both are handled here.
- *
- * These IDs are already filtered to the user's learning style by the backend
- * (confirmed: same field used by the web welcome page, positionally aligned
- * with plan_json.modules[i]).
- */
-function normalizeProcessedModuleIds(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map((id) => String(id)).filter(Boolean);
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) return [];
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) return parsed.map((id) => String(id)).filter(Boolean);
-    } catch {
-      return [trimmed];
-    }
-  }
-  return [];
-}
 
 // ── Progress circle ────────────────────────────────────────────────────────────
 const ProgressCircle = ({ percentage }: { percentage: number }) => {
@@ -61,19 +30,34 @@ const ProgressCircle = ({ percentage }: { percentage: number }) => {
   return (
     <View style={styles.progressCircleContainer}>
       <Svg width={size} height={size}>
-        <Circle cx={size / 2} cy={size / 2} r={radius}
-          stroke={isComplete ? '#DCFCE7' : '#EFF6FF'}
-          strokeWidth={strokeWidth} fill="none" />
-        <Circle cx={size / 2} cy={size / 2} r={radius}
-          stroke={isComplete ? '#16A34A' : '#2563EB'}
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={isComplete ? "#DCFCE7" : "#EFF6FF"}
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={isComplete ? "#16A34A" : "#2563EB"}
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
-          strokeLinecap="round" fill="none"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+          strokeLinecap="round"
+          fill="none"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
       </Svg>
       <View style={styles.progressCircleInner}>
-        <Text style={[styles.progressCirclePercent, isComplete && { color: '#16A34A' }]}>
+        <Text
+          style={[
+            styles.progressCirclePercent,
+            isComplete && { color: "#16A34A" },
+          ]}
+        >
           {clamped.toFixed(1)}%
         </Text>
       </View>
@@ -86,75 +70,39 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const { logout, cachedUser, phoneNumber } = useAuth();
 
   const resolvedUserId = cachedUser?.userId ?? null;
-  const resolvedPhone  = cachedUser?.phone ?? phoneNumber ?? null;
+  const resolvedPhone = cachedUser?.phone ?? phoneNumber ?? null;
 
   const { user: fetchedUser, isLoading: userLoading } = useGetUserByPhone(
     resolvedUserId ? null : resolvedPhone,
   );
 
-  const user = cachedUser ? {
-    user_id:       cachedUser.userId,
-    name:          cachedUser.name,
-    email:         cachedUser.email,
-    phone:         cachedUser.phone,
-    company_id:    cachedUser.companyId,
-    department_id: cachedUser.departmentId,
-    manager_id:    cachedUser.managerId,
-    is_active:     cachedUser.isActive,
-    position:      null,
-  } : fetchedUser;
+  const user = cachedUser
+    ? {
+        user_id: cachedUser.userId,
+        name: cachedUser.name,
+        email: cachedUser.email,
+        phone: cachedUser.phone,
+        company_id: cachedUser.companyId,
+        department_id: cachedUser.departmentId,
+        manager_id: cachedUser.managerId,
+        is_active: cachedUser.isActive,
+        position: null,
+      }
+    : fetchedUser;
 
-  const position  = fetchedUser?.position ?? null;
-  const userId    = user?.user_id ?? resolvedUserId;
+  const position = fetchedUser?.position ?? null;
+  const userId = user?.user_id ?? resolvedUserId;
   const companyId = user?.company_id ?? cachedUser?.companyId ?? null;
 
-  const { dashboardData, stats, isLoading: dashboardLoading, error: dashboardError } =
-    useGetDashboardSummary(userId ?? null, companyId ?? null);
-  const learningPlanCards = useMemo(() => {
-    const plans: any[] = dashboardData?.plans ?? [];
-
-    return plans
-      .filter((p: any) => {
-        const s = String(p?.status ?? '').trim().toUpperCase();
-        return s === 'ASSIGNED' || s === 'IN_PROGRESS' || s === 'COMPLETED';
-      })
-      .map((plan: any) => {
-        // Use learning_plan_id as card key — unique even if module_id repeats
-        const planKey  = String(plan.learning_plan_id ?? plan.module_id ?? '');
-        const moduleId = String(plan.module_id ?? '');
-        const status   = String(plan.status ?? '').trim().toUpperCase();
-
-        // ✅ Learning-style-correct IDs — already resolved by backend
-        const processedModuleIds = normalizeProcessedModuleIds(plan.processed_module_ids);
-
-        // plan_json.modules[i] is positionally aligned with processedModuleIds[i]
-        const planJsonModules: Array<{ order: number; title: string; recommended_time?: number }> =
-          plan.plan_json?.modules ?? [];
-
-        const modules = planJsonModules.map((m: any, i: number) => ({
-          order:            m.order ?? i + 1,
-          title:            m.title ?? `Module ${i + 1}`,
-          recommended_time: m.recommended_time ?? 0,
-        }));
-
-        return {
-          planKey,
-          moduleId,
-          status,
-          title:
-            plan.training_modules?.title ??
-            plan.module_name ??
-            plan.module_title ??
-            plan.title ??
-            planJsonModules[0]?.title ??
-            'Learning Plan',
-          tips:            plan.plan_json?.tips ?? '',
-          totalModules:    modules.length,
-          modules,
-          processedModuleIds,  // ← passed straight to SprintScreen
-        };
-      });
-  }, [dashboardData]);
+  // ✅ resolvedPlanCards comes pre-built from the hook with correctly aligned
+  //    processedModuleIds — no further mapping needed here.
+  const {
+    dashboardData,
+    resolvedPlanCards,
+    stats,
+    isLoading: dashboardLoading,
+    error: dashboardError,
+  } = useGetDashboardSummary(userId ?? null, companyId ?? null);
 
   const isLoading = (userLoading && !cachedUser) || dashboardLoading;
 
@@ -162,7 +110,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     return (
       <View style={styles.loader}>
         <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={{ marginTop: 12, color: '#64748B', fontSize: 14 }}>
+        <Text style={{ marginTop: 12, color: "#64748B", fontSize: 14 }}>
           Loading your dashboard…
         </Text>
       </View>
@@ -172,30 +120,56 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   if (dashboardError) {
     return (
       <View style={styles.loader}>
-        <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#EF4444" />
-        <Text style={{ marginTop: 12, fontSize: 16, fontWeight: '600', color: '#1E293B' }}>
+        <MaterialCommunityIcons
+          name="alert-circle-outline"
+          size={48}
+          color="#EF4444"
+        />
+        <Text
+          style={{
+            marginTop: 12,
+            fontSize: 16,
+            fontWeight: "600",
+            color: "#1E293B",
+          }}
+        >
           Failed to load dashboard
         </Text>
-        <Text style={{ marginTop: 8, fontSize: 14, color: '#64748B', textAlign: 'center', paddingHorizontal: 20 }}>
+        <Text
+          style={{
+            marginTop: 8,
+            fontSize: 14,
+            color: "#64748B",
+            textAlign: "center",
+            paddingHorizontal: 20,
+          }}
+        >
           {dashboardError.message}
         </Text>
       </View>
     );
   }
 
-  const { completedCount, totalAssigned, progressPercentage, nudgeMessage } = stats;
-  const firstName = user?.name?.split(' ')[0] || '';
+  const { completedCount, totalAssigned, progressPercentage, nudgeMessage } =
+    stats;
+  const firstName = user?.name?.split(" ")[0] || "";
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
         {/* ── HEADER ──────────────────────────────────────────────────────── */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.greetingText}>Welcome, {firstName || 'there'}</Text>
-            <Text style={styles.emailText}>{position || user?.email || ''}</Text>
+            <Text style={styles.greetingText}>
+              Welcome, {firstName || "there"}
+            </Text>
+            <Text style={styles.emailText}>
+              {position || user?.email || ""}
+            </Text>
           </View>
           <TouchableOpacity style={styles.logoutBtn} onPress={() => logout()}>
             <MaterialCommunityIcons name="power" size={22} color="#EF4444" />
@@ -208,20 +182,26 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             <View style={styles.progressLeft}>
               <View style={styles.progressIconBox}>
                 <MaterialCommunityIcons
-                  name={progressPercentage >= 100 ? 'trophy' : 'lightning-bolt'}
-                  size={22} color="#2563EB" />
+                  name={progressPercentage >= 100 ? "trophy" : "lightning-bolt"}
+                  size={22}
+                  color="#2563EB"
+                />
               </View>
               <View style={styles.progressTextBlock}>
                 <Text style={styles.progressCardTitle}>Your Progress</Text>
                 <Text style={styles.progressNudge}>{nudgeMessage}</Text>
                 <View style={styles.completedBadge}>
-                  <Text style={styles.completedBadgeText}>{completedCount} COMPLETED</Text>
+                  <Text style={styles.completedBadgeText}>
+                    {completedCount} COMPLETED
+                  </Text>
                 </View>
               </View>
             </View>
             <View style={styles.progressRight}>
               <ProgressCircle percentage={progressPercentage} />
-              <Text style={styles.progressOfText}>{completedCount} of {totalAssigned}</Text>
+              <Text style={styles.progressOfText}>
+                {completedCount} of {totalAssigned}
+              </Text>
             </View>
           </View>
         </View>
@@ -230,12 +210,30 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         <View style={styles.sectionWrapper}>
           <Text style={styles.sectionTitle}>Overview</Text>
           <View style={styles.statsGrid}>
-            <StatCard icon="book-multiple" color="#EEF2FF" iconColor="#4F46E5"
-              val={String(learningPlanCards.length)} label="Plans" />
-            <StatCard icon="check-decagram" color="#ECFDF5" iconColor="#10B981"
-              val={String(completedCount)} label="Completed" />
-            <StatCard icon="account-tie" color="#FFF7ED" iconColor="#F59E0B"
-              val={position?.split(' ')[0] || 'Team'} label="Role" />
+            <StatCard
+              icon="book-multiple"
+              color="#EEF2FF"
+              iconColor="#4F46E5"
+              val={String(resolvedPlanCards.length)}
+              label="Plans"
+            />
+            <StatCard
+              icon="check-decagram"
+              color="#ECFDF5"
+              iconColor="#10B981"
+              val={String(completedCount)}
+              label="Completed"
+            />
+            <StatCard
+              icon="lightning-bolt"
+              color="#FFF7ED"
+              iconColor="#F59E0B"
+              val={String(
+                resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS")
+                  .length,
+              )}
+              label="In Progress"
+            />
           </View>
         </View>
 
@@ -243,45 +241,66 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         <View style={styles.sectionWrapper}>
           <Text style={styles.sectionTitle}>Assigned Sprints</Text>
 
-          {learningPlanCards.length === 0 ? (
+          {resolvedPlanCards.length === 0 ? (
             <View style={styles.emptyState}>
-              <MaterialCommunityIcons name="book-open-outline" size={40} color="#CBD5E1" />
+              <MaterialCommunityIcons
+                name="book-open-outline"
+                size={40}
+                color="#CBD5E1"
+              />
               <Text style={styles.emptyStateText}>No sprints assigned yet</Text>
             </View>
           ) : (
-            learningPlanCards.map((plan) => {
-              const isCompleted  = plan.status === 'COMPLETED';
-              const isInProgress = plan.status === 'IN_PROGRESS';
+            resolvedPlanCards.map((plan) => {
+              const isCompleted = plan.status === "COMPLETED";
+              const isInProgress = plan.status === "IN_PROGRESS";
 
               return (
                 <View key={plan.planKey} style={styles.planCard}>
                   <View style={styles.planHeaderRow}>
-                    <View style={[
-                      styles.statusBadge,
-                      isCompleted  ? styles.statusBadgeCompleted  :
-                      isInProgress ? styles.statusBadgeInProgress :
-                                     styles.statusBadgeNotStarted,
-                    ]}>
-                      <Text style={[
-                        styles.statusBadgeText,
-                        isCompleted  ? styles.statusTextCompleted  :
-                        isInProgress ? styles.statusTextInProgress :
-                                       styles.statusTextNotStarted,
-                      ]}>
-                        {isCompleted ? 'Completed' : isInProgress ? 'In Progress' : 'Not Started'}
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        isCompleted
+                          ? styles.statusBadgeCompleted
+                          : isInProgress
+                            ? styles.statusBadgeInProgress
+                            : styles.statusBadgeNotStarted,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.statusBadgeText,
+                          isCompleted
+                            ? styles.statusTextCompleted
+                            : isInProgress
+                              ? styles.statusTextInProgress
+                              : styles.statusTextNotStarted,
+                        ]}
+                      >
+                        {isCompleted
+                          ? "Completed"
+                          : isInProgress
+                            ? "In Progress"
+                            : "Not Started"}
                       </Text>
                     </View>
                   </View>
 
                   <View style={styles.planContentRow}>
                     <View style={styles.planIconCircle}>
-                      <MaterialCommunityIcons name="school-outline" size={24} color="#64748B" />
+                      <MaterialCommunityIcons
+                        name="school-outline"
+                        size={24}
+                        color="#64748B"
+                      />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.planTitleText}>{plan.title}</Text>
                       <Text style={styles.planSubText} numberOfLines={2}>
-                        {plan.totalModules} module{plan.totalModules !== 1 ? 's' : ''}
-                        {plan.tips ? ` · ${plan.tips.substring(0, 55)}…` : ''}
+                        {plan.totalModules} module
+                        {plan.totalModules !== 1 ? "s" : ""}
+                        {plan.tips ? ` · ${plan.tips.substring(0, 55)}…` : ""}
                       </Text>
                     </View>
                   </View>
@@ -289,35 +308,51 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                   <TouchableOpacity
                     style={[
                       styles.sprintButton,
-                      isCompleted  ? styles.sprintButtonReview   :
-                      isInProgress ? styles.sprintButtonContinue :
-                                     styles.sprintButtonStart,
+                      isCompleted
+                        ? styles.sprintButtonReview
+                        : isInProgress
+                          ? styles.sprintButtonContinue
+                          : styles.sprintButtonStart,
                     ]}
                     activeOpacity={0.8}
                     onPress={() =>
                       navigation.navigate(APP_ROUTES.SPRINT, {
-                        moduleId:           plan.moduleId,
-                        planId:             plan.planKey,
-                        planTitle:          plan.title,
-                        modules:            plan.modules,
-                        tips:               plan.tips,
-                        // ✅ Learning-style-correct IDs from dashboard_summary.
-                        // processedModuleIds[i] ↔ modules[i], positionally aligned.
+                        moduleId: plan.moduleId,
+                        planId: plan.planKey,
+                        planTitle: plan.title,
+                        modules: plan.modules,
+                        tips: plan.tips,
                         processedModuleIds: plan.processedModuleIds,
                       })
                     }
                   >
-                    <Text style={[
-                      styles.sprintButtonText,
-                      isCompleted  ? styles.sprintButtonTextReview   :
-                      isInProgress ? styles.sprintButtonTextContinue :
-                                     styles.sprintButtonTextStart,
-                    ]}>
-                      {isCompleted ? 'Review Sprint' : isInProgress ? 'Continue' : 'Start your sprint'}
+                    <Text
+                      style={[
+                        styles.sprintButtonText,
+                        isCompleted
+                          ? styles.sprintButtonTextReview
+                          : isInProgress
+                            ? styles.sprintButtonTextContinue
+                            : styles.sprintButtonTextStart,
+                      ]}
+                    >
+                      {isCompleted
+                        ? "Review Sprint"
+                        : isInProgress
+                          ? "Continue"
+                          : "Start your sprint"}
                     </Text>
                     <MaterialCommunityIcons
-                      name="arrow-right" size={16}
-                      color={isCompleted ? '#475569' : isInProgress ? '#2563EB' : '#fff'} />
+                      name="arrow-right"
+                      size={16}
+                      color={
+                        isCompleted
+                          ? "#475569"
+                          : isInProgress
+                            ? "#2563EB"
+                            : "#fff"
+                      }
+                    />
                   </TouchableOpacity>
                 </View>
               );

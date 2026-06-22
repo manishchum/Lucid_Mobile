@@ -127,8 +127,26 @@ export interface TrainingModulesResponse {
 }
 
 // Module Progress DTOs
+export interface ModuleProgressEntry {
+  module_progress_id: string;
+  started_at: string;
+  completed_at: string | null;
+  quiz_score: number | null;
+  quiz_feedback: string | null;
+  viewed_at: string | null;
+  audio_listen_duration: number | null;
+  processed_module_id: string;
+  user_id: string;
+  pass_status: string | null;
+  processed_modules?: {
+    title: string;
+    learning_style: string;
+    original_module_id: string;
+  };
+}
+
 export interface ModuleProgress {
-  progress: any[];
+  progress: ModuleProgressEntry[];
   count: number;
 }
 
@@ -142,6 +160,14 @@ export interface Company {
   rate_limit_role_play: number;
   rate_limit_content_generation: number;
   rate_limit_role_play_retries: number;
+  rag_temperature?: number;
+  rag_chunk_size?: number;
+  rag_chunk_overlap?: number;
+  rag_top_p?: number;
+  rag_max_output_tokens?: number;
+  company_logo?: string | null;
+  subscription_tier?: string;
+  subscription_addons?: string[];
 }
 
 export interface CompanyResponse {
@@ -170,7 +196,7 @@ export interface CompanyUsersResponse {
 }
 
 export type ChatMessage = {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   isVoice?: boolean;
 };
@@ -188,7 +214,6 @@ export type PostModuleChatResponseDto = {
   message: string;
 };
 
-
 export interface UserRankData {
   rank: number | null;
   top_percentile: number | null;
@@ -204,4 +229,24 @@ export interface DashboardSummaryResponse {
   assessment_evidence_by_module_id: Record<string, any[]>;
   user_rank: UserRankData | null;
   total_users: number;
+}
+
+// Task Manager DTOs
+export interface Task {
+  task_id: string;
+  title: string;
+  description?: string | null;
+  status: string;
+  priority?: string | null;
+  due_date?: string | null;
+  assigned_to?: string | null;
+  company_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: any;
+}
+
+export interface TasksResponse {
+  total: number;
+  tasks: Task[];
 }

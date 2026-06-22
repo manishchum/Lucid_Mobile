@@ -14,3 +14,14 @@ local.properties
 
 # Bundle artifacts
 *.jsbundle
+
+# Local environment config
+.env
+.env.local
+.env.production
+
+# Android signing
+android/app/*.keystore
+android/app/*.jks
+
+android/app/my-release-key.keystore

@@ -1,16 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
-  View, Text, StyleSheet, ScrollView,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
   ActivityIndicator,
-} from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+} from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth } from '../../contex/AuthContext';
-import { useGetProcessedModuleById } from '../../api/users';
-import CoreContentSection from './sections/CoreContentSection';
-import PodcastSection from './sections/PodcastSection';
-import FlashcardsSection from '../../components/content/FlashcardsSection';
+import { useAuth } from "../../contex/AuthContext";
+import { useGetProcessedModuleById } from "../../api/users";
+import CoreContentSection from "./sections/CoreContentSection";
+import PodcastSection from "./sections/PodcastSection";
+import FlashcardsSection from "../../components/content/FlashcardsSection";
 
 // ─── Phase 2: Mind Map ────────────────────────────────────────────────────────
 // MindmapSection will be implemented in Phase 2 using a proper graph/SVG renderer.
@@ -19,8 +22,8 @@ import FlashcardsSection from '../../components/content/FlashcardsSection';
 // import MindmapSection from '../../components/content/MindmapSection';
 // ─────────────────────────────────────────────────────────────────────────────
 
-import VideoSection from '../../components/content/VideoSection';
-import AIAssistantSection from '../../components/content/AIAssistantSection';
+import VideoSection from "../../components/content/VideoSection";
+import AIAssistantSection from "../../components/content/AIAssistantSection";
 
 /**
  * StudioScreen
@@ -45,57 +48,65 @@ import AIAssistantSection from '../../components/content/AIAssistantSection';
  */
 export default function StudioScreen({ route }: any) {
   const insets = useSafeAreaInsets();
-  const [expanded, setExpanded] = useState<string | null>('core');
+  const [expanded, setExpanded] = useState<string | null>("core");
   const { cachedUser } = useAuth();
 
   // Params from SprintScreen "View Content" — each module tap passes its own processedModuleId
-  const processedModuleId: string = route?.params?.processedModuleId ?? '';
-  const moduleTitle: string       = route?.params?.moduleTitle ?? '';
-  const sprintTitle: string       = route?.params?.sprintTitle ?? '';
+  const processedModuleId: string = route?.params?.processedModuleId ?? "";
+  const moduleTitle: string = route?.params?.moduleTitle ?? "";
+  const sprintTitle: string = route?.params?.sprintTitle ?? "";
 
   const userId = cachedUser?.userId ?? null;
-  const companyId = cachedUser?.companyId ?? '';
+  const companyId = cachedUser?.companyId ?? "";
 
   // ─── Debug logging: Validate incoming params ──────────────────────────────
   useEffect(() => {
-    console.log('[v0] [StudioScreen] Mounted with params:', {
-      processedModuleId: processedModuleId || '⚠️ MISSING',
+    console.log("[v0] [StudioScreen] Mounted with params:", {
+      processedModuleId: processedModuleId || "⚠️ MISSING",
       moduleTitle,
       sprintTitle,
-      userId: userId ? '✓' : '⚠️ MISSING',
+      userId: userId ? "✓" : "⚠️ MISSING",
     });
 
     if (!processedModuleId) {
-      console.warn('[v0] [StudioScreen] ⚠️ No processedModuleId received. This screen should only be opened from SprintScreen.');
+      console.warn(
+        "[v0] [StudioScreen] ⚠️ No processedModuleId received. This screen should only be opened from SprintScreen.",
+      );
     }
     if (!userId) {
-      console.warn('[v0] [StudioScreen] ⚠️ No userId available. Auth may not be initialized.');
+      console.warn(
+        "[v0] [StudioScreen] ⚠️ No userId available. Auth may not be initialized.",
+      );
     }
   }, [processedModuleId, moduleTitle, sprintTitle, userId]);
 
   // Fetch processed module by ID — endpoint: GET /processed-modules/{processedModuleId}
   // This is the single source of truth for all Studio sections below.
-  const { module: processedModule, isLoading, error } = useGetProcessedModuleById(
-    processedModuleId || null,
-    userId,
-  );
+  const {
+    module: processedModule,
+    isLoading,
+    error,
+  } = useGetProcessedModuleById(processedModuleId || null, userId);
 
   // ─── Debug logging: Track module data loading ─────────────────────────────
   useEffect(() => {
     if (isLoading) {
-      console.log('[v0] [StudioScreen] Loading module data...');
+      console.log("[v0] [StudioScreen] Loading module data...");
     }
   }, [isLoading]);
 
   useEffect(() => {
     if (error) {
-      console.error('[v0] [StudioScreen] ❌ Error loading module:', error.message);
+      console.error(
+        "[v0] [StudioScreen] ❌ Error loading module:",
+        error.message,
+      );
     }
   }, [error]);
 
   useEffect(() => {
     if (processedModule) {
-      console.log('[v0] [StudioScreen] ✅ Module data loaded:', {
+      console.log("[v0] [StudioScreen] ✅ Module data loaded:", {
         title: processedModule.title,
         hasContent: !!processedModule.content,
         hasAudio: !!processedModule.audio_url,
@@ -105,7 +116,7 @@ export default function StudioScreen({ route }: any) {
         hasMindmap: !!processedModule.mindmap_data,
       });
     } else if (!isLoading && !error) {
-      console.warn('[v0] [StudioScreen] ⚠️ Module loaded but data is empty');
+      console.warn("[v0] [StudioScreen] ⚠️ Module loaded but data is empty");
     }
   }, [processedModule, isLoading, error]);
 
@@ -121,9 +132,9 @@ export default function StudioScreen({ route }: any) {
         </View>
         <Text style={styles.emptyTitle}>Studio</Text>
         <Text style={styles.emptySubtitle}>
-          Tap{' '}
-          <Text style={styles.emptyHighlight}>View Content</Text>
-          {' '}on any Sprint module to explore core content, podcasts, flashcards, videos and AI assistance here.
+          Tap <Text style={styles.emptyHighlight}>View Content</Text> on any
+          Sprint module to explore core content, podcasts, flashcards, videos
+          and AI assistance here.
         </Text>
       </View>
     );
@@ -143,7 +154,11 @@ export default function StudioScreen({ route }: any) {
   if (error) {
     return (
       <View style={[styles.loader, { paddingTop: insets.top }]}>
-        <MaterialCommunityIcons name="alert-circle-outline" size={40} color="#EF4444" />
+        <MaterialCommunityIcons
+          name="alert-circle-outline"
+          size={40}
+          color="#EF4444"
+        />
         <Text style={styles.errorText}>Failed to load content</Text>
         <Text style={styles.errorSub}>{error.message}</Text>
       </View>
@@ -163,16 +178,16 @@ export default function StudioScreen({ route }: any) {
             <MaterialCommunityIcons name="brush" size={14} color="#4F46E5" />
             <Text style={styles.studioBadgeText}>Studio</Text>
           </View>
-          {sprintTitle ? (
+          {/* {sprintTitle ? (
             <Text style={styles.sprintLabel}>{sprintTitle}</Text>
-          ) : null}
+          ) : null} */}
           <Text style={styles.heroTitle}>
             {processedModule?.title ?? moduleTitle}
           </Text>
           <Text style={styles.heroSubtitle}>
             {processedModule?.sprint_name
               ? processedModule.sprint_name
-              : 'Deep dive into professional learning content.'}
+              : "Deep dive into professional learning content."}
           </Text>
 
           {/* Feature badge pills — shown based on what the API returned
@@ -215,18 +230,17 @@ export default function StudioScreen({ route }: any) {
 
         {/* ── Accordion Sections ── */}
         <View style={styles.accordionList}>
-
           {/* Core Content — parses processedModule.content (HTML) into sections */}
           <CoreContentSection
-            isExpanded={expanded === 'core'}
-            onToggle={() => toggle('core')}
+            isExpanded={expanded === "core"}
+            onToggle={() => toggle("core")}
             htmlContent={processedModule?.content ?? null}
           />
 
           {/* Flashcards — from processedModule.flashcard_data array */}
           <FlashcardsSection
-            isExpanded={expanded === 'flashcards'}
-            onToggle={() => toggle('flashcards')}
+            isExpanded={expanded === "flashcards"}
+            onToggle={() => toggle("flashcards")}
             flashcardData={processedModule?.flashcard_data ?? null}
           />
 
@@ -242,32 +256,33 @@ export default function StudioScreen({ route }: any) {
 
           {/* Podcast — audio URLs and timelines all from API response */}
           <PodcastSection
-            isExpanded={expanded === 'podcast'}
-            onToggle={() => toggle('podcast')}
+            isExpanded={expanded === "podcast"}
+            onToggle={() => toggle("podcast")}
             audioUrl={processedModule?.audio_url ?? null}
             audioUrlHinglish={processedModule?.audio_url_hinglish ?? null}
             podcastTimeline={processedModule?.podcast_timeline ?? null}
-            podcastTimelineHinglish={processedModule?.podcast_timeline_hinglish ?? null}
+            podcastTimelineHinglish={
+              processedModule?.podcast_timeline_hinglish ?? null
+            }
             transcript={processedModule?.podcast_transcript ?? null}
           />
 
           {/* Video — from processedModule.video_url */}
           <VideoSection
-            isExpanded={expanded === 'video'}
-            onToggle={() => toggle('video')}
+            isExpanded={expanded === "video"}
+            onToggle={() => toggle("video")}
             videoUrl={processedModule?.video_url ?? null}
           />
 
           {/* AI Assistant */}
           <AIAssistantSection
-            isExpanded={expanded === 'ai'}
-            onToggle={() => toggle('ai')}
+            isExpanded={expanded === "ai"}
+            onToggle={() => toggle("ai")}
             processedModuleId={processedModuleId}
             moduleTitle={moduleTitle}
-            userId={userId ?? ''}
+            userId={userId ?? ""}
             companyId={companyId}
           />
-
         </View>
       </ScrollView>
     </View>
@@ -275,54 +290,81 @@ export default function StudioScreen({ route }: any) {
 }
 
 const styles = StyleSheet.create({
-  main: { flex: 1, backgroundColor: '#F8FAFC' },
+  main: { flex: 1, backgroundColor: "#F8FAFC" },
 
   // ── Empty state ──
   emptyContainer: {
-    flex: 1, backgroundColor: '#F8FAFC',
-    justifyContent: 'center', alignItems: 'center',
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 36,
   },
   emptyIconWrap: {
-    width: 88, height: 88, borderRadius: 24,
-    backgroundColor: '#EEF2FF',
-    justifyContent: 'center', alignItems: 'center',
+    width: 88,
+    height: 88,
+    borderRadius: 24,
+    backgroundColor: "#EEF2FF",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 24,
   },
-  emptyTitle: { fontSize: 26, fontWeight: '800', color: '#1E293B', marginBottom: 12 },
-  emptySubtitle: {
-    fontSize: 15, color: '#64748B', textAlign: 'center', lineHeight: 24,
+  emptyTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#1E293B",
+    marginBottom: 12,
   },
-  emptyHighlight: { color: '#4F46E5', fontWeight: '700' },
+  emptySubtitle: {
+    fontSize: 15,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 24,
+  },
+  emptyHighlight: { color: "#4F46E5", fontWeight: "700" },
 
   // ── Loading / error ──
-  loader: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-  loaderText: { fontSize: 14, color: '#64748B' },
-  errorText: { fontSize: 16, fontWeight: '700', color: '#EF4444' },
-  errorSub: { fontSize: 13, color: '#94A3B8' },
+  loader: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12 },
+  loaderText: { fontSize: 14, color: "#64748B" },
+  errorText: { fontSize: 16, fontWeight: "700", color: "#EF4444" },
+  errorSub: { fontSize: 13, color: "#94A3B8" },
 
   // ── Hero ──
   hero: { padding: 24, paddingBottom: 16 },
   studioBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#EEF2FF', alignSelf: 'flex-start',
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#EEF2FF",
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
     marginBottom: 8,
   },
-  studioBadgeText: { fontSize: 12, fontWeight: '700', color: '#4F46E5' },
-  sprintLabel: { fontSize: 12, color: '#94A3B8', marginBottom: 4 },
-  heroTitle: { fontSize: 24, fontWeight: '800', color: '#1E293B', lineHeight: 32 },
-  heroSubtitle: { fontSize: 14, color: '#64748B', marginTop: 6 },
+  studioBadgeText: { fontSize: 12, fontWeight: "700", color: "#4F46E5" },
+  sprintLabel: { fontSize: 12, color: "#94A3B8", marginBottom: 4 },
+  heroTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#1E293B",
+    lineHeight: 32,
+  },
+  heroSubtitle: { fontSize: 14, color: "#64748B", marginTop: 6 },
 
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
   metaBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: '#EEF2FF', paddingHorizontal: 10, paddingVertical: 5,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#EEF2FF",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 20,
   },
-  metaBadgeHi: { backgroundColor: '#FFF7ED' },
-  metaText: { fontSize: 12, fontWeight: '600', color: '#4F46E5' },
-  metaTextHi: { fontSize: 12, fontWeight: '600', color: '#C2410C' },
+  metaBadgeHi: { backgroundColor: "#FFF7ED" },
+  metaText: { fontSize: 12, fontWeight: "600", color: "#4F46E5" },
+  metaTextHi: { fontSize: 12, fontWeight: "600", color: "#C2410C" },
 
   accordionList: { paddingHorizontal: 16, gap: 12 },
 });
