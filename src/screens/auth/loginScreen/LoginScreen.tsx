@@ -15,6 +15,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "../../../contex/AuthContext";
 import styles from "./style";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNetworkStatus } from "../../../hooks/network/useNetworkStatus";
+import NoInternetModal from "../../../components/networkModal/NetworkModal";
 
 const { width } = Dimensions.get("window");
 
@@ -23,13 +25,20 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showNotRegisteredModal, setShowNotRegisteredModal] = useState(false);
+  const [showNoInternet, setShowNoInternet] = useState(false);
   const insets = useSafeAreaInsets();
+  const isOnline = useNetworkStatus();
 
   const handleSendCode = async () => {
     setError("");
 
     if (phoneNumber.length !== 10) {
       setError("Please enter exactly 10 digits");
+      return;
+    }
+
+    if (isOnline === false) {
+      setShowNoInternet(true);
       return;
     }
 
@@ -63,7 +72,10 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={[styles.container, { paddingTop: insets.top }]}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          bounces={false}
+        >
           {/* Header */}
           <View style={styles.topSection}>
             <View style={styles.circle1} />
@@ -81,7 +93,9 @@ export default function LoginScreen() {
 
             <View style={styles.inputLabelRow}>
               <Text style={styles.label}>Phone Number</Text>
-              {error ? <Text style={styles.errorTextInline}>{error}</Text> : null}
+              {error ? (
+                <Text style={styles.errorTextInline}>{error}</Text>
+              ) : null}
             </View>
 
             <View style={[styles.inputContainer, error && styles.inputError]}>
@@ -162,6 +176,11 @@ export default function LoginScreen() {
           </View>
         </View>
       </Modal>
+
+      <NoInternetModal
+        visible={showNoInternet}
+        onDismiss={() => setShowNoInternet(false)}
+      />
     </>
   );
 }

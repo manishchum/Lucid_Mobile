@@ -1,39 +1,38 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 import {
   getUserByEmail,
   getUserByPhone,
   getUserRoles,
-  getLearningPlans,
   getProcessedModules,
   getProcessedModuleById,
   getTrainingModules,
   getTrainingModuleDetail,
-  getModuleProgress,
   getCompany,
   getLearningStyle,
   getCompanyUsers,
   getTrainingPlan,
   getDashboardSummary,
-} from './Request';
+  getModuleProgress,
+} from "./Request";
 import {
   User,
   UserResponse,
   UserRolesResponse,
   UserRoleAssignment,
-  LearningPlansResponse,
   LearningPlan,
   TrainingModulesResponse,
   TrainingModule,
-  ModuleProgress,
   CompanyResponse,
   Company,
   LearningStyleResponse,
   LearningStyle,
   CompanyUsersResponse,
   DashboardSummaryResponse,
-} from './Dto';
+  ModuleProgress,
+  ModuleProgressEntry,
+} from "./Dto";
 
-export const USER_QUERY_KEY = ['user'];
+export const USER_QUERY_KEY = ["user"];
 
 // ==================== USER BY EMAIL HOOK ====================
 interface UseGetUserByEmailReturn {
@@ -43,7 +42,9 @@ interface UseGetUserByEmailReturn {
   refetch: () => Promise<void>;
 }
 
-export const useGetUserByEmail = (email: string | null): UseGetUserByEmailReturn => {
+export const useGetUserByEmail = (
+  email: string | null,
+): UseGetUserByEmailReturn => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -56,7 +57,7 @@ export const useGetUserByEmail = (email: string | null): UseGetUserByEmailReturn
       const response: UserResponse = await getUserByEmail(email);
       setUser(response.user);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch user'));
+      setError(err instanceof Error ? err : new Error("Failed to fetch user"));
     } finally {
       setIsLoading(false);
     }
@@ -77,7 +78,9 @@ interface UseGetUserByPhoneReturn {
   refetch: () => Promise<void>;
 }
 
-export const useGetUserByPhone = (phone: string | null): UseGetUserByPhoneReturn => {
+export const useGetUserByPhone = (
+  phone: string | null,
+): UseGetUserByPhoneReturn => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -87,10 +90,22 @@ export const useGetUserByPhone = (phone: string | null): UseGetUserByPhoneReturn
     setIsLoading(true);
     setError(null);
     try {
-      const response: UserResponse = await getUserByPhone(phone);
+      // Defensive normalization — backend strictly expects +91XXXXXXXXXX.
+      const digits = phone.replace(/[^\d]/g, "");
+      const normalizedPhone =
+        phone.startsWith("+91") && phone.length === 13
+          ? phone
+          : digits.length === 10
+            ? `+91${digits}`
+            : digits.length === 12 && digits.startsWith("91")
+              ? `+${digits}`
+              : digits.length === 11 && digits.startsWith("0")
+                ? `+91${digits.slice(1)}`
+                : phone;
+      const response: UserResponse = await getUserByPhone(normalizedPhone);
       setUser(response.user);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch user'));
+      setError(err instanceof Error ? err : new Error("Failed to fetch user"));
     } finally {
       setIsLoading(false);
     }
@@ -111,7 +126,9 @@ interface UseGetUserRolesReturn {
   refetch: () => Promise<void>;
 }
 
-export const useGetUserRoles = (userId: string | null): UseGetUserRolesReturn => {
+export const useGetUserRoles = (
+  userId: string | null,
+): UseGetUserRolesReturn => {
   const [roles, setRoles] = useState<UserRoleAssignment[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -124,47 +141,19 @@ export const useGetUserRoles = (userId: string | null): UseGetUserRolesReturn =>
       const response: UserRolesResponse = await getUserRoles(userId);
       setRoles(response.assignments);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch user roles'));
+      setError(
+        err instanceof Error ? err : new Error("Failed to fetch user roles"),
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { fetchRoles(); }, [userId]);
+  useEffect(() => {
+    fetchRoles();
+  }, [userId]);
 
   return { roles, isLoading, error, refetch: fetchRoles };
-};
-
-// ==================== LEARNING PLANS HOOK ====================
-interface UseGetLearningPlansReturn {
-  plans: LearningPlan[] | null;
-  isLoading: boolean;
-  error: Error | null;
-  refetch: () => Promise<void>;
-}
-
-export const useGetLearningPlans = (userId: string | null): UseGetLearningPlansReturn => {
-  const [plans, setPlans] = useState<LearningPlan[] | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  const fetchPlans = async () => {
-    if (!userId) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response: LearningPlansResponse = await getLearningPlans(userId);
-      setPlans(response.plans || []);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch learning plans'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchPlans(); }, [userId]);
-
-  return { plans, isLoading, error, refetch: fetchPlans };
 };
 
 // ==================== PROCESSED MODULES HOOK ====================
@@ -175,7 +164,9 @@ interface UseGetProcessedModulesReturn {
   refetch: () => Promise<void>;
 }
 
-export const useGetProcessedModules = (userId: string | null): UseGetProcessedModulesReturn => {
+export const useGetProcessedModules = (
+  userId: string | null,
+): UseGetProcessedModulesReturn => {
   const [modules, setModules] = useState<any[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -188,13 +179,19 @@ export const useGetProcessedModules = (userId: string | null): UseGetProcessedMo
       const response = await getProcessedModules(userId, userId);
       setModules(response?.data || []);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch processed modules'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("Failed to fetch processed modules"),
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { fetchModules(); }, [userId]);
+  useEffect(() => {
+    fetchModules();
+  }, [userId]);
 
   return { modules, isLoading, error, refetch: fetchModules };
 };
@@ -216,23 +213,32 @@ export const useGetProcessedModuleById = (
   const [error, setError] = useState<Error | null>(null);
 
   const fetchModule = async () => {
-    if (!processedModuleId || !userId) { setModule(null); return; }
+    if (!processedModuleId || !userId) {
+      setModule(null);
+      return;
+    }
     setIsLoading(true);
     setModule(null);
     setError(null);
     try {
       const response = await getProcessedModuleById(processedModuleId, userId);
       const data = response?.data ?? null;
-      if (!data) throw new Error('API returned empty data field');
+      if (!data) throw new Error("API returned empty data field");
       setModule(data);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch processed module'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("Failed to fetch processed module"),
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { fetchModule(); }, [processedModuleId, userId]);
+  useEffect(() => {
+    fetchModule();
+  }, [processedModuleId, userId]);
 
   return { module, isLoading, error, refetch: fetchModule };
 };
@@ -258,16 +264,25 @@ export const useGetTrainingModules = (
     setIsLoading(true);
     setError(null);
     try {
-      const response: TrainingModulesResponse = await getTrainingModules(sprintId, userId);
+      const response: TrainingModulesResponse = await getTrainingModules(
+        sprintId,
+        userId,
+      );
       setModules(response.modules || []);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch training modules'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("Failed to fetch training modules"),
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { fetchModules(); }, [sprintId, userId]);
+  useEffect(() => {
+    fetchModules();
+  }, [sprintId, userId]);
 
   return { modules, isLoading, error, refetch: fetchModules };
 };
@@ -280,7 +295,9 @@ interface UseGetTrainingModuleDetailReturn {
   refetch: () => Promise<void>;
 }
 
-export const useGetTrainingModuleDetail = (moduleId: string | null): UseGetTrainingModuleDetailReturn => {
+export const useGetTrainingModuleDetail = (
+  moduleId: string | null,
+): UseGetTrainingModuleDetailReturn => {
   const [module, setModule] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -290,52 +307,25 @@ export const useGetTrainingModuleDetail = (moduleId: string | null): UseGetTrain
     setIsLoading(true);
     setError(null);
     try {
-      const response: TrainingModulesResponse = await getTrainingModuleDetail(moduleId, moduleId);
+      const response: TrainingModulesResponse = await getTrainingModuleDetail(
+        moduleId,
+        moduleId,
+      );
       setModule(response.modules?.[0] || null);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch module detail'));
+      setError(
+        err instanceof Error ? err : new Error("Failed to fetch module detail"),
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { fetchModule(); }, [moduleId]);
+  useEffect(() => {
+    fetchModule();
+  }, [moduleId]);
 
   return { module, isLoading, error, refetch: fetchModule };
-};
-
-// ==================== MODULE PROGRESS HOOK ====================
-interface UseGetModuleProgressReturn {
-  progress: ModuleProgress | null;
-  isLoading: boolean;
-  error: Error | null;
-  refetch: () => Promise<void>;
-}
-
-export const useGetModuleProgress = (
-  userId: string | null,
-): UseGetModuleProgressReturn => {
-  const [progress, setProgress] = useState<ModuleProgress | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  const fetchProgress = async () => {
-    if (!userId) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await getModuleProgress(userId);
-      setProgress(response?.data || null);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch module progress'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchProgress(); }, [userId]);
-
-  return { progress, isLoading, error, refetch: fetchProgress };
 };
 
 // ==================== COMPANY HOOK ====================
@@ -346,26 +336,33 @@ interface UseGetCompanyReturn {
   refetch: () => Promise<void>;
 }
 
-export const useGetCompany = (companyId: string | null): UseGetCompanyReturn => {
+export const useGetCompany = (
+  companyId: string | null,
+  userId: string | null,
+): UseGetCompanyReturn => {
   const [company, setCompany] = useState<Company | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchCompany = async () => {
-    if (!companyId) return;
+    if (!companyId || !userId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const response: CompanyResponse = await getCompany(companyId, companyId);
-      setCompany(response.company);
+      const response: CompanyResponse = await getCompany(companyId, userId);
+      setCompany(response.data ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch company'));
+      setError(
+        err instanceof Error ? err : new Error("Failed to fetch company"),
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { fetchCompany(); }, [companyId]);
+  useEffect(() => {
+    fetchCompany();
+  }, [companyId, userId]);
 
   return { company, isLoading, error, refetch: fetchCompany };
 };
@@ -378,8 +375,12 @@ interface UseGetLearningStyleReturn {
   refetch: () => Promise<void>;
 }
 
-export const useGetLearningStyle = (userId: string | null): UseGetLearningStyleReturn => {
-  const [learningStyle, setLearningStyle] = useState<LearningStyle | null>(null);
+export const useGetLearningStyle = (
+  userId: string | null,
+): UseGetLearningStyleReturn => {
+  const [learningStyle, setLearningStyle] = useState<LearningStyle | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -391,13 +392,19 @@ export const useGetLearningStyle = (userId: string | null): UseGetLearningStyleR
       const response: LearningStyleResponse = await getLearningStyle(userId);
       setLearningStyle(response.learning_style);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch learning style'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("Failed to fetch learning style"),
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { fetchLearningStyle(); }, [userId]);
+  useEffect(() => {
+    fetchLearningStyle();
+  }, [userId]);
 
   return { learningStyle, isLoading, error, refetch: fetchLearningStyle };
 };
@@ -423,16 +430,23 @@ export const useGetCompanyUsers = (
     setIsLoading(true);
     setError(null);
     try {
-      const response: CompanyUsersResponse = await getCompanyUsers(companyId, userId);
+      const response: CompanyUsersResponse = await getCompanyUsers(
+        companyId,
+        userId,
+      );
       setUsers(response.users || []);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch company users'));
+      setError(
+        err instanceof Error ? err : new Error("Failed to fetch company users"),
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { fetchUsers(); }, [companyId, userId]);
+  useEffect(() => {
+    fetchUsers();
+  }, [companyId, userId]);
 
   return { users, isLoading, error, refetch: fetchUsers };
 };
@@ -461,105 +475,412 @@ export const useGetTrainingPlan = (
       const response = await getTrainingPlan(dbUserId, moduleId);
       setPlan(response?.data || null);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch training plan'));
+      setError(
+        err instanceof Error ? err : new Error("Failed to fetch training plan"),
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { fetchPlan(); }, [dbUserId, moduleId]);
+  useEffect(() => {
+    fetchPlan();
+  }, [dbUserId, moduleId]);
 
   return { plan, isLoading, error, refetch: fetchPlan };
 };
 
-// ==================== DASHBOARD SUMMARY HOOK ====================
-// Powers the HomeScreen — single call replaces separate plans + progress fetches.
-// Provides: plans, progress rows, completedCount, totalAssigned, progressPercentage,
-// userRank, totalUsers — exactly mirroring the web's loadDashboard() logic.
+export interface ResolvedPlanCard {
+  planKey: string;
+  moduleId: string;
+  status: string;
+  title: string;
+  tips: string;
+  totalModules: number;
+  modules: Array<{ order: number; title: string; recommended_time: number }>;
+  processedModuleIds: string[];
+  completedModulesCount: number;
+}
 
 interface DashboardStats {
-  completedCount: number;    // user_rank.modules_completed
-  totalAssigned: number;     // number of ASSIGNED/IN_PROGRESS/COMPLETED plans
-  progressPercentage: number; // (completedCount / totalAssigned) * 100
-  userRank: number | null;
-  topPercentile: number | null;
-  totalUsers: number;
+  completedCount: number;
+  totalAssigned: number;
+  progressPercentage: number;
   nudgeMessage: string;
+}
+
+const ASSIGNED_STATUSES = new Set(["ASSIGNED", "IN_PROGRESS", "COMPLETED"]);
+
+async function resolveProcessedModuleIdsForPlan(
+  plan: any,
+  userId: string,
+): Promise<string[]> {
+  const planModules: Array<{ title: string; processed_module_id?: string }> =
+    plan?.plan_json?.modules ?? [];
+
+  if (planModules.length === 0) {
+    console.warn(
+      `[resolveIds] ⚠️ Plan "${plan.learning_plan_id}" has no plan_json.modules`,
+    );
+    return [];
+  }
+
+  // ── Strategy 1: IDs already embedded per module (new plans) ───────────────
+  const embedded = planModules
+    .map((m: any) => m?.processed_module_id ?? "")
+    .filter(Boolean);
+
+  if (embedded.length === planModules.length) {
+    console.log(
+      `[resolveIds] ✅ Plan "${plan.learning_plan_id}" — Strategy 1: embedded IDs (${embedded.length})`,
+    );
+    return embedded;
+  }
+
+  // ── Strategy 2: Fetch from original-module endpoint (older plans) ──────────
+  const originalModuleId: string = plan?.module_id ?? "";
+  if (originalModuleId) {
+    try {
+      console.log(
+        `[resolveIds] Plan "${plan.learning_plan_id}" — Strategy 2: fetching ` +
+          `/processed-modules/original-module/${originalModuleId}`,
+      );
+      const response = await getProcessedModules(originalModuleId, userId);
+      const allProcessed: any[] = response?.data ?? [];
+
+      // Always filter to learning_style="default" — this is what the home screen uses
+      const defaultModules = allProcessed.filter(
+        (pm: any) =>
+          String(pm?.learning_style ?? "")
+            .trim()
+            .toLowerCase() === "default",
+      );
+
+      console.log(
+        `[resolveIds] Found ${defaultModules.length} "default" modules ` +
+          `out of ${allProcessed.length} total`,
+      );
+
+      if (defaultModules.length > 0) {
+        const sorted = [...defaultModules].sort(
+          (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
+        );
+
+        // Build title → id lookup for exact matching
+        const titleToId = new Map<string, string>();
+        sorted.forEach((pm: any) => {
+          if (pm?.title && pm?.processed_module_id) {
+            titleToId.set(
+              pm.title.trim().toLowerCase(),
+              pm.processed_module_id,
+            );
+          }
+        });
+
+        const aligned = planModules
+          .map((m: any, i: number) => {
+            const key = m?.title?.trim().toLowerCase() ?? "";
+            const byTitle = titleToId.get(key);
+            if (byTitle) {
+              console.log(
+                `[resolveIds] ✅ Module[${i}] "${m.title}" → title match → "${byTitle}"`,
+              );
+              return byTitle;
+            }
+            // Positional fallback within the default-style sorted list
+            const byPos = sorted[i]?.processed_module_id ?? "";
+            if (byPos) {
+              console.warn(
+                `[resolveIds] ⚠️ Module[${i}] "${m.title}" → positional fallback → "${byPos}"`,
+              );
+            } else {
+              console.error(
+                `[resolveIds] ❌ Module[${i}] "${m.title}" — no ID found`,
+              );
+            }
+            return byPos;
+          })
+          .filter(Boolean);
+
+        if (aligned.length > 0) return aligned;
+      }
+    } catch (err) {
+      console.error(
+        `[resolveIds] ❌ Strategy 2 failed for plan "${plan.learning_plan_id}":`,
+        err,
+      );
+    }
+  }
+
+  console.error(
+    `[resolveIds] ❌ Plan "${plan.learning_plan_id}" — all strategies exhausted, no IDs resolved`,
+  );
+  return [];
 }
 
 interface UseGetDashboardSummaryReturn {
   dashboardData: DashboardSummaryResponse | null;
+  resolvedPlanCards: ResolvedPlanCard[];
   stats: DashboardStats;
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
 }
 
-const ASSIGNED_STATUSES = new Set(['ASSIGNED', 'IN_PROGRESS', 'COMPLETED']);
-
 export const useGetDashboardSummary = (
   userId: string | null,
   companyId: string | null,
 ): UseGetDashboardSummaryReturn => {
-  const [dashboardData, setDashboardData] = useState<DashboardSummaryResponse | null>(null);
+  const [dashboardData, setDashboardData] =
+    useState<DashboardSummaryResponse | null>(null);
+  const [resolvedPlanCards, setResolvedPlanCards] = useState<
+    ResolvedPlanCard[]
+  >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchDashboard = async () => {
     if (!userId || !companyId) {
-      console.log('[Hook] useGetDashboardSummary skipped — missing userId or companyId');
+      console.log(
+        "[Hook] useGetDashboardSummary skipped — missing userId or companyId",
+      );
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
-      console.log('[Hook] useGetDashboardSummary fetching for userId:', userId);
-      const data = await getDashboardSummary(userId, companyId);
-      console.log('[Hook] Dashboard summary received — plans:', data.plans?.length, 'progress rows:', data.progress?.length);
+      console.log(
+        "[Hook] GET /employee/dashboard_summary/ →",
+        userId,
+        "companyId:",
+        companyId,
+      );
+
+      const data: DashboardSummaryResponse = await getDashboardSummary(
+        userId,
+        companyId,
+      );
       setDashboardData(data);
+
+      const moduleMap = new Map<string, any>();
+      (data.modules ?? []).forEach((m: any) => {
+        if (m?.module_id) moduleMap.set(m.module_id, m);
+      });
+      console.log(
+        "[Hook] Module map built —",
+        moduleMap.size,
+        "entries:",
+        [...moduleMap.values()].map(
+          (m) => `${m.module_id.slice(0, 8)}… "${m.title}"`,
+        ),
+      );
+
+      const allPlans: any[] = data?.plans ?? [];
+      console.log("[Hook] Total plans received:", allPlans.length);
+
+      // Only render ASSIGNED / IN_PROGRESS / COMPLETED sprints on the home screen
+      const activePlans = allPlans.filter((p: any) =>
+        ASSIGNED_STATUSES.has(
+          String(p?.status ?? "")
+            .trim()
+            .toUpperCase(),
+        ),
+      );
+      console.log("[Hook] Active plans:", activePlans.length);
+
+      const completedProcessedModuleIds = new Set(
+        (data?.progress ?? [])
+          .map((p: any) => p?.processed_module_id)
+          .filter(Boolean),
+      );
+      console.log(
+        "[Hook] Completed processed-module IDs:",
+        completedProcessedModuleIds.size,
+      );
+
+      const cards: ResolvedPlanCard[] = await Promise.all(
+        activePlans.map(async (plan: any) => {
+          const planKey = String(plan.learning_plan_id ?? plan.module_id ?? "");
+          const moduleId = String(plan.module_id ?? "");
+          const serverStatus = String(plan.status ?? "")
+            .trim()
+            .toUpperCase();
+
+          // ── Sprint title ─────────────────────────────────────────────────
+          // Primary: data.modules[] looked up by plan.module_id
+          const moduleRecord = moduleMap.get(moduleId);
+          const title: string =
+            moduleRecord?.title ??
+            plan.module_name ??
+            plan.module_title ??
+            plan.title ??
+            plan.plan_json?.modules?.[0]?.title ??
+            "Learning Plan";
+
+          // ── Sprint steps from plan_json.modules[] ────────────────────────
+          const planJsonModules: Array<{
+            order: number;
+            title: string;
+            recommended_time?: number;
+            processed_module_id?: string;
+          }> = plan.plan_json?.modules ?? [];
+
+          const modules = planJsonModules.map((m: any, i: number) => ({
+            order: m.order ?? i + 1,
+            title: m.title ?? `Module ${i + 1}`,
+            recommended_time: m.recommended_time ?? 0,
+          }));
+
+          const tips: string = plan.plan_json?.tips ?? "";
+
+          // ── processedModuleIds per step ──────────────────────────────────
+          // Strategy 1: embedded in plan_json.modules[i].processed_module_id (new plans, zero extra calls)
+          // Strategy 2: GET /processed-modules/original-module/{moduleId} filtered to "default" (older plans)
+          const processedModuleIds = await resolveProcessedModuleIdsForPlan(
+            plan,
+            userId,
+          );
+
+          console.log(
+            `[Hook] Plan "${planKey}" → sprint="${title}" steps=${modules.length} resolvedIds=${processedModuleIds.length}`,
+          );
+          modules.forEach((m, i) => {
+            console.log(
+              `[Hook]   Step[${i + 1}] "${m.title}" → processedId="${
+                processedModuleIds[i] ?? "❌ MISSING"
+              }"`,
+            );
+          });
+
+          // ── Status, derived from actual quiz-submission progress ────────
+          const completedModulesCount = processedModuleIds.filter(
+            (id) => !!id && completedProcessedModuleIds.has(id),
+          ).length;
+
+          let status: string;
+          if (modules.length > 0 && completedModulesCount >= modules.length) {
+            status = "COMPLETED";
+          } else if (completedModulesCount > 0) {
+            status = "IN_PROGRESS";
+          } else {
+            status = serverStatus === "COMPLETED" ? "COMPLETED" : "NOT_STARTED";
+          }
+
+          console.log(
+            `[Hook]   → status="${status}" (server="${serverStatus}", completed=${completedModulesCount}/${modules.length})`,
+          );
+
+          return {
+            planKey,
+            moduleId,
+            status,
+            title,
+            tips,
+            totalModules: modules.length,
+            modules,
+            processedModuleIds,
+            completedModulesCount,
+          };
+        }),
+      );
+
+      setResolvedPlanCards(cards);
+      console.log("[Hook] ✅ All sprint cards resolved:", cards.length);
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to fetch dashboard summary');
-      console.error('[Hook] useGetDashboardSummary error:', error.message);
+      const error =
+        err instanceof Error
+          ? err
+          : new Error("Failed to fetch dashboard summary");
+      console.error("[Hook] useGetDashboardSummary error:", error.message);
       setError(error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { fetchDashboard(); }, [userId, companyId]);
+  useEffect(() => {
+    fetchDashboard();
+  }, [userId, companyId]);
 
-  // Derive the same stats the web computes in loadDashboard()
+  // ── Stats derived from resolved plan cards ────────────────────────────────
   const stats: DashboardStats = (() => {
-    if (!dashboardData) {
-      return {
-        completedCount: 0, totalAssigned: 0, progressPercentage: 0,
-        userRank: null, topPercentile: null, totalUsers: 0,
-        nudgeMessage: '💪 One step in! Complete your sprints and stand among the top 5%.',
-      };
-    }
-
-    const completedCount = dashboardData.user_rank?.modules_completed ?? 0;
-    const totalAssigned = (dashboardData.plans ?? []).filter(
-      (p: any) => ASSIGNED_STATUSES.has(String(p?.status ?? '').trim().toUpperCase())
+    const totalAssigned = resolvedPlanCards.length;
+    const completedCount = resolvedPlanCards.filter(
+      (c) => c.status === "COMPLETED",
     ).length;
-    const progressPercentage = totalAssigned > 0
-      ? Number(((completedCount / totalAssigned) * 100).toFixed(1))
-      : 0;
-
-    const nudgeMessage = progressPercentage >= 100
-      ? "🎉 Congratulations! You've completed your Performance Sprint!"
-      : '💪 One step in! Complete your sprints and stand among the top 5%.';
-
-    return {
-      completedCount,
-      totalAssigned,
-      progressPercentage,
-      userRank: dashboardData.user_rank?.rank ?? null,
-      topPercentile: dashboardData.user_rank?.top_percentile ?? null,
-      totalUsers: dashboardData.total_users ?? 0,
-      nudgeMessage,
-    };
+    const progressPercentage =
+      totalAssigned > 0
+        ? Number(((completedCount / totalAssigned) * 100).toFixed(1))
+        : 0;
+    const nudgeMessage =
+      progressPercentage >= 100
+        ? "🎉 Congratulations! You've completed your Performance Sprint!"
+        : "💪 One step in! Complete your sprints and stand among the top 5%.";
+    return { completedCount, totalAssigned, progressPercentage, nudgeMessage };
   })();
 
-  return { dashboardData, stats, isLoading, error, refetch: fetchDashboard };
+  return {
+    dashboardData,
+    resolvedPlanCards,
+    stats,
+    isLoading,
+    error,
+    refetch: fetchDashboard,
+  };
+};
+
+// ==================== MODULE PROGRESS HOOK ====================
+
+interface UseModuleProgressReturn {
+  progress: ModuleProgressEntry[];
+  completedProcessedModuleIds: Set<string>;
+  count: number;
+  isLoading: boolean;
+  error: Error | null;
+  refetch: () => Promise<void>;
+}
+
+export const useModuleProgress = (
+  userId: string | null,
+): UseModuleProgressReturn => {
+  const [progress, setProgress] = useState<ModuleProgressEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchProgress = async () => {
+    if (!userId) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response: ModuleProgress = await getModuleProgress(userId);
+      setProgress(response.progress ?? []);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("Failed to fetch module progress"),
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (userId) fetchProgress();
+  }, [userId]);
+
+  const completedProcessedModuleIds = new Set(
+    progress
+      .filter((p) => !!p.processed_module_id)
+      .map((p) => p.processed_module_id),
+  );
+
+  return {
+    progress,
+    completedProcessedModuleIds,
+    count: progress.length,
+    isLoading,
+    error,
+    refetch: fetchProgress,
+  };
 };

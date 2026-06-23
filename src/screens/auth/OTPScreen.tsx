@@ -9,10 +9,12 @@ import {
   Platform,
   StyleSheet,
   Dimensions,
-  ActivityIndicator
+  ActivityIndicator,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "../../contex/AuthContext";
+import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
+import NoInternetModal from "../../components/networkModal/NetworkModal";
 
 const { width } = Dimensions.get("window");
 
@@ -23,7 +25,9 @@ export default function OTPScreen() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [timer, setTimer] = useState(30);
+  const [showNoInternet, setShowNoInternet] = useState(false);
 
+  const isOnline = useNetworkStatus();
   const inputRef = useRef<TextInput>(null);
 
   // Focus input on mount
@@ -44,6 +48,11 @@ export default function OTPScreen() {
   const handleVerify = async () => {
     if (otp.length !== 6) return;
 
+    if (isOnline === false) {
+      setShowNoInternet(true);
+      return;
+    }
+
     setIsLoading(true);
     setError("");
 
@@ -60,6 +69,10 @@ export default function OTPScreen() {
 
   const handleResend = async () => {
     if (timer > 0) return;
+    if (isOnline === false) {
+      setShowNoInternet(true);
+      return;
+    }
     setTimer(30);
     setError("");
     await sendOTP();
@@ -72,13 +85,13 @@ export default function OTPScreen() {
         const char = otp[i] || "";
         const isFocused = otp.length === i;
         return (
-          <View 
-            key={i} 
+          <View
+            key={i}
             style={[
-              styles.otpBox, 
+              styles.otpBox,
               char && styles.otpBoxActive,
               isFocused && styles.otpBoxFocused,
-              error && styles.otpBoxError
+              error && styles.otpBoxError,
             ]}
           >
             <Text style={styles.otpText}>{char}</Text>
@@ -96,7 +109,8 @@ export default function OTPScreen() {
         <View style={styles.content}>
           <Text style={styles.title}>OTP Verification</Text>
           <Text style={styles.subtitle}>
-            We've sent a code to <Text style={styles.phoneHighlight}>+91 {phoneNumber}</Text>
+            We've sent a code to{" "}
+            <Text style={styles.phoneHighlight}>+91 {phoneNumber}</Text>
           </Text>
 
           <TouchableOpacity
@@ -118,7 +132,11 @@ export default function OTPScreen() {
 
           {error && (
             <View style={styles.errorContainer}>
-              <MaterialCommunityIcons name="alert-circle" size={20} color="#EF4444" />
+              <MaterialCommunityIcons
+                name="alert-circle"
+                size={20}
+                color="#EF4444"
+              />
               <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
@@ -149,9 +167,13 @@ export default function OTPScreen() {
               </TouchableOpacity>
             )}
           </View>
-
         </View>
       </ScrollView>
+
+      <NoInternetModal
+        visible={showNoInternet}
+        onDismiss={() => setShowNoInternet(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -160,8 +182,19 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
   scrollContent: { paddingHorizontal: 24, paddingTop: 60 },
   content: { marginTop: 20, alignItems: "center" },
-  title: { fontSize: 28, fontWeight: "800", color: "#1E293B", marginBottom: 12 },
-  subtitle: { fontSize: 16, color: "#64748B", textAlign: "center", lineHeight: 24, marginBottom: 40 },
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#1E293B",
+    marginBottom: 12,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: 40,
+  },
   phoneHighlight: { color: "#1E293B", fontWeight: "700" },
   otpRow: {
     flexDirection: "row",
@@ -184,8 +217,17 @@ const styles = StyleSheet.create({
   otpBoxError: { borderColor: "#EF4444", backgroundColor: "#FFF1F2" },
   otpText: { fontSize: 24, fontWeight: "700", color: "#1E293B" },
   hiddenInput: { position: "absolute", opacity: 0, width: 1 },
-  errorContainer: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
-  errorText: { color: "#EF4444", fontSize: 14, marginLeft: 6, fontWeight: "500" },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  errorText: {
+    color: "#EF4444",
+    fontSize: 14,
+    marginLeft: 6,
+    fontWeight: "500",
+  },
   verifyButton: {
     width: "100%",
     backgroundColor: "#2563EB",
@@ -201,6 +243,11 @@ const styles = StyleSheet.create({
   resendText: { color: "#64748B", fontSize: 14 },
   timerText: { color: "#1E293B", fontWeight: "600" },
   resendLink: { color: "#2563EB", fontWeight: "700", fontSize: 14 },
-  devHint: { marginTop: 40, padding: 10, backgroundColor: '#F1F5F9', borderRadius: 8 },
-  devHintText: { color: '#64748B', fontSize: 12, fontWeight: '600' }
+  devHint: {
+    marginTop: 40,
+    padding: 10,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 8,
+  },
+  devHintText: { color: "#64748B", fontSize: 12, fontWeight: "600" },
 });

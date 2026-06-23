@@ -8,19 +8,6 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import ChatInterface, { Message } from './ChatInterface';
 
-/**
- * AIAssistantSection
- *
- * Collapsible card — header always visible.
- *
- * FIX 1 — History persistence: ChatInterface is always mounted (never
- * conditionally removed), only its panel is shown/hidden via display style.
- * This keeps React state alive across collapse/expand cycles.
- *
- * FIX 3 — Scrolling: The chat panel uses a fixed height so it doesn't
- * conflict with the parent ScrollView. ChatInterface owns its own
- * internal ScrollView scoped to that height.
- */
 interface AIAssistantSectionProps {
   processedModuleId: string;
   moduleTitle: string;
