@@ -1,20 +1,21 @@
-import React from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React from "react";
+import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth } from '../contex/AuthContext';
-import { APP_ROUTES } from './Routes';
+import { useAuth } from "../contex/AuthContext";
+import { APP_ROUTES, STACK_ROUTES } from "./Routes";
 
 // Screens
-import LoginScreen from '../screens/auth/loginScreen/LoginScreen';
-import OTPScreen from '../screens/auth/OTPScreen';
-import HomeScreen from '../screens/home/homeScreen/HomeScreen';
-import SprintScreen from '../screens/home/SprintScreen';
-import StudioScreen from '../screens/home/StudioScreen';
-import ProfileScreen from '../screens/home/ProfileScreen';
+import LoginScreen from "../screens/auth/loginScreen/LoginScreen";
+import OTPScreen from "../screens/auth/OTPScreen";
+import HomeScreen from "../screens/home/homeScreen/HomeScreen";
+import SprintScreen from "../screens/home/SprintScreen";
+import StudioScreen from "../screens/home/StudioScreen";
+import ProfileScreen from "../screens/home/ProfileScreen";
+import ModuleQuizScreen from "../screens/home/ModuleQuizScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -27,12 +28,12 @@ function BottomTabNavigator() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: '#6366f1',
-        tabBarInactiveTintColor: '#a1a5b4',
+        tabBarActiveTintColor: "#6366f1",
+        tabBarInactiveTintColor: "#a1a5b4",
         tabBarStyle: {
           borderTopWidth: 1,
-          borderTopColor: '#e5e7eb',
-          backgroundColor: '#ffffff',
+          borderTopColor: "#e5e7eb",
+          backgroundColor: "#ffffff",
           // Adds exactly the gesture-nav / button-nav height on Android,
           // and the home-indicator inset on iPhone. Keeps the 8px design
           // padding on top of whatever the system needs.
@@ -48,40 +49,42 @@ function BottomTabNavigator() {
 
           switch (route.name) {
             case APP_ROUTES.HOME:
-              iconName = 'home';
+              iconName = "home";
               break;
             case APP_ROUTES.SPRINT:
-              iconName = 'lightning-bolt';
+              iconName = "lightning-bolt";
               break;
             case APP_ROUTES.STUDIO:
-              iconName = 'brush';
+              iconName = "brush";
               break;
             case APP_ROUTES.PROFILE:
-              iconName = 'account';
+              iconName = "account";
               break;
             default:
-              iconName = 'home';
+              iconName = "home";
           }
 
-          return <MaterialCommunityIcons name={iconName} size={size} color={color} />;
+          return (
+            <MaterialCommunityIcons name={iconName} size={size} color={color} />
+          );
         },
       })}
     >
       <Tab.Screen
         name={APP_ROUTES.HOME}
         component={HomeScreen}
-        options={{ tabBarLabel: 'Home' }}
+        options={{ tabBarLabel: "Home" }}
       />
       <Tab.Screen
         name={APP_ROUTES.SPRINT}
         component={SprintScreen}
-        options={{ tabBarLabel: 'Sprint' }}
+        options={{ tabBarLabel: "Sprint" }}
       />
       <Tab.Screen
         name={APP_ROUTES.STUDIO}
         component={StudioScreen}
         options={{
-          tabBarLabel: 'Studio',
+          tabBarLabel: "Studio",
           // Preserve the module params when user switches away and back
           unmountOnBlur: false,
         }}
@@ -89,7 +92,7 @@ function BottomTabNavigator() {
       <Tab.Screen
         name={APP_ROUTES.PROFILE}
         component={ProfileScreen}
-        options={{ tabBarLabel: 'Profile' }}
+        options={{ tabBarLabel: "Profile" }}
       />
     </Tab.Navigator>
   );
@@ -130,6 +133,11 @@ export default function AppNavigator() {
       {isLoggedIn ? (
         <>
           <Stack.Screen name="AppTabs" component={BottomTabNavigator} />
+          <Stack.Screen
+            name={STACK_ROUTES.MODULE_QUIZ}
+            component={ModuleQuizScreen}
+            options={{ presentation: "card", animation: "slide_from_right" }}
+          />
         </>
       ) : (
         <Stack.Screen name="Auth" component={AuthNavigator} />
@@ -141,8 +149,8 @@ export default function AppNavigator() {
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
   },
 });
