@@ -14,6 +14,8 @@ import { useAuth } from "../../../contex/AuthContext";
 import { useGetUserByPhone, useGetDashboardSummary } from "../../../api/users";
 import createStyles from "./style";
 import { APP_ROUTES } from "../../../navigations/Routes";
+import { useScreenProtection } from "../../../hooks/security/useScreenProtection";
+import ScreenRecordingGuard from "../../../components/security/ScreenRecordingGuard";
 
 const styles = createStyles();
 
@@ -68,6 +70,9 @@ const ProgressCircle = ({ percentage }: { percentage: number }) => {
 // ── Main screen ────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const { logout, cachedUser, phoneNumber } = useAuth();
+
+  // ── Screen capture protection (blocks screenshots + recording) ──────────────
+  const { isRecording } = useScreenProtection({ tag: "HomeScreen" });
 
   const resolvedUserId = cachedUser?.userId ?? null;
   const resolvedPhone = cachedUser?.phone ?? phoneNumber ?? null;
@@ -215,7 +220,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
               color="#EEF2FF"
               iconColor="#4F46E5"
               val={String(resolvedPlanCards.length)}
-              label="Plans"
+              label="Sprints"
             />
             <StatCard
               icon="check-decagram"
@@ -360,6 +365,8 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           )}
         </View>
       </ScrollView>
+      {/* iOS screen-recording overlay — invisible on Android */}
+      <ScreenRecordingGuard isRecording={isRecording} />
     </SafeAreaView>
   );
 }

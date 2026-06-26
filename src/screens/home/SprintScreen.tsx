@@ -66,8 +66,11 @@ export default function SprintScreen({
 
   // Sprint progress: live count of how many of THIS sprint's modules have a
   // module-progress record
-  const { completedProcessedModuleIds, refetch: refetchModuleProgress } =
-    useModuleProgress(cachedUser?.userId ?? null);
+  const {
+    completedProcessedModuleIds,
+    quizPassedProcessedModuleIds,
+    refetch: refetchModuleProgress,
+  } = useModuleProgress(cachedUser?.userId ?? null);
 
   useFocusEffect(
     useCallback(() => {
@@ -269,6 +272,8 @@ export default function SprintScreen({
             modules.map((mod, index) => {
               const isDone = moduleDoneFlags[index];
               const hasProcessedId = !!processedModuleIds[index];
+              const pid = processedModuleIds[index];
+              const isQuizPassed = !!pid && quizPassedProcessedModuleIds.has(pid);
 
               return (
                 <View
@@ -308,22 +313,32 @@ export default function SprintScreen({
                       <Text style={styles.viewButtonText}>View Content</Text>
                     </TouchableOpacity>
 
-                    {/* Module Quiz */}
+                    {/* Module Quiz — disabled + relabelled once quiz is passed */}
                     <TouchableOpacity
                       style={[
                         styles.quizButton,
-                        !hasProcessedId && styles.quizButtonDisabled,
+                        (!hasProcessedId || isQuizPassed) && styles.quizButtonDisabled,
+                        isQuizPassed && styles.quizButtonPassed,
                       ]}
-                      disabled={!hasProcessedId}
+                      disabled={!hasProcessedId || isQuizPassed}
                       onPress={() => handleModuleQuiz(index, mod.title)}
                     >
-                      {/* <MaterialCommunityIcons
-                        name="help-circle-outline"
-                        size={15}
-                        color="white"
-                        style={{ marginRight: 5 }}
-                      /> */}
-                      <Text style={styles.quizButtonText}>Module Quiz</Text>
+                      {isQuizPassed && (
+                        <MaterialCommunityIcons
+                          name="check-circle-outline"
+                          size={14}
+                          color="#6EE7B7"
+                          style={{ marginRight: 5 }}
+                        />
+                      )}
+                      <Text
+                        style={[
+                          styles.quizButtonText,
+                          isQuizPassed && styles.quizButtonTextPassed,
+                        ]}
+                      >
+                        {isQuizPassed ? "Quiz Attempted" : "Module Quiz"}
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -515,5 +530,12 @@ const styles = StyleSheet.create({
     minHeight: 46,
   },
   quizButtonDisabled: { backgroundColor: "#C7D2FE" },
+  quizButtonPassed: {
+    backgroundColor: "#7a8b87",
+    borderWidth: 1,
+    borderColor: "#065F46",
+    opacity: 0.75,
+  },
   quizButtonText: { fontSize: 13, fontWeight: "700", color: "white" },
+  quizButtonTextPassed: { color: "#6EE7B7", fontWeight: "600" },
 });

@@ -267,11 +267,16 @@ export default function StudioScreen({ route }: any) {
             transcript={processedModule?.podcast_transcript ?? null}
           />
 
-          {/* Video — from processedModule.video_url */}
+          {/* Video — from processedModule.video_url + regional variants */}
           <VideoSection
             isExpanded={expanded === "video"}
             onToggle={() => toggle("video")}
             videoUrl={processedModule?.video_url ?? null}
+            videoUrlHinglish={processedModule?.video_url_hinglish ?? null}
+            videoUrlBengali={processedModule?.video_url_bengali ?? null}
+            videoUrlTamil={processedModule?.video_url_tamil ?? null}
+            videoUrlTelugu={processedModule?.video_url_telugu ?? null}
+            videoUrlMarathi={processedModule?.video_url_marathi ?? null}
           />
 
           {/* AI Assistant */}

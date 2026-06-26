@@ -834,6 +834,7 @@ export const useGetDashboardSummary = (
 interface UseModuleProgressReturn {
   progress: ModuleProgressEntry[];
   completedProcessedModuleIds: Set<string>;
+  quizPassedProcessedModuleIds: Set<string>;
   count: number;
   isLoading: boolean;
   error: Error | null;
@@ -875,9 +876,24 @@ export const useModuleProgress = (
       .map((p) => p.processed_module_id),
   );
 
+  // A quiz is "attempted" when quiz_score is not null (a score was recorded after submission).
+  // quiz_score is a raw correct-answer count (e.g. 8 out of 10), NOT a percentage,
+  // so checking >= 70 would never match. pass_status is also never set by the POST body.
+  // We disable the button + show "Quiz Attempted" after any completed attempt.
+  const quizPassedProcessedModuleIds = new Set(
+    progress
+      .filter(
+        (p) =>
+          !!p.processed_module_id &&
+          p.quiz_score !== null,
+      )
+      .map((p) => p.processed_module_id),
+  );
+
   return {
     progress,
     completedProcessedModuleIds,
+    quizPassedProcessedModuleIds,
     count: progress.length,
     isLoading,
     error,
