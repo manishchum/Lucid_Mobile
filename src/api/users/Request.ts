@@ -1,4 +1,4 @@
-import { getAuth, onAuthStateChanged } from "@react-native-firebase/auth";
+import { getAuth, onAuthStateChanged, getIdToken } from "@react-native-firebase/auth";
 import {
   UserResponse,
   UserRolesResponse,
@@ -23,8 +23,7 @@ const getFirebaseToken = (): Promise<string | null> => {
     const currentUser = authInstance.currentUser;
 
     if (currentUser) {
-      currentUser
-        .getIdToken(true)
+      getIdToken(currentUser)
         .then(resolve)
         .catch(() => resolve(null));
       return;
@@ -38,8 +37,7 @@ const getFirebaseToken = (): Promise<string | null> => {
       clearTimeout(timeout);
       unsubscribe();
       if (user) {
-        user
-          .getIdToken(true)
+        getIdToken(user)
           .then(resolve)
           .catch(() => resolve(null));
       } else {
@@ -102,6 +100,9 @@ const getHeaders = async (userId?: string): Promise<Record<string, string>> => {
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
   };
   if (userId) headers["X-User-ID"] = userId;
   const token = await getFirebaseToken();
@@ -608,7 +609,7 @@ export const getDashboardSummary = async (
   try {
     const headers = await getHeaders(userId);
     headers["X-Company-ID"] = companyId;
-    const url = `${API_BASE_URL}/employee/dashboard_summary/${encodeURIComponent(userId)}`;
+    const url = `${API_BASE_URL}/employee/dashboard_summary/${encodeURIComponent(userId)}?_t=${Date.now()}`;
     console.log("[Request] getDashboardSummary →", url);
     const response = await fetch(url, { method: "GET", headers });
     if (!response.ok) {
