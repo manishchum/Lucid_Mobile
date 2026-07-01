@@ -6,10 +6,12 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Svg, { Circle } from "react-native-svg";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../../../contex/AuthContext";
 import { useGetUserByPhone, useGetDashboardSummary } from "../../../api/users";
 import createStyles from "./style";
@@ -102,7 +104,27 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     stats,
     isLoading: dashboardLoading,
     error: dashboardError,
+    refetch,
   } = useGetDashboardSummary(userId ?? null, companyId ?? null);
+
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch(true);
+    } catch (err) {
+      console.error("[HomeScreen] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch(false); // Silent background update on screen focus
+    }, [refetch])
+  );
 
   const isLoading = (userLoading && !cachedUser) || dashboardLoading;
 
@@ -160,6 +182,9 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
         {/* ── HEADER ──────────────────────────────────────────────────────── */}
         <View style={styles.header}>
