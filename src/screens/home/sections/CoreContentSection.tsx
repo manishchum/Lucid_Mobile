@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -159,7 +159,9 @@ function parseHtmlContent(html: string): ParsedSection[] {
       const displayLabel = deriveTabLabel(heading, sectionClass, idx);
 
       // Top-level <ol> (learning objectives list, activity steps, summary bullets)
-      const topOlMatch = sectionHtml.match(/<ol[^>]*>([\s\S]*?)<\/ol>/i);
+      // Extract from the content BEFORE the first <h3> to avoid matching lists inside h3 sub-sections
+      const preH3Content = sectionHtml.split(/<h3/i)[0] || "";
+      const topOlMatch = preH3Content.match(/<ol[^>]*>([\s\S]*?)<\/ol>/i);
       const rawBullets: string[] = [];
       if (topOlMatch) {
         const liMatches =
@@ -169,7 +171,7 @@ function parseHtmlContent(html: string): ParsedSection[] {
 
       // Top-level <ul> (module-summary uses <ul> not <ol>)
       if (rawBullets.length === 0) {
-        const topUlMatch = sectionHtml.match(/<ul[^>]*>([\s\S]*?)<\/ul>/i);
+        const topUlMatch = preH3Content.match(/<ul[^>]*>([\s\S]*?)<\/ul>/i);
         if (topUlMatch) {
           const liMatches =
             topUlMatch[1].match(/<li[^>]*>([\s\S]*?)<\/li>/gi) ?? [];
@@ -257,6 +259,38 @@ function parseHtmlContent(html: string): ParsedSection[] {
     .filter((section) => section.sectionClass !== "activity");
 }
 
+const HINDI_SIMPLIFICATIONS: Array<[RegExp, string]> = [
+  [/कार्यक्षमता/g, "फंक्शनलिटी (Functionality)"],
+  [/गतिशीलता/g, "कनेक्टिविटी (Connectivity)"],
+  [/संस्थागत/g, "इंस्टीट्यूशनल (Institutional)"],
+  [/मूल्यांकन/g, "टेस्ट (Assessment)"],
+  [/प्रतिक्रिया/g, "फीडबैक (Feedback)"],
+  [/दस्तावेज़/g, "डॉक्यूमेंट (Document)"],
+  [/प्रक्रिया/g, "प्रोसेस (Process)"],
+  [/प्रसंस्करण/g, "प्रोसेसिंग (Processing)"],
+  [/विश्लेषण/g, "एनालिसिस (Analysis)"],
+  [/प्रौद्योगिकी/g, "टेक्नोलॉजी (Technology)"],
+  [/अकादमिक/g, "एकेडमिक (Academic)"],
+  [/प्रमाणन/g, "सर्टिफिकेशन (Certification)"],
+  [/दक्षता/g, "स्किल्स (Skills)"],
+  [/डेटा संग्रहण/g, "डेटा कलेक्शन (Data Collection)"],
+  [/पूर्व-प्रसंस्करण/g, "डेटा प्री-प्रोसेसिंग (Pre-processing)"],
+  [/मॉडल प्रशिक्षण/g, "मॉडल ट्रेनिंग (Model Training)"],
+  [/परीक्षण/g, "टेस्टिंग (Testing)"],
+  [/नेटवर्किंग क्षमताओं/g, "नेटवर्किंग फीचर्स"],
+  [/नेटवर्किंग क्षमता/g, "नेटवर्किंग फीचर"],
+  [/उद्देश्य/g, "लक्ष्य (Objective)"],
+  [/गतिविधि/g, "गतिविधि (Activity)"],
+];
+
+function simplifyHindiText(text: string): string {
+  let result = text;
+  for (const [regex, replacement] of HINDI_SIMPLIFICATIONS) {
+    result = result.replace(regex, replacement);
+  }
+  return result;
+}
+
 async function translateText(text: string, targetLang: string = "hi"): Promise<string> {
   if (!text || !text.trim()) return "";
   try {
@@ -264,7 +298,8 @@ async function translateText(text: string, targetLang: string = "hi"): Promise<s
     const response = await fetch(url);
     if (!response.ok) return text;
     const data = await response.json();
-    return (data[0] || []).map((piece: any) => piece[0]).join("");
+    const translated = (data[0] || []).map((piece: any) => piece[0]).join("");
+    return targetLang === "hi" ? simplifyHindiText(translated) : translated;
   } catch (err) {
     console.error("[Translation] Error:", err);
     return text;
@@ -359,6 +394,21 @@ async function translateAllSections(
   return Promise.all(sections.map((sec) => translateParsedSection(sec, targetLang)));
 }
 
+function renderFormattedText(text: string, textStyle: any) {
+  const colonIndex = text.indexOf(":");
+  if (colonIndex > 0 && colonIndex < 40) {
+    const boldPart = text.substring(0, colonIndex + 1);
+    const normalPart = text.substring(colonIndex + 1);
+    return (
+      <Text style={textStyle}>
+        <Text style={{ fontWeight: "700", color: "#1e293b" }}>{boldPart}</Text>
+        {normalPart}
+      </Text>
+    );
+  }
+  return <Text style={textStyle}>{text}</Text>;
+}
+
 // ─── Sub-section renderer ─────────────────────────────────────────────────────
 
 function SubSection({ sub }: { sub: ParsedSection["subHeadings"][0] }) {
@@ -377,7 +427,7 @@ function SubSection({ sub }: { sub: ParsedSection["subHeadings"][0] }) {
           {sub.listItems.map((item, i) => (
             <View key={`ul-${i}`} style={styles.listRow}>
               <Text style={styles.bullet}>•</Text>
-              <Text style={styles.listText}>{item}</Text>
+              {renderFormattedText(item, styles.listText)}
             </View>
           ))}
         </View>
@@ -390,7 +440,7 @@ function SubSection({ sub }: { sub: ParsedSection["subHeadings"][0] }) {
               <View style={styles.stepBadge}>
                 <Text style={styles.stepBadgeText}>{i + 1}</Text>
               </View>
-              <Text style={styles.listText}>{item}</Text>
+              {renderFormattedText(item, styles.listText)}
             </View>
           ))}
         </View>
@@ -477,6 +527,7 @@ export default function CoreContentSection({
   const [lang, setLang] = useState<"en" | "hi">("en");
   const [isTranslating, setIsTranslating] = useState(false);
   const [translatedSections, setTranslatedSections] = useState<ParsedSection[] | null>(null);
+  const translationPromiseRef = useRef<Promise<ParsedSection[]> | null>(null);
 
   const rawSections = useMemo(
     () => parseHtmlContent(htmlContent ?? ""),
@@ -487,7 +538,24 @@ export default function CoreContentSection({
     setActiveIdx(0);
     setLang("en");
     setTranslatedSections(null);
-  }, [htmlContent]);
+    translationPromiseRef.current = null;
+
+    if (htmlContent && rawSections.length > 0) {
+      console.log("[Translation] Starting silent background translation to Hindi...");
+      const promise = translateAllSections(rawSections, "hi");
+      translationPromiseRef.current = promise;
+      promise
+        .then((translated) => {
+          if (translationPromiseRef.current === promise) {
+            setTranslatedSections(translated);
+            console.log("[Translation] Background translation completed and cached.");
+          }
+        })
+        .catch((err) => {
+          console.warn("[Translation] Background translation failed:", err);
+        });
+    }
+  }, [htmlContent, rawSections]);
 
   const sections = lang === "hi" && translatedSections ? translatedSections : rawSections;
   const activeSection = sections[activeIdx] ?? null;
@@ -505,7 +573,16 @@ export default function CoreContentSection({
 
     setIsTranslating(true);
     try {
-      const translated = await translateAllSections(rawSections, "hi");
+      let translated: ParsedSection[];
+      if (translationPromiseRef.current) {
+        console.log("[Translation] Awaiting active background translation...");
+        translated = await translationPromiseRef.current;
+      } else {
+        console.log("[Translation] Starting on-demand translation...");
+        const promise = translateAllSections(rawSections, "hi");
+        translationPromiseRef.current = promise;
+        translated = await promise;
+      }
       setTranslatedSections(translated);
       setLang("hi");
     } catch (err) {
@@ -650,7 +727,7 @@ export default function CoreContentSection({
                                 {i + 1}
                               </Text>
                             </View>
-                            <Text style={styles.objectiveText}>{b}</Text>
+                            {renderFormattedText(b, styles.objectiveText)}
                           </View>
                         ))}
                       </View>
