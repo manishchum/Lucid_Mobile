@@ -33,6 +33,9 @@ import {
   ModuleProgressEntry,
 } from "./Dto";
 
+// Cache to store resolved processed module metadata (such as titles) for fallback rendering
+const processedModuleMetadata = new Map<string, { title: string; recommended_time: number }>();
+
 export const USER_QUERY_KEY = ["user"];
 
 // ==================== USER BY EMAIL HOOK ====================
@@ -630,6 +633,14 @@ async function resolveProcessedModuleIdsForPlan(
       try {
         const response = await getProcessedModules(originalModuleId, userId);
         const allProcessed: any[] = response?.data ?? [];
+        allProcessed.forEach((pm: any) => {
+          if (pm?.processed_module_id) {
+            processedModuleMetadata.set(pm.processed_module_id, {
+              title: pm.title ?? "Module",
+              recommended_time: pm.recommended_time ?? 0,
+            });
+          }
+        });
         const defaultModules = allProcessed.filter(
           (pm: any) =>
             String(pm?.learning_style ?? "")
@@ -686,6 +697,14 @@ async function resolveProcessedModuleIdsForPlan(
       );
       const response = await getProcessedModules(originalModuleId, userId);
       const allProcessed: any[] = response?.data ?? [];
+      allProcessed.forEach((pm: any) => {
+        if (pm?.processed_module_id) {
+          processedModuleMetadata.set(pm.processed_module_id, {
+            title: pm.title ?? "Module",
+            recommended_time: pm.recommended_time ?? 0,
+          });
+        }
+      });
 
       // Always filter to learning_style="default" — this is what the home screen uses
       const defaultModules = allProcessed.filter(
@@ -851,12 +870,34 @@ async function processDashboardResponse(
 
       // Fallback: If modules list is empty but we have processed module IDs
       if (modules.length === 0 && processedModuleIds.length > 0) {
+        console.log(`[DEBUG_FALLBACK] plan_id: ${plan.learning_plan_id}, original_module_id: ${plan.module_id}, processedIds:`, processedModuleIds);
+        const missingIds = processedModuleIds.filter((id) => !processedModuleMetadata.has(id));
+        console.log(`[DEBUG_FALLBACK] missingIds count: ${missingIds.length}, cache size: ${processedModuleMetadata.size}`);
+        if (missingIds.length > 0 && plan.module_id) {
+          try {
+            console.log(`[Hook] Fetching processed modules metadata fallback for: ${plan.module_id}`);
+            const response = await getProcessedModules(plan.module_id, userId);
+            console.log(`[DEBUG_FALLBACK] API response keys:`, Object.keys(response ?? {}), `data is array:`, Array.isArray(response?.data), `length:`, response?.data?.length);
+            const allProcessed: any[] = response?.data ?? [];
+            allProcessed.forEach((pm: any) => {
+              if (pm?.processed_module_id) {
+                processedModuleMetadata.set(pm.processed_module_id, {
+                  title: pm.title ?? "Module",
+                  recommended_time: pm.recommended_time ?? 0,
+                });
+              }
+            });
+          } catch (err) {
+            console.error("[Hook] Failed to fetch processed modules metadata fallback:", err);
+          }
+        }
+
         modules = processedModuleIds.map((id, i) => {
-          const pmRecord = moduleMap.get(id);
+          const cachedMeta = processedModuleMetadata.get(id);
           return {
             order: i + 1,
-            title: pmRecord?.title ?? `Module ${i + 1}`,
-            recommended_time: pmRecord?.recommended_time ?? 0,
+            title: cachedMeta?.title ?? `Module ${i + 1}`,
+            recommended_time: cachedMeta?.recommended_time ?? 0,
           };
         });
       }
