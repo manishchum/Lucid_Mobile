@@ -6,16 +6,19 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Svg, { Circle } from "react-native-svg";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../../../contex/AuthContext";
 import { useGetUserByPhone, useGetDashboardSummary } from "../../../api/users";
 import createStyles from "./style";
-import { APP_ROUTES } from "../../../navigations/Routes";
 import { useScreenProtection } from "../../../hooks/security/useScreenProtection";
 import ScreenRecordingGuard from "../../../components/security/ScreenRecordingGuard";
+import { APP_ROUTES, STACK_ROUTES } from "../../../navigations/Routes";
+import { useNotifications } from "../../../contex/NotificationContext";
 
 const styles = createStyles();
 
@@ -70,6 +73,7 @@ const ProgressCircle = ({ percentage }: { percentage: number }) => {
 // ── Main screen ────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const { logout, cachedUser, phoneNumber } = useAuth();
+  const { unreadCount } = useNotifications();
 
   // ── Screen capture protection (blocks screenshots + recording) ──────────────
   const { isRecording } = useScreenProtection({ tag: "HomeScreen" });
@@ -107,7 +111,27 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     stats,
     isLoading: dashboardLoading,
     error: dashboardError,
+    refetch,
   } = useGetDashboardSummary(userId ?? null, companyId ?? null);
+
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch(true);
+    } catch (err) {
+      console.error("[HomeScreen] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch(false); // Silent background update on screen focus
+    }, [refetch])
+  );
 
   const isLoading = (userLoading && !cachedUser) || dashboardLoading;
 
@@ -165,6 +189,9 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
         {/* ── HEADER ──────────────────────────────────────────────────────── */}
         <View style={styles.header}>
@@ -176,8 +203,18 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
               {position || user?.email || ""}
             </Text>
           </View>
-          <TouchableOpacity style={styles.logoutBtn} onPress={() => logout()}>
-            <MaterialCommunityIcons name="power" size={22} color="#EF4444" />
+          <TouchableOpacity
+            style={styles.notificationBtn}
+            onPress={() => navigation.navigate(STACK_ROUTES.NOTIFICATIONS)}
+          >
+            <MaterialCommunityIcons name="bell" size={22} color="#475569" />
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 

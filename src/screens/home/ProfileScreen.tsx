@@ -26,8 +26,36 @@ function toE164(rawPhone: string): string {
 
 export default function ProfileScreen() {
   const { logout, phoneNumber, cachedUser } = useAuth();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(
+    cachedUser
+      ? {
+          user_id: cachedUser.userId,
+          email: cachedUser.email,
+          name: cachedUser.name,
+          phone: cachedUser.phone,
+          company_id: cachedUser.companyId,
+          department_id: cachedUser.departmentId ?? "",
+          manager_id: cachedUser.managerId,
+          position: "",
+          avatar_url: null,
+          employment_status: "Active",
+          hire_date: "",
+          last_login: null,
+          login_count: 0,
+          is_active: cachedUser.isActive,
+          created_at: "",
+          updated_at: "",
+          title_id: null,
+          function_id: null,
+          sub_function_id: null,
+          ready_status: true,
+          email_unsubscribed: false,
+          unsubscribed_at: null,
+          firebase_uid: cachedUser.firebaseUid,
+        }
+      : null,
+  );
+  const [loading, setLoading] = useState(!cachedUser);
 
   useEffect(() => {
     const fetchUserData = async () => {

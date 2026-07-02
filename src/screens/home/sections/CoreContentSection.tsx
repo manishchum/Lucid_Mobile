@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -157,7 +159,9 @@ function parseHtmlContent(html: string): ParsedSection[] {
       const displayLabel = deriveTabLabel(heading, sectionClass, idx);
 
       // Top-level <ol> (learning objectives list, activity steps, summary bullets)
-      const topOlMatch = sectionHtml.match(/<ol[^>]*>([\s\S]*?)<\/ol>/i);
+      // Extract from the content BEFORE the first <h3> to avoid matching lists inside h3 sub-sections
+      const preH3Content = sectionHtml.split(/<h3/i)[0] || "";
+      const topOlMatch = preH3Content.match(/<ol[^>]*>([\s\S]*?)<\/ol>/i);
       const rawBullets: string[] = [];
       if (topOlMatch) {
         const liMatches =
@@ -167,7 +171,7 @@ function parseHtmlContent(html: string): ParsedSection[] {
 
       // Top-level <ul> (module-summary uses <ul> not <ol>)
       if (rawBullets.length === 0) {
-        const topUlMatch = sectionHtml.match(/<ul[^>]*>([\s\S]*?)<\/ul>/i);
+        const topUlMatch = preH3Content.match(/<ul[^>]*>([\s\S]*?)<\/ul>/i);
         if (topUlMatch) {
           const liMatches =
             topUlMatch[1].match(/<li[^>]*>([\s\S]*?)<\/li>/gi) ?? [];
@@ -255,6 +259,156 @@ function parseHtmlContent(html: string): ParsedSection[] {
     .filter((section) => section.sectionClass !== "activity");
 }
 
+const HINDI_SIMPLIFICATIONS: Array<[RegExp, string]> = [
+  [/कार्यक्षमता/g, "फंक्शनलिटी (Functionality)"],
+  [/गतिशीलता/g, "कनेक्टिविटी (Connectivity)"],
+  [/संस्थागत/g, "इंस्टीट्यूशनल (Institutional)"],
+  [/मूल्यांकन/g, "टेस्ट (Assessment)"],
+  [/प्रतिक्रिया/g, "फीडबैक (Feedback)"],
+  [/दस्तावेज़/g, "डॉक्यूमेंट (Document)"],
+  [/प्रक्रिया/g, "प्रोसेस (Process)"],
+  [/प्रसंस्करण/g, "प्रोसेसिंग (Processing)"],
+  [/विश्लेषण/g, "एनालिसिस (Analysis)"],
+  [/प्रौद्योगिकी/g, "टेक्नोलॉजी (Technology)"],
+  [/अकादमिक/g, "एकेडमिक (Academic)"],
+  [/प्रमाणन/g, "सर्टिफिकेशन (Certification)"],
+  [/दक्षता/g, "स्किल्स (Skills)"],
+  [/डेटा संग्रहण/g, "डेटा कलेक्शन (Data Collection)"],
+  [/पूर्व-प्रसंस्करण/g, "डेटा प्री-प्रोसेसिंग (Pre-processing)"],
+  [/मॉडल प्रशिक्षण/g, "मॉडल ट्रेनिंग (Model Training)"],
+  [/परीक्षण/g, "टेस्टिंग (Testing)"],
+  [/नेटवर्किंग क्षमताओं/g, "नेटवर्किंग फीचर्स"],
+  [/नेटवर्किंग क्षमता/g, "नेटवर्किंग फीचर"],
+  [/उद्देश्य/g, "लक्ष्य (Objective)"],
+  [/गतिविधि/g, "गतिविधि (Activity)"],
+];
+
+function simplifyHindiText(text: string): string {
+  let result = text;
+  for (const [regex, replacement] of HINDI_SIMPLIFICATIONS) {
+    result = result.replace(regex, replacement);
+  }
+  return result;
+}
+
+async function translateText(text: string, targetLang: string = "hi"): Promise<string> {
+  if (!text || !text.trim()) return "";
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text.trim())}`;
+    const response = await fetch(url);
+    if (!response.ok) return text;
+    const data = await response.json();
+    const translated = (data[0] || []).map((piece: any) => piece[0]).join("");
+    return targetLang === "hi" ? simplifyHindiText(translated) : translated;
+  } catch (err) {
+    console.error("[Translation] Error:", err);
+    return text;
+  }
+}
+
+async function translateParsedSection(
+  section: ParsedSection,
+  targetLang: string = "hi",
+): Promise<ParsedSection> {
+  const translatedSection = { ...section };
+
+  if (section.heading) {
+    translatedSection.heading = await translateText(section.heading, targetLang);
+  }
+
+  if (section.displayLabel) {
+    if (section.displayLabel === "Overview") {
+      translatedSection.displayLabel = "अवलोकन";
+    } else if (section.displayLabel === "Summary") {
+      translatedSection.displayLabel = "सारांश";
+    } else if (section.displayLabel === "Activity") {
+      translatedSection.displayLabel = "गतिविधि";
+    } else if (section.displayLabel.startsWith("Section")) {
+      const num = section.displayLabel.replace("Section ", "");
+      translatedSection.displayLabel = `भाग ${num}`;
+    } else {
+      translatedSection.displayLabel = await translateText(section.displayLabel, targetLang);
+    }
+  }
+
+  if (section.rawBullets && section.rawBullets.length > 0) {
+    translatedSection.rawBullets = await Promise.all(
+      section.rawBullets.map((bullet) => translateText(bullet, targetLang)),
+    );
+  }
+
+  if (section.subHeadings && section.subHeadings.length > 0) {
+    translatedSection.subHeadings = await Promise.all(
+      section.subHeadings.map(async (sub) => {
+        const translatedSub = { ...sub };
+        if (sub.title) {
+          translatedSub.title = await translateText(sub.title, targetLang);
+        }
+        if (sub.paragraphs && sub.paragraphs.length > 0) {
+          translatedSub.paragraphs = await Promise.all(
+            sub.paragraphs.map((p) => translateText(p, targetLang)),
+          );
+        }
+        if (sub.listItems && sub.listItems.length > 0) {
+          translatedSub.listItems = await Promise.all(
+            sub.listItems.map((item) => translateText(item, targetLang)),
+          );
+        }
+        if (sub.orderedItems && sub.orderedItems.length > 0) {
+          translatedSub.orderedItems = await Promise.all(
+            sub.orderedItems.map((item) => translateText(item, targetLang)),
+          );
+        }
+        if (sub.blockquote) {
+          translatedSub.blockquote = await translateText(sub.blockquote, targetLang);
+        }
+        if (sub.figcaption) {
+          translatedSub.figcaption = await translateText(sub.figcaption, targetLang);
+        }
+        if (sub.tableData) {
+          const translatedHeaders = await Promise.all(
+            sub.tableData.headers.map((h) => translateText(h, targetLang)),
+          );
+          const translatedRows = await Promise.all(
+            sub.tableData.rows.map(async (row) => {
+              return Promise.all(row.map((cell) => translateText(cell, targetLang)));
+            }),
+          );
+          translatedSub.tableData = {
+            headers: translatedHeaders,
+            rows: translatedRows,
+          };
+        }
+        return translatedSub;
+      }),
+    );
+  }
+
+  return translatedSection;
+}
+
+async function translateAllSections(
+  sections: ParsedSection[],
+  targetLang: string = "hi",
+): Promise<ParsedSection[]> {
+  return Promise.all(sections.map((sec) => translateParsedSection(sec, targetLang)));
+}
+
+function renderFormattedText(text: string, textStyle: any) {
+  const colonIndex = text.indexOf(":");
+  if (colonIndex > 0 && colonIndex < 40) {
+    const boldPart = text.substring(0, colonIndex + 1);
+    const normalPart = text.substring(colonIndex + 1);
+    return (
+      <Text style={textStyle}>
+        <Text style={{ fontWeight: "700", color: "#1e293b" }}>{boldPart}</Text>
+        {normalPart}
+      </Text>
+    );
+  }
+  return <Text style={textStyle}>{text}</Text>;
+}
+
 // ─── Sub-section renderer ─────────────────────────────────────────────────────
 
 function SubSection({ sub }: { sub: ParsedSection["subHeadings"][0] }) {
@@ -273,7 +427,7 @@ function SubSection({ sub }: { sub: ParsedSection["subHeadings"][0] }) {
           {sub.listItems.map((item, i) => (
             <View key={`ul-${i}`} style={styles.listRow}>
               <Text style={styles.bullet}>•</Text>
-              <Text style={styles.listText}>{item}</Text>
+              {renderFormattedText(item, styles.listText)}
             </View>
           ))}
         </View>
@@ -286,7 +440,7 @@ function SubSection({ sub }: { sub: ParsedSection["subHeadings"][0] }) {
               <View style={styles.stepBadge}>
                 <Text style={styles.stepBadgeText}>{i + 1}</Text>
               </View>
-              <Text style={styles.listText}>{item}</Text>
+              {renderFormattedText(item, styles.listText)}
             </View>
           ))}
         </View>
@@ -370,16 +524,74 @@ export default function CoreContentSection({
   htmlContent,
 }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
+  const [lang, setLang] = useState<"en" | "hi">("en");
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translatedSections, setTranslatedSections] = useState<ParsedSection[] | null>(null);
+  const translationPromiseRef = useRef<Promise<ParsedSection[]> | null>(null);
 
-  const sections = useMemo(
+  const rawSections = useMemo(
     () => parseHtmlContent(htmlContent ?? ""),
     [htmlContent],
   );
-  const activeSection = sections[activeIdx] ?? null;
 
   React.useEffect(() => {
     setActiveIdx(0);
-  }, [htmlContent]);
+    setLang("en");
+    setTranslatedSections(null);
+    translationPromiseRef.current = null;
+
+    if (htmlContent && rawSections.length > 0) {
+      console.log("[Translation] Starting silent background translation to Hindi...");
+      const promise = translateAllSections(rawSections, "hi");
+      translationPromiseRef.current = promise;
+      promise
+        .then((translated) => {
+          if (translationPromiseRef.current === promise) {
+            setTranslatedSections(translated);
+            console.log("[Translation] Background translation completed and cached.");
+          }
+        })
+        .catch((err) => {
+          console.warn("[Translation] Background translation failed:", err);
+        });
+    }
+  }, [htmlContent, rawSections]);
+
+  const sections = lang === "hi" && translatedSections ? translatedSections : rawSections;
+  const activeSection = sections[activeIdx] ?? null;
+
+  const handleLanguageChange = async (newLang: "en" | "hi") => {
+    if (newLang === "en") {
+      setLang("en");
+      return;
+    }
+
+    if (translatedSections) {
+      setLang("hi");
+      return;
+    }
+
+    setIsTranslating(true);
+    try {
+      let translated: ParsedSection[];
+      if (translationPromiseRef.current) {
+        console.log("[Translation] Awaiting active background translation...");
+        translated = await translationPromiseRef.current;
+      } else {
+        console.log("[Translation] Starting on-demand translation...");
+        const promise = translateAllSections(rawSections, "hi");
+        translationPromiseRef.current = promise;
+        translated = await promise;
+      }
+      setTranslatedSections(translated);
+      setLang("hi");
+    } catch (err) {
+      console.error("[Translation] Failed to translate:", err);
+      Alert.alert("Translation Error", "Failed to translate content. Please check your internet connection.");
+    } finally {
+      setIsTranslating(false);
+    }
+  };
 
   return (
     <View style={[styles.card, isExpanded && styles.cardExpanded]}>
@@ -408,7 +620,40 @@ export default function CoreContentSection({
 
       {isExpanded && (
         <View style={styles.content}>
-          {!htmlContent || sections.length === 0 ? (
+          {/* Language Selector Row */}
+          {htmlContent && rawSections.length > 0 && (
+            <View style={styles.langSelectorRow}>
+              <Text style={styles.langLabel}>Language / भाषा:</Text>
+              <View style={styles.langPills}>
+                <TouchableOpacity
+                  onPress={() => handleLanguageChange("en")}
+                  disabled={isTranslating}
+                  style={[styles.langPill, lang === "en" && styles.activeLangPill]}
+                >
+                  <Text style={[styles.langPillText, lang === "en" && styles.activeLangPillText]}>
+                    English
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleLanguageChange("hi")}
+                  disabled={isTranslating}
+                  style={[styles.langPill, lang === "hi" && styles.activeLangPill]}
+                >
+                  <Text style={[styles.langPillText, lang === "hi" && styles.activeLangPillText]}>
+                    हिन्दी
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {isTranslating ? (
+            <View style={styles.translatingOverlay}>
+              <ActivityIndicator size="large" color="#6366f1" />
+              <Text style={styles.translatingText}>अनुवाद किया जा रहा है...</Text>
+              <Text style={styles.translatingSubtext}>Translating module content to Hindi...</Text>
+            </View>
+          ) : !htmlContent || sections.length === 0 ? (
             <View style={styles.empty}>
               <MaterialCommunityIcons
                 name="text-box-outline"
@@ -482,7 +727,7 @@ export default function CoreContentSection({
                                 {i + 1}
                               </Text>
                             </View>
-                            <Text style={styles.objectiveText}>{b}</Text>
+                            {renderFormattedText(b, styles.objectiveText)}
                           </View>
                         ))}
                       </View>
@@ -535,6 +780,63 @@ const styles = StyleSheet.create({
   title: { fontSize: 17, fontWeight: "700", color: "#1e293b" },
   subtitle: { fontSize: 13, color: "#64748b", marginTop: 2 },
   content: { paddingBottom: 20 },
+
+  // ── Language Selector ─────────────────────────────────────────────────────
+  langSelectorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+    backgroundColor: "#fafafc",
+  },
+  langLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#64748b",
+  },
+  langPills: {
+    flexDirection: "row",
+    backgroundColor: "#e2e8f0",
+    borderRadius: 20,
+    padding: 2,
+  },
+  langPill: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+  },
+  activeLangPill: {
+    backgroundColor: "#6366f1",
+  },
+  langPillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748b",
+  },
+  activeLangPillText: {
+    color: "white",
+  },
+
+  // ── Translating Loader ────────────────────────────────────────────────────
+  translatingOverlay: {
+    paddingVertical: 50,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  translatingText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1e293b",
+    marginTop: 12,
+  },
+  translatingSubtext: {
+    fontSize: 13,
+    color: "#64748b",
+    marginTop: 4,
+  },
 
   // ── Tabs ──────────────────────────────────────────────────────────────────
   tabScroll: { borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },

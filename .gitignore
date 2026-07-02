@@ -58,9 +58,18 @@ ios/*.xcodeproj/project.xcworkspace/xcuserdata/
 .env
 .env.development
 .env.production
+.env.example
 google-services.json
 GoogleService-Info.plist
 
 # IDEs and Editors
 .vscode/
 .idea/
+
+# Yarn
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
