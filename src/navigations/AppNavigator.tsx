@@ -16,6 +16,7 @@ import SprintScreen from "../screens/home/SprintScreen";
 import StudioScreen from "../screens/home/StudioScreen";
 import ProfileScreen from "../screens/home/ProfileScreen";
 import ModuleQuizScreen from "../screens/home/ModuleQuizScreen";
+import NotificationsScreen from "../screens/home/NotificationsScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -136,6 +137,11 @@ export default function AppNavigator() {
           <Stack.Screen
             name={STACK_ROUTES.MODULE_QUIZ}
             component={ModuleQuizScreen}
+            options={{ presentation: "card", animation: "slide_from_right" }}
+          />
+          <Stack.Screen
+            name={STACK_ROUTES.NOTIFICATIONS}
+            component={NotificationsScreen}
             options={{ presentation: "card", animation: "slide_from_right" }}
           />
         </>

@@ -615,12 +615,40 @@ async function resolveProcessedModuleIdsForPlan(
   plan: any,
   userId: string,
 ): Promise<string[]> {
+  // Strategy 0: If plan already has root-level processed_module_ids, use them directly
+  if (Array.isArray(plan?.processed_module_ids) && plan.processed_module_ids.length > 0) {
+    return plan.processed_module_ids;
+  }
+
   const planModules: Array<{ title: string; processed_module_id?: string }> =
     plan?.plan_json?.modules ?? [];
 
   if (planModules.length === 0) {
+    // Strategy 0.5: Try to fetch from original-module endpoint if we have module_id
+    const originalModuleId: string = plan?.module_id ?? "";
+    if (originalModuleId) {
+      try {
+        const response = await getProcessedModules(originalModuleId, userId);
+        const allProcessed: any[] = response?.data ?? [];
+        const defaultModules = allProcessed.filter(
+          (pm: any) =>
+            String(pm?.learning_style ?? "")
+              .trim()
+              .toLowerCase() === "default",
+        );
+        if (defaultModules.length > 0) {
+          const sorted = [...defaultModules].sort(
+            (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
+          );
+          return sorted.map((pm) => pm.processed_module_id).filter(Boolean);
+        }
+      } catch (err) {
+        console.error(`[resolveIds] Strategy 0.5 failed:`, err);
+      }
+    }
+
     console.warn(
-      `[resolveIds] ⚠️ Plan "${plan.learning_plan_id}" has no plan_json.modules`,
+      `[resolveIds] Plan "${plan.learning_plan_id}" has no plan_json.modules and no IDs`,
     );
     return [];
   }
@@ -805,7 +833,7 @@ async function processDashboardResponse(
         processed_module_id?: string;
       }> = plan.plan_json?.modules ?? [];
 
-      const modules = planJsonModules.map((m: any, i: number) => ({
+      let modules = planJsonModules.map((m: any, i: number) => ({
         order: m.order ?? i + 1,
         title: m.title ?? `Module ${i + 1}`,
         recommended_time: m.recommended_time ?? 0,
@@ -820,6 +848,18 @@ async function processDashboardResponse(
         plan,
         userId,
       );
+
+      // Fallback: If modules list is empty but we have processed module IDs
+      if (modules.length === 0 && processedModuleIds.length > 0) {
+        modules = processedModuleIds.map((id, i) => {
+          const pmRecord = moduleMap.get(id);
+          return {
+            order: i + 1,
+            title: pmRecord?.title ?? `Module ${i + 1}`,
+            recommended_time: pmRecord?.recommended_time ?? 0,
+          };
+        });
+      }
 
       console.log(
         `[Hook] Plan "${planKey}" → sprint="${title}" steps=${modules.length} resolvedIds=${processedModuleIds.length}`,

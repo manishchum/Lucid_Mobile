@@ -15,7 +15,8 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../../../contex/AuthContext";
 import { useGetUserByPhone, useGetDashboardSummary } from "../../../api/users";
 import createStyles from "./style";
-import { APP_ROUTES } from "../../../navigations/Routes";
+import { APP_ROUTES, STACK_ROUTES } from "../../../navigations/Routes";
+import { useNotifications } from "../../../contex/NotificationContext";
 
 const styles = createStyles();
 
@@ -70,6 +71,7 @@ const ProgressCircle = ({ percentage }: { percentage: number }) => {
 // ── Main screen ────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const { logout, cachedUser, phoneNumber } = useAuth();
+  const { unreadCount } = useNotifications();
 
   const resolvedUserId = cachedUser?.userId ?? null;
   const resolvedPhone = cachedUser?.phone ?? phoneNumber ?? null;
@@ -196,8 +198,18 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
               {position || user?.email || ""}
             </Text>
           </View>
-          <TouchableOpacity style={styles.logoutBtn} onPress={() => logout()}>
-            <MaterialCommunityIcons name="power" size={22} color="#EF4444" />
+          <TouchableOpacity
+            style={styles.notificationBtn}
+            onPress={() => navigation.navigate(STACK_ROUTES.NOTIFICATIONS)}
+          >
+            <MaterialCommunityIcons name="bell" size={22} color="#475569" />
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 

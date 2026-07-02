@@ -15,6 +15,7 @@ export const APP_ROUTES = {
 export const STACK_ROUTES = {
   CONTENT_DETAIL: "ContentDetail",
   MODULE_QUIZ: "ModuleQuiz",
+  NOTIFICATIONS: "Notifications",
 } as const;
 
 // Type exports
