@@ -14,8 +14,9 @@ import {
   ModuleProgress,
 } from "./Dto";
 
-const API_BASE_URL = "https://api.workfloww.ai/api";
-const MODULE_CHAT_URL = "https://api.workfloww.ai/api/module-chat";
+const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
+const API_BASE_URL = `${EXPO_API_URL}/api`;
+const MODULE_CHAT_URL = `${API_BASE_URL}/module-chat`;
 
 const getFirebaseToken = (): Promise<string | null> => {
   return new Promise((resolve) => {
