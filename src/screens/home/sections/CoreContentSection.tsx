@@ -10,6 +10,7 @@ import {
   Alert,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { simplifyHindiText } from "./HindiSimplifier";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -259,37 +260,6 @@ function parseHtmlContent(html: string): ParsedSection[] {
     .filter((section) => section.sectionClass !== "activity");
 }
 
-const HINDI_SIMPLIFICATIONS: Array<[RegExp, string]> = [
-  [/कार्यक्षमता/g, "फंक्शनलिटी (Functionality)"],
-  [/गतिशीलता/g, "कनेक्टिविटी (Connectivity)"],
-  [/संस्थागत/g, "इंस्टीट्यूशनल (Institutional)"],
-  [/मूल्यांकन/g, "टेस्ट (Assessment)"],
-  [/प्रतिक्रिया/g, "फीडबैक (Feedback)"],
-  [/दस्तावेज़/g, "डॉक्यूमेंट (Document)"],
-  [/प्रक्रिया/g, "प्रोसेस (Process)"],
-  [/प्रसंस्करण/g, "प्रोसेसिंग (Processing)"],
-  [/विश्लेषण/g, "एनालिसिस (Analysis)"],
-  [/प्रौद्योगिकी/g, "टेक्नोलॉजी (Technology)"],
-  [/अकादमिक/g, "एकेडमिक (Academic)"],
-  [/प्रमाणन/g, "सर्टिफिकेशन (Certification)"],
-  [/दक्षता/g, "स्किल्स (Skills)"],
-  [/डेटा संग्रहण/g, "डेटा कलेक्शन (Data Collection)"],
-  [/पूर्व-प्रसंस्करण/g, "डेटा प्री-प्रोसेसिंग (Pre-processing)"],
-  [/मॉडल प्रशिक्षण/g, "मॉडल ट्रेनिंग (Model Training)"],
-  [/परीक्षण/g, "टेस्टिंग (Testing)"],
-  [/नेटवर्किंग क्षमताओं/g, "नेटवर्किंग फीचर्स"],
-  [/नेटवर्किंग क्षमता/g, "नेटवर्किंग फीचर"],
-  [/उद्देश्य/g, "लक्ष्य (Objective)"],
-  [/गतिविधि/g, "गतिविधि (Activity)"],
-];
-
-function simplifyHindiText(text: string): string {
-  let result = text;
-  for (const [regex, replacement] of HINDI_SIMPLIFICATIONS) {
-    result = result.replace(regex, replacement);
-  }
-  return result;
-}
 
 async function translateText(text: string, targetLang: string = "hi"): Promise<string> {
   if (!text || !text.trim()) return "";
