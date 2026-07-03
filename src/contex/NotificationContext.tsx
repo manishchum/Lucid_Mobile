@@ -9,6 +9,7 @@ import { Alert, AppState, AppStateStatus } from "react-native";
 import messaging from "@react-native-firebase/messaging";
 import { getAuth, getIdToken } from "@react-native-firebase/auth";
 import { useAuth } from "./AuthContext";
+import { navigate } from "../navigations/NavigationService";
 
 let isMessagingSupported = false;
 try {
@@ -61,7 +62,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
   const wsRef = useRef<WebSocket | null>(null);
 
   // Blocking notifications for Release Phase 2 release 2
-  const NOTIFICATIONS_LIVE_ENABLED = false; // Toggle to true once push implemented from Firebase
+  const NOTIFICATIONS_LIVE_ENABLED = true; // Toggle to true once push implemented from Firebase
 
   // Helper to get headers for API requests
   const getAuthHeaders = async () => {
@@ -201,6 +202,43 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
       console.error("[FCM] Error subscribing to FCM messages:", error);
     }
   }, [isLoggedIn]);
+ 
+  // Listen to background and quit-state FCM notification clicks
+  useEffect(() => {
+    if (!isLoggedIn || !isMessagingSupported || !NOTIFICATIONS_LIVE_ENABLED)
+      return;
+
+    try {
+      // 1. Handle when app is in background state and notification is clicked
+      const unsubscribeOnNotificationOpened = messaging().onNotificationOpenedApp((remoteMessage) => {
+        console.log("[FCM] Notification caused app to open from background state:", remoteMessage);
+        // Navigate to the notifications screen
+        navigate("Notifications");
+      });
+
+      // 2. Handle when app is in closed (quit) state and notification is clicked
+      messaging()
+        .getInitialNotification()
+        .then((remoteMessage) => {
+          if (remoteMessage) {
+            console.log("[FCM] Notification caused app to open from quit state:", remoteMessage);
+            // Navigate to the notifications screen (using a small delay to let navigator mount)
+            setTimeout(() => {
+              navigate("Notifications");
+            }, 500);
+          }
+        })
+        .catch((error) => {
+          console.error("[FCM] getInitialNotification error:", error);
+        });
+
+      return () => {
+        unsubscribeOnNotificationOpened();
+      };
+    } catch (error) {
+      console.error("[FCM] Error setting up click listeners:", error);
+    }
+  }, [isLoggedIn]);
 
   // Handle WebSocket Connection
   useEffect(() => {
@@ -254,7 +292,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
 
         ws.onclose = (e) => {
           console.log("[WebSocket] Closed:", e.reason);
-          if (active) {
+          if (active && AppState.currentState === "active") {
             // Reconnect after 5 seconds
             reconnectTimeout = setTimeout(connectWS, 5000);
           }
@@ -279,6 +317,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
           clearTimeout(reconnectTimeout);
           connectWS();
+        }
+      } else if ((nextAppState === "background" || nextAppState === "inactive") && active) {
+        console.log("[WebSocket] App going to background. Closing connection to save battery.");
+        clearTimeout(reconnectTimeout);
+        if (wsRef.current) {
+          wsRef.current.close();
+          wsRef.current = null;
         }
       }
     };

@@ -141,6 +141,11 @@ export default function AppNavigator() {
               component={ModuleQuizScreen}
               options={{ presentation: "card", animation: "slide_from_right" }}
             />
+            <Stack.Screen
+              name={STACK_ROUTES.NOTIFICATIONS}
+              component={NotificationsScreen}
+              options={{ presentation: "card", animation: "slide_from_right" }}
+            />
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthNavigator} />
