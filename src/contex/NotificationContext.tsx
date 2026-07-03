@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
 import { Alert, AppState, AppStateStatus } from "react-native";
 import messaging from "@react-native-firebase/messaging";
 import { getAuth, getIdToken } from "@react-native-firebase/auth";
@@ -12,7 +18,7 @@ try {
   }
 } catch (error) {
   console.log(
-    "[NotificationContext] Firebase Messaging is not installed natively on this project. Falling back to WebSocket-only notifications."
+    "[NotificationContext] Firebase Messaging is not installed natively on this project. Falling back to WebSocket-only notifications.",
   );
 }
 
@@ -36,18 +42,26 @@ interface NotificationContextType {
   markAllAsRead: () => Promise<void>;
 }
 
-const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+const NotificationContext = createContext<NotificationContextType | undefined>(
+  undefined,
+);
 
-const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
+const EXPO_API_URL =
+  process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
 const API_BASE_URL = `${EXPO_API_URL}/api`;
 const WS_BASE_URL = EXPO_API_URL.replace(/^http/, "ws") + "/api";
 
-export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { isLoggedIn, cachedUser } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Blocking notifications for Release Phase 2 release 2
+  const NOTIFICATIONS_LIVE_ENABLED = false; // Toggle to true once push implemented from Firebase
 
   // Helper to get headers for API requests
   const getAuthHeaders = async () => {
@@ -85,7 +99,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setUnreadCount(list.filter((n: Notification) => !n.read).length);
       }
     } catch (error) {
-      console.error("[NotificationContext] Error fetching notifications:", error);
+      console.error(
+        "[NotificationContext] Error fetching notifications:",
+        error,
+      );
     } finally {
       setIsLoading(false);
     }
@@ -101,7 +118,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       if (response.ok) {
         setNotifications((prev) =>
-          prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+          prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
         );
         setUnreadCount((prev) => Math.max(0, prev - 1));
       }
@@ -130,7 +147,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Request FCM Permission and Register token
   const setupFCM = async () => {
     if (!isMessagingSupported) {
-      console.log("[FCM] Skipping setup since native Firebase Messaging is not supported/installed.");
+      console.log(
+        "[FCM] Skipping setup since native Firebase Messaging is not supported/installed.",
+      );
       return;
     }
     try {
@@ -160,7 +179,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // Listen to foreground FCM messages
   useEffect(() => {
-    if (!isLoggedIn || !isMessagingSupported) return;
+    if (!isLoggedIn || !isMessagingSupported || !NOTIFICATIONS_LIVE_ENABLED)
+      return;
 
     try {
       const unsubscribe = messaging().onMessage(async (remoteMessage) => {
@@ -171,7 +191,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         if (remoteMessage.notification) {
           Alert.alert(
             remoteMessage.notification.title || "Notification",
-            remoteMessage.notification.body || ""
+            remoteMessage.notification.body || "",
           );
         }
       });
@@ -184,7 +204,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // Handle WebSocket Connection
   useEffect(() => {
-    if (!isLoggedIn || !cachedUser) {
+    if (!isLoggedIn || !cachedUser || !NOTIFICATIONS_LIVE_ENABLED) {
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -223,7 +243,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 setUnreadCount((count) => count + 1);
                 return [newNotif, ...prev];
               });
-              
+
               // Show in-app alert
               Alert.alert(newNotif.title, newNotif.message);
             }
@@ -252,7 +272,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (nextAppState === "active" && active) {
-        console.log("[WebSocket] App returned to foreground. Reconnecting and refreshing...");
+        console.log(
+          "[WebSocket] App returned to foreground. Reconnecting and refreshing...",
+        );
         fetchNotifications();
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
           clearTimeout(reconnectTimeout);
@@ -261,7 +283,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     };
 
-    const subscription = AppState.addEventListener("change", handleAppStateChange);
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange,
+    );
 
     setupFCM();
     fetchNotifications();
@@ -297,7 +322,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 export const useNotifications = () => {
   const context = useContext(NotificationContext);
   if (!context) {
-    throw new Error("useNotifications must be used within a NotificationProvider");
+    throw new Error(
+      "useNotifications must be used within a NotificationProvider",
+    );
   }
   return context;
 };

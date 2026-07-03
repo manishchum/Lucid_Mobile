@@ -20,6 +20,7 @@ import { useAuth } from "../../contex/AuthContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
 import { useModuleProgress } from "../../api/users/Hooks";
+import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 
 if (
   Platform.OS === "android" &&
@@ -37,6 +38,8 @@ export default function SprintScreen({
 }) {
   const insets = useSafeAreaInsets();
   const { cachedUser } = useAuth();
+  const { hasFeature } = useFeatureGating();
+  const showStudio = hasFeature(FEATURES.LUCID_STUDIO);
 
   // ── Route params passed from HomeScreen ──────────────────────────────────
   const moduleId: string = route?.params?.moduleId ?? "";
@@ -66,7 +69,7 @@ export default function SprintScreen({
 
   // Sprint progress: live count of how many of THIS sprint's modules have a
   // module-progress record
-  const { completedProcessedModuleIds, refetch: refetchModuleProgress } =
+  const { progress: moduleProgressEntries, refetch: refetchModuleProgress } =
     useModuleProgress(cachedUser?.userId ?? null);
 
   useFocusEffect(
@@ -76,12 +79,49 @@ export default function SprintScreen({
     }, [cachedUser?.userId]),
   );
 
+  // ── Verified completion sets
+  const { completedProcessedModuleIds, quizPassedProcessedModuleIds } =
+    useMemo(() => {
+      const completed = new Set<string>();
+      const quizPassed = new Set<string>();
+      moduleProgressEntries.forEach((entry) => {
+        if (!entry.processed_module_id) return;
+        const entryOriginalModuleId =
+          entry.processed_modules?.original_module_id;
+        if (entryOriginalModuleId && entryOriginalModuleId !== moduleId) {
+          console.warn(
+            ` Rejected foreign progress record: ` +
+              `processed_module_id="${entry.processed_module_id}" ` +
+              `title="${entry.processed_modules?.title}" belongs to ` +
+              `original_module_id="${entryOriginalModuleId}", not this ` +
+              `sprint's moduleId="${moduleId}".`,
+          );
+          return;
+        }
+        completed.add(entry.processed_module_id);
+        if (entry.quiz_score !== null) {
+          quizPassed.add(entry.processed_module_id);
+        }
+      });
+      return {
+        completedProcessedModuleIds: completed,
+        quizPassedProcessedModuleIds: quizPassed,
+      };
+    }, [moduleProgressEntries, moduleId]);
+
   // Which of this sprint's module slots are done, by index
   const moduleDoneFlags = useMemo(
     () =>
       modules.map((_, i) => {
         const pid = processedModuleIds[i];
-        return !!pid && completedProcessedModuleIds.has(pid);
+        const done = !!pid && completedProcessedModuleIds.has(pid);
+        if (done) {
+          console.log(
+            `[SprintScreen] Module[${i}] "${modules[i]?.title}" → ` +
+              `processedModuleId="${pid}" → marked DONE`,
+          );
+        }
+        return done;
       }),
     [modules, processedModuleIds, completedProcessedModuleIds],
   );
@@ -99,6 +139,14 @@ export default function SprintScreen({
   const handleViewContent = (index: number, modTitle: string) => {
     if (isOnline === false) {
       setShowNoInternet(true);
+      return;
+    }
+
+    if (!showStudio) {
+      Alert.alert(
+        "Not available",
+        "Studio content isn't included in your plan yet.",
+      );
       return;
     }
 
@@ -269,6 +317,9 @@ export default function SprintScreen({
             modules.map((mod, index) => {
               const isDone = moduleDoneFlags[index];
               const hasProcessedId = !!processedModuleIds[index];
+              const pid = processedModuleIds[index];
+              const isQuizPassed =
+                !!pid && quizPassedProcessedModuleIds.has(pid);
 
               return (
                 <View
@@ -308,22 +359,33 @@ export default function SprintScreen({
                       <Text style={styles.viewButtonText}>View Content</Text>
                     </TouchableOpacity>
 
-                    {/* Module Quiz */}
+                    {/* Module Quiz — disabled + relabelled once quiz is passed */}
                     <TouchableOpacity
                       style={[
                         styles.quizButton,
-                        !hasProcessedId && styles.quizButtonDisabled,
+                        (!hasProcessedId || isQuizPassed) &&
+                          styles.quizButtonDisabled,
+                        isQuizPassed && styles.quizButtonPassed,
                       ]}
-                      disabled={!hasProcessedId}
+                      disabled={!hasProcessedId || isQuizPassed}
                       onPress={() => handleModuleQuiz(index, mod.title)}
                     >
-                      {/* <MaterialCommunityIcons
-                        name="help-circle-outline"
-                        size={15}
-                        color="white"
-                        style={{ marginRight: 5 }}
-                      /> */}
-                      <Text style={styles.quizButtonText}>Module Quiz</Text>
+                      {isQuizPassed && (
+                        <MaterialCommunityIcons
+                          name="check-circle-outline"
+                          size={14}
+                          color="#6EE7B7"
+                          style={{ marginRight: 5 }}
+                        />
+                      )}
+                      <Text
+                        style={[
+                          styles.quizButtonText,
+                          isQuizPassed && styles.quizButtonTextPassed,
+                        ]}
+                      >
+                        {isQuizPassed ? "Quiz Attempted" : "Module Quiz"}
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -515,5 +577,12 @@ const styles = StyleSheet.create({
     minHeight: 46,
   },
   quizButtonDisabled: { backgroundColor: "#C7D2FE" },
+  quizButtonPassed: {
+    backgroundColor: "#7a8b87",
+    borderWidth: 1,
+    borderColor: "#065F46",
+    opacity: 0.75,
+  },
   quizButtonText: { fontSize: 13, fontWeight: "700", color: "white" },
+  quizButtonTextPassed: { color: "#6EE7B7", fontWeight: "600" },
 });

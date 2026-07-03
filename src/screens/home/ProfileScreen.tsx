@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
+  Alert,
   View,
   Text,
   TouchableOpacity,
@@ -26,6 +27,18 @@ function toE164(rawPhone: string): string {
 
 export default function ProfileScreen() {
   const { logout, phoneNumber, cachedUser } = useAuth();
+
+  const confirmLogout = () => {
+    Alert.alert(
+      "Sign Out",
+      "Are you sure you want to sign out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Sign Out", style: "destructive", onPress: () => logout() },
+      ],
+      { cancelable: true },
+    );
+  };
   const [user, setUser] = useState<User | null>(
     cachedUser
       ? {
@@ -203,7 +216,7 @@ export default function ProfileScreen() {
         {/* LOGOUT BUTTON */}
         <TouchableOpacity
           style={styles.logoutButton}
-          onPress={() => logout()}
+          onPress={confirmLogout}
           activeOpacity={0.8}
         >
           <MaterialCommunityIcons name="logout" size={20} color="#EF4444" />

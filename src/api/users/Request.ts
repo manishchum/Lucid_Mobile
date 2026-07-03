@@ -1,4 +1,8 @@
-import { getAuth, onAuthStateChanged, getIdToken } from "@react-native-firebase/auth";
+import {
+  getAuth,
+  onAuthStateChanged,
+  getIdToken,
+} from "@react-native-firebase/auth";
 import {
   UserResponse,
   UserRolesResponse,
@@ -12,9 +16,12 @@ import {
   DashboardSummaryResponse,
   TasksResponse,
   ModuleProgress,
+  TaskSubmissionPayload,
+  TaskSubmissionResponse,
 } from "./Dto";
 
-const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
+const EXPO_API_URL =
+  process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
 const API_BASE_URL = `${EXPO_API_URL}/api`;
 const MODULE_CHAT_URL = `${API_BASE_URL}/module-chat`;
 
@@ -620,6 +627,23 @@ export const getDashboardSummary = async (
     }
     const json = await response.json();
 
+    if (Array.isArray(json?.plans)) {
+      json.plans = json.plans.map((p: any) => {
+        if (typeof p?.plan_json === "string") {
+          try {
+            return { ...p, plan_json: JSON.parse(p.plan_json) };
+          } catch (e) {
+            console.warn(
+              `[Request] Failed to parse plan_json string for plan ${p?.learning_plan_id}`,
+              e,
+            );
+            return { ...p, plan_json: null };
+          }
+        }
+        return p;
+      });
+    }
+
     console.log(
       "[Request] ══════════════════════════════════════════════════════",
     );
@@ -888,6 +912,57 @@ export const submitQuizForGrading = async (
   } catch (err) {
     console.error("[Quiz] submitQuizForGrading error:", err);
     return null;
+  }
+};
+
+export const submitTaskAnswer = async (
+  userId: string,
+  payload: TaskSubmissionPayload,
+): Promise<TaskSubmissionResponse> => {
+  try {
+    const headers = await getHeaders(userId);
+    const url = `${API_BASE_URL}/text-analysis/submit`;
+
+    const body: Record<string, any> = {
+      assignment_id: payload.assignment_id,
+      task_id: payload.task_id,
+      user_id: payload.user_id,
+      submission_type: payload.submission_type,
+      max_score: payload.max_score,
+      score: payload.score,
+    };
+
+    if (payload.submission_type === "image") {
+      body.image_url = payload.image_url ?? "";
+    } else if (payload.submission_type === "text") {
+      body.text_answer = payload.text_answer ?? "";
+    } else if (payload.submission_type === "options") {
+      body.selected_options = payload.selected_options ?? [];
+    }
+
+    console.log("[Request] submitTaskAnswer →", url, {
+      task_id: payload.task_id,
+      submission_type: payload.submission_type,
+    });
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[Request] submitTaskAnswer ${response.status}:`, errText);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const json = (await response.json()) as TaskSubmissionResponse;
+    console.log("[Request] submitTaskAnswer", json?.submission_id);
+    return json;
+  } catch (error) {
+    console.error("[Request] Error submitting task answer:", error);
+    throw error;
   }
 };
 

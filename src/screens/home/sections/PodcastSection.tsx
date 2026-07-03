@@ -20,7 +20,6 @@ type LanguageCode = "en" | "hi" | "ta" | "te" | "mr" | "bn";
 interface LanguageOption {
   code: LanguageCode;
   label: string;
-  flag: string;
   audioUrlKey: keyof PodcastSectionProps;
   timelineKey: keyof PodcastSectionProps;
 }
@@ -31,42 +30,36 @@ const ALL_LANGUAGES: LanguageOption[] = [
   {
     code: "en",
     label: "English",
-    flag: "🇬🇧",
     audioUrlKey: "audioUrl",
     timelineKey: "podcastTimeline",
   },
   {
     code: "hi",
     label: "Hindi",
-    flag: "🇮🇳",
     audioUrlKey: "audioUrlHindi",
     timelineKey: "podcastTimelineHindi",
   },
   {
     code: "ta",
     label: "Tamil",
-    flag: "🇮🇳",
     audioUrlKey: "audioUrlTamil",
     timelineKey: "podcastTimelineTamil",
   },
   {
     code: "te",
     label: "Telugu",
-    flag: "🇮🇳",
     audioUrlKey: "audioUrlTelugu",
     timelineKey: "podcastTimelineTelugu",
   },
   {
     code: "mr",
     label: "Marathi",
-    flag: "🇮🇳",
     audioUrlKey: "audioUrlMarathi",
     timelineKey: "podcastTimelineMarathi",
   },
   {
     code: "bn",
     label: "Bengali",
-    flag: "🇮🇳",
     audioUrlKey: "audioUrlBengali",
     timelineKey: "podcastTimelineBengali",
   },
@@ -169,7 +162,6 @@ function LanguageDropdown({
         onPress={() => setOpen(true)}
         activeOpacity={0.8}
       >
-        <Text style={ddStyles.flag}>{selectedLang.flag}</Text>
         <Text style={ddStyles.triggerLabel}>{selectedLang.label}</Text>
         <MaterialCommunityIcons name="chevron-down" size={18} color="#64748B" />
       </TouchableOpacity>
@@ -202,7 +194,6 @@ function LanguageDropdown({
                     }}
                     activeOpacity={0.75}
                   >
-                    <Text style={ddStyles.optionFlag}>{item.flag}</Text>
                     <Text
                       style={[
                         ddStyles.optionLabel,

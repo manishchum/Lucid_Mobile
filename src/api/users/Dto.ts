@@ -90,6 +90,8 @@ export interface LearningPlan {
   reasoning: Record<string, any>;
   training_modules?: { title: string; [key: string]: any };
   processed_module_ids?: string[];
+  baseline_assessment?: boolean;
+  overall_status?: boolean;
 }
 
 export interface LearningPlansResponse {
@@ -227,21 +229,32 @@ export interface DashboardSummaryResponse {
   company: any | null;
   learning_style: string | null;
   assessment_evidence_by_module_id: Record<string, any[]>;
+  baseline_evidence_by_module_id?: Record<string, any[]>;
   user_rank: UserRankData | null;
   total_users: number;
 }
 
 // Task Manager DTOs
+export type SubmissionFormat = "audio" | "image" | "video" | "text";
+
 export interface Task {
   task_id: string;
+  assignment_id: string;
+  company_id: string;
   title: string;
   description?: string | null;
+  submission_format: SubmissionFormat[];
+  questions: any[];
   status: string;
+  due_date: string | null;
+  recurrence: string;
+  level: string;
+  audience_display_name: string;
+  total_target_count: number;
+  completion_count: number;
+  created_at: string;
   priority?: string | null;
-  due_date?: string | null;
   assigned_to?: string | null;
-  company_id?: string;
-  created_at?: string;
   updated_at?: string;
   [key: string]: any;
 }
@@ -249,4 +262,24 @@ export interface Task {
 export interface TasksResponse {
   total: number;
   tasks: Task[];
+}
+
+export type TaskSubmissionType = "image" | "text" | "options";
+
+export interface TaskSubmissionPayload {
+  assignment_id: string;
+  task_id: string;
+  user_id: string;
+  submission_type: TaskSubmissionType;
+  max_score: number;
+  score: number;
+  image_url?: string;
+  text_answer?: string;
+  selected_options?: string[];
+}
+
+export interface TaskSubmissionResponse {
+  message: string;
+  status: string;
+  submission_id: string;
 }
