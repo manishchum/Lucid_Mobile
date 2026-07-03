@@ -252,6 +252,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     let active = true;
     let reconnectTimeout: any;
+    const isForeground = { current: AppState.currentState === "active" };
 
     const connectWS = async () => {
       try {
@@ -292,14 +293,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
 
         ws.onclose = (e) => {
           console.log("[WebSocket] Closed:", e.reason);
-          if (active && AppState.currentState === "active") {
+          if (active && isForeground.current) {
             // Reconnect after 5 seconds
             reconnectTimeout = setTimeout(connectWS, 5000);
           }
         };
 
         ws.onerror = (err) => {
-          console.error("[WebSocket] Error:", err);
+          console.log("[WebSocket] Error (handled safely):", err);
         };
 
         wsRef.current = ws;
@@ -310,6 +311,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (nextAppState === "active" && active) {
+        isForeground.current = true;
         console.log(
           "[WebSocket] App returned to foreground. Reconnecting and refreshing...",
         );
@@ -319,6 +321,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
           connectWS();
         }
       } else if ((nextAppState === "background" || nextAppState === "inactive") && active) {
+        isForeground.current = false;
         console.log("[WebSocket] App going to background. Closing connection to save battery.");
         clearTimeout(reconnectTimeout);
         if (wsRef.current) {
