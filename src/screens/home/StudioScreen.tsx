@@ -24,6 +24,7 @@ import FlashcardsSection from "../../components/content/FlashcardsSection";
 
 import VideoSection from "../../components/content/VideoSection";
 import AIAssistantSection from "../../components/content/AIAssistantSection";
+import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 
 /**
  * StudioScreen
@@ -50,6 +51,12 @@ export default function StudioScreen({ route }: any) {
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState<string | null>("core");
   const { cachedUser } = useAuth();
+  const { hasFeature } = useFeatureGating();
+  const showTextual = true;
+  const showFlashcards = hasFeature(FEATURES.FLASHCARD);
+  const showPodcast = hasFeature(FEATURES.PODCAST);
+  const showVideo = hasFeature(FEATURES.VIDEO);
+  const showAiAssistant = hasFeature(FEATURES.CHAT_IN_STUDIO);
 
   // Params from SprintScreen "View Content" — each module tap passes its own processedModuleId
   const processedModuleId: string = route?.params?.processedModuleId ?? "";
@@ -231,22 +238,27 @@ export default function StudioScreen({ route }: any) {
         {/* ── Accordion Sections ── */}
         <View style={styles.accordionList}>
           {/* Core Content — parses processedModule.content (HTML) into sections */}
-          <CoreContentSection
-            isExpanded={expanded === "core"}
-            onToggle={() => toggle("core")}
-            htmlContent={processedModule?.content ?? null}
-          />
+          {showTextual && (
+            <CoreContentSection
+              isExpanded={expanded === "core"}
+              onToggle={() => toggle("core")}
+              htmlContent={processedModule?.content ?? null}
+            />
+          )}
 
           {/* Flashcards — from processedModule.flashcard_data array */}
-          <FlashcardsSection
-            isExpanded={expanded === "flashcards"}
-            onToggle={() => toggle("flashcards")}
-            flashcardData={processedModule?.flashcard_data ?? null}
-          />
+          {showFlashcards && (
+            <FlashcardsSection
+              isExpanded={expanded === "flashcards"}
+              onToggle={() => toggle("flashcards")}
+              flashcardData={processedModule?.flashcard_data ?? null}
+            />
+          )}
 
           {/* ── Phase 2: Mind Map ──────────────────────────────────────────────
             Will be implemented in Phase 2.
             processedModule.mindmap_data contains { nodes: [...], edges: [...] }
+            Gate behind hasFeature(FEATURES.MINDMAP) once wired in.
             <MindmapSection
               isExpanded={expanded === 'mindmap'}
               onToggle={() => toggle('mindmap')}
@@ -255,39 +267,45 @@ export default function StudioScreen({ route }: any) {
           ──────────────────────────────────────────────────────────────────── */}
 
           {/* Podcast — audio URLs and timelines all from API response */}
-          <PodcastSection
-            isExpanded={expanded === "podcast"}
-            onToggle={() => toggle("podcast")}
-            audioUrl={processedModule?.audio_url ?? null}
-            audioUrlHinglish={processedModule?.audio_url_hinglish ?? null}
-            podcastTimeline={processedModule?.podcast_timeline ?? null}
-            podcastTimelineHinglish={
-              processedModule?.podcast_timeline_hinglish ?? null
-            }
-            transcript={processedModule?.podcast_transcript ?? null}
-          />
+          {showPodcast && (
+            <PodcastSection
+              isExpanded={expanded === "podcast"}
+              onToggle={() => toggle("podcast")}
+              audioUrl={processedModule?.audio_url ?? null}
+              audioUrlHinglish={processedModule?.audio_url_hinglish ?? null}
+              podcastTimeline={processedModule?.podcast_timeline ?? null}
+              podcastTimelineHinglish={
+                processedModule?.podcast_timeline_hinglish ?? null
+              }
+              transcript={processedModule?.podcast_transcript ?? null}
+            />
+          )}
 
           {/* Video — from processedModule.video_url + regional variants */}
-          <VideoSection
-            isExpanded={expanded === "video"}
-            onToggle={() => toggle("video")}
-            videoUrl={processedModule?.video_url ?? null}
-            videoUrlHinglish={processedModule?.video_url_hinglish ?? null}
-            videoUrlBengali={processedModule?.video_url_bengali ?? null}
-            videoUrlTamil={processedModule?.video_url_tamil ?? null}
-            videoUrlTelugu={processedModule?.video_url_telugu ?? null}
-            videoUrlMarathi={processedModule?.video_url_marathi ?? null}
-          />
+          {showVideo && (
+            <VideoSection
+              isExpanded={expanded === "video"}
+              onToggle={() => toggle("video")}
+              videoUrl={processedModule?.video_url ?? null}
+              videoUrlHinglish={processedModule?.video_url_hinglish ?? null}
+              videoUrlBengali={processedModule?.video_url_bengali ?? null}
+              videoUrlTamil={processedModule?.video_url_tamil ?? null}
+              videoUrlTelugu={processedModule?.video_url_telugu ?? null}
+              videoUrlMarathi={processedModule?.video_url_marathi ?? null}
+            />
+          )}
 
-          {/* AI Assistant */}
-          <AIAssistantSection
-            isExpanded={expanded === "ai"}
-            onToggle={() => toggle("ai")}
-            processedModuleId={processedModuleId}
-            moduleTitle={moduleTitle}
-            userId={userId ?? ""}
-            companyId={companyId}
-          />
+          {/* AI Assistant — gated behind the chat_in_studio add-on */}
+          {showAiAssistant && (
+            <AIAssistantSection
+              isExpanded={expanded === "ai"}
+              onToggle={() => toggle("ai")}
+              processedModuleId={processedModuleId}
+              moduleTitle={moduleTitle}
+              userId={userId ?? ""}
+              companyId={companyId}
+            />
+          )}
         </View>
       </ScrollView>
     </View>

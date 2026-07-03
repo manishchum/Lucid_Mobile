@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useTenant } from "../../contex/TenantContext";
 import {
   getUserByEmail,
   getUserByPhone,
@@ -14,6 +15,7 @@ import {
   getTrainingPlan,
   getDashboardSummary,
   getModuleProgress,
+  getTasks,
 } from "./Request";
 import {
   User,
@@ -31,10 +33,15 @@ import {
   DashboardSummaryResponse,
   ModuleProgress,
   ModuleProgressEntry,
+  Task,
+  TasksResponse,
 } from "./Dto";
 
 // Cache to store resolved processed module metadata (such as titles) for fallback rendering
-const processedModuleMetadata = new Map<string, { title: string; recommended_time: number }>();
+const processedModuleMetadata = new Map<
+  string,
+  { title: string; recommended_time: number }
+>();
 
 export const USER_QUERY_KEY = ["user"];
 
@@ -619,7 +626,10 @@ async function resolveProcessedModuleIdsForPlan(
   userId: string,
 ): Promise<string[]> {
   // Strategy 0: If plan already has root-level processed_module_ids, use them directly
-  if (Array.isArray(plan?.processed_module_ids) && plan.processed_module_ids.length > 0) {
+  if (
+    Array.isArray(plan?.processed_module_ids) &&
+    plan.processed_module_ids.length > 0
+  ) {
     return plan.processed_module_ids;
   }
 
@@ -735,6 +745,15 @@ async function resolveProcessedModuleIdsForPlan(
           }
         });
 
+        const positionalFallbackSafe = sorted.length === planModules.length;
+        if (!positionalFallbackSafe) {
+          console.warn(
+            `Plan "${plan.learning_plan_id}" — planModules.length` +
+              `(${planModules.length}) !== defaultModules.length(${sorted.length}). ` +
+              `Positional fallback disabled for this plan to avoid mismatched IDs.`,
+          );
+        }
+
         const aligned = planModules
           .map((m: any, i: number) => {
             const key = m?.title?.trim().toLowerCase() ?? "";
@@ -745,11 +764,19 @@ async function resolveProcessedModuleIdsForPlan(
               );
               return byTitle;
             }
-            // Positional fallback within the default-style sorted list
+            if (!positionalFallbackSafe) {
+              console.error(
+                `Module[${i}] "${m.title}" — no title match and ` +
+                  `positional fallback unsafe (list length mismatch). Leaving unresolved.`,
+              );
+              return "";
+            }
+            // Positional fallback
             const byPos = sorted[i]?.processed_module_id ?? "";
             if (byPos) {
               console.warn(
-                `[resolveIds] ⚠️ Module[${i}] "${m.title}" → positional fallback → "${byPos}"`,
+                `Module[${i}] "${m.title}" → positional fallback → ` +
+                  `"${byPos}" (matched default module titled "${sorted[i]?.title}")`,
               );
             } else {
               console.error(
@@ -774,6 +801,67 @@ async function resolveProcessedModuleIdsForPlan(
     `[resolveIds] ❌ Plan "${plan.learning_plan_id}" — all strategies exhausted, no IDs resolved`,
   );
   return [];
+}
+async function resolvePlanModules(
+  plan: any,
+  userId: string,
+  progressTitleById: Map<string, string>,
+): Promise<{
+  modules: Array<{ order: number; title: string; recommended_time: number }>;
+  processedModuleIds: string[];
+}> {
+  const planJsonModules: Array<{
+    order: number;
+    title: string;
+    recommended_time?: number;
+    processed_module_id?: string;
+  }> = plan?.plan_json?.modules ?? [];
+
+  if (planJsonModules.length > 0) {
+    const modules = planJsonModules.map((m: any, i: number) => ({
+      order: m.order ?? i + 1,
+      title: m.title ?? `Module ${i + 1}`,
+      recommended_time: m.recommended_time ?? 0,
+    }));
+    const processedModuleIds = await resolveProcessedModuleIdsForPlan(
+      plan,
+      userId,
+    );
+    return { modules, processedModuleIds };
+  }
+
+  // ── Fallback: plan_json is null/empty, use top-level processed_module_ids ──
+  const topLevelIds: string[] = Array.isArray(plan?.processed_module_ids)
+    ? plan.processed_module_ids.filter(Boolean)
+    : [];
+
+  if (topLevelIds.length === 0) {
+    console.error(
+      `Plan "${plan.learning_plan_id}" — plan_json is empty/null AND ` +
+        `no top-level processed_module_ids either. This plan genuinely has no modules to show.`,
+    );
+    return { modules: [], processedModuleIds: [] };
+  }
+
+  console.log(
+    `[resolveIds] Plan "${plan.learning_plan_id}" — plan_json is null. Using ` +
+      `top-level processed_module_ids (${topLevelIds.length} ids), titles from ` +
+      `progress data where available (no network calls).`,
+  );
+
+  const modules = topLevelIds.map((pid, i) => ({
+    order: i + 1,
+    title: progressTitleById.get(pid) ?? `Module ${i + 1}`,
+    recommended_time: 0,
+  }));
+
+  console.log(
+    `Plan "${plan.learning_plan_id}" — resolved ${modules.length} ` +
+      `modules via plan_json-null fallback (no fetches):`,
+    modules.map((m) => m.title),
+  );
+
+  return { modules, processedModuleIds: topLevelIds };
 }
 
 interface UseGetDashboardSummaryReturn {
@@ -870,14 +958,30 @@ async function processDashboardResponse(
 
       // Fallback: If modules list is empty but we have processed module IDs
       if (modules.length === 0 && processedModuleIds.length > 0) {
-        console.log(`[DEBUG_FALLBACK] plan_id: ${plan.learning_plan_id}, original_module_id: ${plan.module_id}, processedIds:`, processedModuleIds);
-        const missingIds = processedModuleIds.filter((id) => !processedModuleMetadata.has(id));
-        console.log(`[DEBUG_FALLBACK] missingIds count: ${missingIds.length}, cache size: ${processedModuleMetadata.size}`);
+        console.log(
+          `[DEBUG_FALLBACK] plan_id: ${plan.learning_plan_id}, original_module_id: ${plan.module_id}, processedIds:`,
+          processedModuleIds,
+        );
+        const missingIds = processedModuleIds.filter(
+          (id) => !processedModuleMetadata.has(id),
+        );
+        console.log(
+          `[DEBUG_FALLBACK] missingIds count: ${missingIds.length}, cache size: ${processedModuleMetadata.size}`,
+        );
         if (missingIds.length > 0 && plan.module_id) {
           try {
-            console.log(`[Hook] Fetching processed modules metadata fallback for: ${plan.module_id}`);
+            console.log(
+              `[Hook] Fetching processed modules metadata fallback for: ${plan.module_id}`,
+            );
             const response = await getProcessedModules(plan.module_id, userId);
-            console.log(`[DEBUG_FALLBACK] API response keys:`, Object.keys(response ?? {}), `data is array:`, Array.isArray(response?.data), `length:`, response?.data?.length);
+            console.log(
+              `[DEBUG_FALLBACK] API response keys:`,
+              Object.keys(response ?? {}),
+              `data is array:`,
+              Array.isArray(response?.data),
+              `length:`,
+              response?.data?.length,
+            );
             const allProcessed: any[] = response?.data ?? [];
             allProcessed.forEach((pm: any) => {
               if (pm?.processed_module_id) {
@@ -888,7 +992,10 @@ async function processDashboardResponse(
               }
             });
           } catch (err) {
-            console.error("[Hook] Failed to fetch processed modules metadata fallback:", err);
+            console.error(
+              "[Hook] Failed to fetch processed modules metadata fallback:",
+              err,
+            );
           }
         }
 
@@ -960,74 +1067,236 @@ export const useGetDashboardSummary = (
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const fetchPromiseRef = useRef<Promise<any> | null>(null);
+  const { setCompanyFromDashboard } = useTenant();
 
-  const fetchDashboardData = useCallback(async (showSpinner: boolean) => {
-    if (!userId || !companyId) return;
+  const fetchDashboardData = useCallback(
+    async (showSpinner: boolean) => {
+      if (!userId || !companyId) return;
 
-    if (fetchPromiseRef.current) {
-      console.log("[Hook] fetchDashboardData already in progress, awaiting existing promise...");
+      if (fetchPromiseRef.current) {
+        console.log(
+          "[Hook] fetchDashboardData already in progress, awaiting existing promise...",
+        );
+        if (showSpinner) setIsLoading(true);
+        try {
+          await fetchPromiseRef.current;
+        } finally {
+          if (showSpinner) setIsLoading(false);
+        }
+        return;
+      }
+
       if (showSpinner) setIsLoading(true);
+      setError(null);
+
+      const fetchTask = (async () => {
+        try {
+          const startTime = Date.now();
+          console.log(
+            "[Hook] GET /employee/dashboard_summary/ →",
+            userId,
+            "companyId:",
+            companyId,
+          );
+
+          const apiStart = Date.now();
+          const data = await getDashboardSummary(userId, companyId);
+          const apiEnd = Date.now();
+          console.log(
+            `[Timing] getDashboardSummary API took ${apiEnd - apiStart}ms`,
+          );
+
+          setDashboardData(data);
+          setCompanyFromDashboard((data as any)?.company ?? null);
+
+          const moduleMap = new Map<string, any>();
+          (data.modules ?? []).forEach((m: any) => {
+            if (m?.module_id) moduleMap.set(m.module_id, m);
+          });
+          console.log(
+            "[Hook] Module map built —",
+            moduleMap.size,
+            "entries:",
+            [...moduleMap.values()].map(
+              (m) => `${m.module_id.slice(0, 8)}… "${m.title}"`,
+            ),
+          );
+
+          const allPlans: any[] = data?.plans ?? [];
+          console.log("[Hook] Total plans received:", allPlans.length);
+
+          // Only render ASSIGNED / IN_PROGRESS / COMPLETED sprints on the home screen
+          const statusFilteredPlans = allPlans.filter((p: any) =>
+            ASSIGNED_STATUSES.has(
+              String(p?.status ?? "")
+                .trim()
+                .toUpperCase(),
+            ),
+          );
+
+          const baselineEvidenceByModuleId: Record<string, any[]> =
+            data?.baseline_evidence_by_module_id ?? {};
+          const activePlans = statusFilteredPlans.filter((p: any) => {
+            const isBaseline = p?.baseline_assessment === true;
+            if (!isBaseline) return true;
+
+            const moduleId = String(p?.module_id ?? "");
+            const hasBaselineEvidence =
+              Array.isArray(baselineEvidenceByModuleId[moduleId]) &&
+              baselineEvidenceByModuleId[moduleId].length > 0;
+
+            if (hasBaselineEvidence) {
+              console.log(
+                `[Hook] ✅ Plan "${p?.learning_plan_id}" — baseline_assessment=true but ` +
+                  `baseline evidence found for module "${moduleId}" (completed via web) → showing`,
+              );
+              return true;
+            }
+
+            console.log(
+              `[Hook] ⏭️ Skipping plan "${p?.learning_plan_id}" — baseline_assessment=true, ` +
+                `no baseline evidence for module "${moduleId}" yet (mobile has no baseline-test flow)`,
+            );
+            return false;
+          });
+          console.log(
+            "[Hook] Active plans:",
+            activePlans.length,
+            `(${statusFilteredPlans.length - activePlans.length} baseline-assessment plans hidden)`,
+          );
+
+          const completedProcessedModuleIds = new Set(
+            (data?.progress ?? [])
+              .map((p: any) => p?.processed_module_id)
+              .filter(Boolean),
+          );
+          console.log(
+            "[Hook] Completed processed-module IDs:",
+            completedProcessedModuleIds.size,
+          );
+
+          // Title lookup for the plan_json-null fallback, built once from data
+          // already in this response — avoids per-module network calls.
+          const progressTitleById = new Map<string, string>();
+          (data?.progress ?? []).forEach((p: any) => {
+            const pid = p?.processed_module_id;
+            const title = p?.processed_modules?.title;
+            if (pid && title) progressTitleById.set(pid, title);
+          });
+
+          const cards: ResolvedPlanCard[] = await Promise.all(
+            activePlans.map(async (plan: any) => {
+              const planKey = String(
+                plan.learning_plan_id ?? plan.module_id ?? "",
+              );
+              const moduleId = String(plan.module_id ?? "");
+              const serverStatus = String(plan.status ?? "")
+                .trim()
+                .toUpperCase();
+
+              // ── Sprint title ─────────────────────────────────────────────────
+              // Primary: data.modules[] looked up by plan.module_id
+              const moduleRecord = moduleMap.get(moduleId);
+              const title: string =
+                moduleRecord?.title ??
+                plan.module_name ??
+                plan.module_title ??
+                plan.title ??
+                plan.plan_json?.modules?.[0]?.title ??
+                "Learning Plan";
+
+              // ── Sprint steps + processedModuleIds ─────────────────────────────
+
+              const { modules, processedModuleIds } = await resolvePlanModules(
+                plan,
+                userId,
+                progressTitleById,
+              );
+
+              const tips: string = plan.plan_json?.tips ?? "";
+
+              console.log(
+                `[Hook] Plan "${planKey}" → sprint="${title}" steps=${modules.length} resolvedIds=${processedModuleIds.length}`,
+              );
+              modules.forEach((m, i) => {
+                console.log(
+                  `[Hook]   Step[${i + 1}] "${m.title}" → processedId="${
+                    processedModuleIds[i] ?? "❌ MISSING"
+                  }"`,
+                );
+              });
+
+              // ── Status, derived from actual quiz-submission progress ────────
+              const completedModulesCount = processedModuleIds.filter(
+                (id) => !!id && completedProcessedModuleIds.has(id),
+              ).length;
+
+              let status: string;
+              if (
+                modules.length > 0 &&
+                completedModulesCount >= modules.length
+              ) {
+                status = "COMPLETED";
+              } else if (completedModulesCount > 0) {
+                status = "IN_PROGRESS";
+              } else {
+                status =
+                  serverStatus === "COMPLETED" ? "COMPLETED" : "NOT_STARTED";
+              }
+
+              console.log(
+                `[Hook]   → status="${status}" (server="${serverStatus}", completed=${completedModulesCount}/${modules.length})`,
+              );
+
+              return {
+                planKey,
+                moduleId,
+                status,
+                title,
+                tips,
+                totalModules: modules.length,
+                modules,
+                processedModuleIds,
+                completedModulesCount,
+              };
+            }),
+          );
+
+          setResolvedPlanCards(cards);
+          console.log(
+            "[Hook] ✅ Fresh dashboard summary resolved:",
+            cards.length,
+          );
+
+          // Save to cache
+          const cacheKey = `@dashboard_data_${userId}`;
+          await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
+
+          console.log(
+            `[Timing] Total fetchDashboardData took ${Date.now() - startTime}ms`,
+          );
+          return data;
+        } catch (err) {
+          const error =
+            err instanceof Error
+              ? err
+              : new Error("Failed to fetch dashboard summary");
+          console.error("[Hook] fetchDashboardData error:", error.message);
+          throw error;
+        }
+      })();
+
+      fetchPromiseRef.current = fetchTask;
+
       try {
-        await fetchPromiseRef.current;
+        await fetchTask;
       } finally {
+        fetchPromiseRef.current = null;
         if (showSpinner) setIsLoading(false);
       }
-      return;
-    }
-
-    if (showSpinner) setIsLoading(true);
-    setError(null);
-
-    const fetchTask = (async () => {
-      try {
-        const startTime = Date.now();
-        console.log(
-          "[Hook] GET /employee/dashboard_summary/ →",
-          userId,
-          "companyId:",
-          companyId,
-        );
-      
-      const apiStart = Date.now();
-      const data = await getDashboardSummary(userId, companyId);
-      const apiEnd = Date.now();
-      console.log(`[Timing] getDashboardSummary API took ${apiEnd - apiStart}ms`);
-      
-      setDashboardData(data);
-
-      const processStart = Date.now();
-      const cards = await processDashboardResponse(data, userId);
-      const processEnd = Date.now();
-      console.log(`[Timing] processDashboardResponse took ${processEnd - processStart}ms`);
-      
-      setResolvedPlanCards(cards);
-      console.log("[Hook] ✅ Fresh dashboard summary resolved:", cards.length);
-
-      // Save to cache
-      const cacheKey = `@dashboard_data_${userId}`;
-      await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
-      
-        console.log(`[Timing] Total fetchDashboardData took ${Date.now() - startTime}ms`);
-        return data;
-      } catch (err) {
-        const error =
-          err instanceof Error
-            ? err
-            : new Error("Failed to fetch dashboard summary");
-        console.error("[Hook] fetchDashboardData error:", error.message);
-        throw error;
-      }
-    })();
-
-    fetchPromiseRef.current = fetchTask;
-
-    try {
-      await fetchTask;
-    } finally {
-      fetchPromiseRef.current = null;
-      if (showSpinner) setIsLoading(false);
-    }
-  }, [userId, companyId]);
+    },
+    [userId, companyId],
+  );
 
   useEffect(() => {
     const loadAndFetch = async () => {
@@ -1101,9 +1370,12 @@ export const useGetDashboardSummary = (
     stats,
     isLoading,
     error,
-    refetch: useCallback(async (showSpinner = true) => {
-      await fetchDashboardData(showSpinner);
-    }, [fetchDashboardData]),
+    refetch: useCallback(
+      async (showSpinner = true) => {
+        await fetchDashboardData(showSpinner);
+      },
+      [fetchDashboardData],
+    ),
   };
 };
 
@@ -1126,29 +1398,32 @@ export const useModuleProgress = (
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchProgressData = useCallback(async (showSpinner: boolean) => {
-    if (!userId) return;
-    if (showSpinner) setIsLoading(true);
-    setError(null);
-    try {
-      const response: ModuleProgress = await getModuleProgress(userId);
-      const data = response.progress ?? [];
-      setProgress(data);
+  const fetchProgressData = useCallback(
+    async (showSpinner: boolean) => {
+      if (!userId) return;
+      if (showSpinner) setIsLoading(true);
+      setError(null);
+      try {
+        const response: ModuleProgress = await getModuleProgress(userId);
+        const data = response.progress ?? [];
+        setProgress(data);
 
-      const cacheKey = `@module_progress_${userId}`;
-      await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
-      return data;
-    } catch (err) {
-      const error =
-        err instanceof Error
-          ? err
-          : new Error("Failed to fetch module progress");
-      console.error("[Hook] fetchProgressData error:", error.message);
-      throw error;
-    } finally {
-      if (showSpinner) setIsLoading(false);
-    }
-  }, [userId]);
+        const cacheKey = `@module_progress_${userId}`;
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
+        return data;
+      } catch (err) {
+        const error =
+          err instanceof Error
+            ? err
+            : new Error("Failed to fetch module progress");
+        console.error("[Hook] fetchProgressData error:", error.message);
+        throw error;
+      } finally {
+        if (showSpinner) setIsLoading(false);
+      }
+    },
+    [userId],
+  );
 
   useEffect(() => {
     const loadAndFetch = async () => {
@@ -1206,11 +1481,7 @@ export const useModuleProgress = (
   // We disable the button + show "Quiz Attempted" after any completed attempt.
   const quizPassedProcessedModuleIds = new Set(
     progress
-      .filter(
-        (p) =>
-          !!p.processed_module_id &&
-          p.quiz_score !== null,
-      )
+      .filter((p) => !!p.processed_module_id && p.quiz_score !== null)
       .map((p) => p.processed_module_id),
   );
 
@@ -1225,4 +1496,44 @@ export const useModuleProgress = (
       await fetchProgressData(true);
     }, [fetchProgressData]),
   };
+};
+
+// ==================== TASKS HOOK ====================
+interface UseGetTasksReturn {
+  tasks: Task[];
+  total: number;
+  isLoading: boolean;
+  error: Error | null;
+  refetch: () => Promise<void>;
+}
+
+export const useGetTasks = (
+  userId: string | null,
+  companyId: string | null,
+): UseGetTasksReturn => {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [total, setTotal] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchTasks = async () => {
+    if (!userId || !companyId) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response: TasksResponse = await getTasks(userId, companyId);
+      setTasks(Array.isArray(response.tasks) ? response.tasks : []);
+      setTotal(response.total ?? 0);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error("Failed to fetch tasks"));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (userId && companyId) fetchTasks();
+  }, [userId, companyId]);
+
+  return { tasks, total, isLoading, error, refetch: fetchTasks };
 };

@@ -2,7 +2,7 @@
   "expo": {
     "name": "LucidX",
     "slug": "lucid-mobile",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -27,7 +27,9 @@
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "blockedPermissions": ["android.permission.ACTIVITY_RECOGNITION"]
+      "blockedPermissions": [
+        "android.permission.ACTIVITY_RECOGNITION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -35,7 +37,10 @@
     "plugins": [
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
-      "expo-screen-orientation"
+      "expo-screen-orientation",
+      "expo-image-picker",
+      "@react-native-firebase/messaging",
+      "expo-font"
     ]
   }
 }

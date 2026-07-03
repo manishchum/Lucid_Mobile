@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../contex/AuthContext";
+import { TenantProvider } from "../contex/TenantContext";
 import { APP_ROUTES, STACK_ROUTES } from "./Routes";
 
 // Screens
@@ -130,25 +131,22 @@ export default function AppNavigator() {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {isLoggedIn ? (
-        <>
-          <Stack.Screen name="AppTabs" component={BottomTabNavigator} />
-          <Stack.Screen
-            name={STACK_ROUTES.MODULE_QUIZ}
-            component={ModuleQuizScreen}
-            options={{ presentation: "card", animation: "slide_from_right" }}
-          />
-          <Stack.Screen
-            name={STACK_ROUTES.NOTIFICATIONS}
-            component={NotificationsScreen}
-            options={{ presentation: "card", animation: "slide_from_right" }}
-          />
-        </>
-      ) : (
-        <Stack.Screen name="Auth" component={AuthNavigator} />
-      )}
-    </Stack.Navigator>
+    <TenantProvider>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {isLoggedIn ? (
+          <>
+            <Stack.Screen name="AppTabs" component={BottomTabNavigator} />
+            <Stack.Screen
+              name={STACK_ROUTES.MODULE_QUIZ}
+              component={ModuleQuizScreen}
+              options={{ presentation: "card", animation: "slide_from_right" }}
+            />
+          </>
+        ) : (
+          <Stack.Screen name="Auth" component={AuthNavigator} />
+        )}
+      </Stack.Navigator>
+    </TenantProvider>
   );
 }
 
