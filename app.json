@@ -43,7 +43,8 @@
       "expo-screen-orientation",
       "expo-image-picker",
       "@react-native-firebase/messaging",
-      "expo-font"
+      "expo-font",
+      "expo-video"
     ]
   }
 }

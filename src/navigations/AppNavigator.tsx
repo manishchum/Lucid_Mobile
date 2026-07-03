@@ -18,6 +18,8 @@ import StudioScreen from "../screens/home/StudioScreen";
 import ProfileScreen from "../screens/home/ProfileScreen";
 import ModuleQuizScreen from "../screens/home/ModuleQuizScreen";
 import NotificationsScreen from "../screens/home/NotificationsScreen";
+import ContentLibraryScreen from "../screens/home/ContentLibraryScreen";
+import ContentViewerScreen from "../screens/home/ContentViewerScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -59,6 +61,9 @@ function BottomTabNavigator() {
             case APP_ROUTES.STUDIO:
               iconName = "brush";
               break;
+            case APP_ROUTES.CONTENT_LIBRARY:
+              iconName = "folder-multiple";
+              break;
             case APP_ROUTES.PROFILE:
               iconName = "account";
               break;
@@ -90,6 +95,11 @@ function BottomTabNavigator() {
           // Preserve the module params when user switches away and back
           unmountOnBlur: false,
         }}
+      />
+      <Tab.Screen
+        name={APP_ROUTES.CONTENT_LIBRARY}
+        component={ContentLibraryScreen}
+        options={{ tabBarLabel: "Library" }}
       />
       <Tab.Screen
         name={APP_ROUTES.PROFILE}
@@ -145,6 +155,11 @@ export default function AppNavigator() {
               name={STACK_ROUTES.NOTIFICATIONS}
               component={NotificationsScreen}
               options={{ presentation: "card", animation: "slide_from_right" }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.CONTENT_VIEWER}
+              component={ContentViewerScreen}
+              options={{ presentation: "card", animation: "slide_from_right", headerShown: false }}
             />
           </>
         ) : (
