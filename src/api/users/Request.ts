@@ -25,7 +25,7 @@ const EXPO_API_URL =
 const API_BASE_URL = `${EXPO_API_URL}/api`;
 const MODULE_CHAT_URL = `${API_BASE_URL}/module-chat`;
 
-const getFirebaseToken = (): Promise<string | null> => {
+export const getFirebaseToken = (): Promise<string | null> => {
   return new Promise((resolve) => {
     const authInstance = getAuth();
     const currentUser = authInstance.currentUser;
