@@ -252,11 +252,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setOtpStep(false);
       setConfirmation(null);
       setCachedUser(null);
-      // Clear persistent storage on logout
+      //   Clear persistent storage on logout — both the auth keys AND every
+      //   app-data cache (dashboard summary, module progress, processed
+      //   module content, company data). Without this, stale cached data
+      // can be read back before the network refetch
+      //   resolves, showing incorrect progress
+      //   right after logging in again.
       try {
-        await AsyncStorage.removeItem(CACHED_USER_KEY);
-        await AsyncStorage.removeItem(PHONE_NUMBER_KEY);
-        console.log("[Auth] Cleared AsyncStorage on logout");
+        const allKeys = await AsyncStorage.getAllKeys();
+        const appDataKeyPrefixes = [
+          "@dashboard_data_",
+          "@module_progress_",
+          "@processed_module_",
+          "@company_data_",
+        ];
+        const keysToRemove = allKeys.filter(
+          (key) =>
+            key === CACHED_USER_KEY ||
+            key === PHONE_NUMBER_KEY ||
+            appDataKeyPrefixes.some((prefix) => key.startsWith(prefix)),
+        );
+        if (keysToRemove.length > 0) {
+          await AsyncStorage.multiRemove(keysToRemove);
+        }
+        console.log(
+          `[Auth] Cleared ${keysToRemove.length} AsyncStorage key(s) on logout:`,
+          keysToRemove,
+        );
       } catch (error) {
         console.error("[Auth] Error clearing AsyncStorage:", error);
       }

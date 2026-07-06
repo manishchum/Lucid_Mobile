@@ -11,6 +11,7 @@ import {
   Platform,
   UIManager,
   Alert,
+  Linking,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,7 +20,7 @@ import { APP_ROUTES, STACK_ROUTES } from "../../navigations/Routes";
 import { useAuth } from "../../contex/AuthContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
-import { useModuleProgress } from "../../api/users/Hooks";
+import { useModuleProgress, useGetTrainingPlan } from "../../api/users/Hooks";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 
 if (
@@ -54,6 +55,75 @@ export default function SprintScreen({
   const [showNoInternet, setShowNoInternet] = useState(false);
 
   const isOnline = useNetworkStatus();
+
+  const { plan: trainingPlan } = useGetTrainingPlan(
+    cachedUser?.userId ?? null,
+    moduleId || null,
+  );
+  const additionalReadings: Array<{ url: string; title: string }> =
+    trainingPlan?.additional_readings ?? [];
+
+  const trainingPlanModulesByTitle = useMemo(() => {
+    const map = new Map<string, string>();
+    const planModules: Array<{
+      title?: string;
+      order?: number;
+      processed_module_id?: string;
+    }> = trainingPlan?.plan?.modules ?? [];
+    planModules.forEach((m) => {
+      const key = (m?.title ?? "").trim().toLowerCase();
+      if (key && m?.processed_module_id) {
+        map.set(key, m.processed_module_id);
+      }
+    });
+    return map;
+  }, [trainingPlan]);
+
+  const trainingPlanModulesByOrder = useMemo(() => {
+    const map = new Map<number, string>();
+    const planModules: Array<{
+      order?: number;
+      processed_module_id?: string;
+    }> = trainingPlan?.plan?.modules ?? [];
+    planModules.forEach((m) => {
+      if (typeof m?.order === "number" && m?.processed_module_id) {
+        map.set(m.order, m.processed_module_id);
+      }
+    });
+    return map;
+  }, [trainingPlan]);
+
+  const resolveProcessedModuleId = (
+    index: number,
+    mod: { title?: string; order?: number },
+  ): string => {
+    const titleKey = (mod?.title ?? "").trim().toLowerCase();
+    const byTitle = titleKey ? trainingPlanModulesByTitle.get(titleKey) : "";
+    if (byTitle) return byTitle;
+
+    if (typeof mod?.order === "number") {
+      const byOrder = trainingPlanModulesByOrder.get(mod.order);
+      if (byOrder) return byOrder;
+    }
+
+    return processedModuleIds[index] ?? "";
+  };
+
+  const handleOpenReading = async (url: string) => {
+    if (!url) return;
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        // Opens in the system default browser.
+        await Linking.openURL(url);
+      } else {
+        Alert.alert("Error", "Cannot open this link.");
+      }
+    } catch (error) {
+      console.error("[SprintScreen] Failed to open reading link:", error);
+      Alert.alert("Error", "Something went wrong while opening this link.");
+    }
+  };
 
   const modules = useMemo(
     () =>
@@ -112,18 +182,24 @@ export default function SprintScreen({
   // Which of this sprint's module slots are done, by index
   const moduleDoneFlags = useMemo(
     () =>
-      modules.map((_, i) => {
-        const pid = processedModuleIds[i];
-        const done = !!pid && completedProcessedModuleIds.has(pid);
+      modules.map((mod, i) => {
+        const pid = resolveProcessedModuleId(i, mod);
+        const done = !!pid && quizPassedProcessedModuleIds.has(pid);
         if (done) {
           console.log(
             `[SprintScreen] Module[${i}] "${modules[i]?.title}" → ` +
-              `processedModuleId="${pid}" → marked DONE`,
+              `processedModuleId="${pid}" → quiz completed → marked DONE`,
           );
         }
         return done;
       }),
-    [modules, processedModuleIds, completedProcessedModuleIds],
+    [
+      modules,
+      processedModuleIds,
+      quizPassedProcessedModuleIds,
+      trainingPlanModulesByTitle,
+      trainingPlanModulesByOrder,
+    ],
   );
   const completedModulesCount = moduleDoneFlags.filter(Boolean).length;
 
@@ -133,10 +209,14 @@ export default function SprintScreen({
   };
 
   /**
-   * handleViewContent — uses the pre-resolved processedModuleId at the same
-   * index as the tapped module.
+   * handleViewContent — canonical title/order match first, positional
+   * fallback last (see resolveProcessedModuleId above).
    */
-  const handleViewContent = (index: number, modTitle: string) => {
+  const handleViewContent = (
+    index: number,
+    modTitle: string,
+    mod?: { order?: number },
+  ) => {
     if (isOnline === false) {
       setShowNoInternet(true);
       return;
@@ -150,7 +230,10 @@ export default function SprintScreen({
       return;
     }
 
-    const processedModuleId = processedModuleIds[index] ?? "";
+    const processedModuleId = resolveProcessedModuleId(index, {
+      title: modTitle,
+      order: mod?.order,
+    });
 
     if (!processedModuleId) {
       console.warn(` No processedModuleId at index ${index} for "${modTitle}"`);
@@ -173,15 +256,22 @@ export default function SprintScreen({
   };
 
   /**
-   * handleModuleQuiz — same approach: use pre-resolved processedModuleId.
+   * handleModuleQuiz — same
    */
-  const handleModuleQuiz = (index: number, modTitle: string) => {
+  const handleModuleQuiz = (
+    index: number,
+    modTitle: string,
+    mod?: { order?: number },
+  ) => {
     if (isOnline === false) {
       setShowNoInternet(true);
       return;
     }
 
-    const processedModuleId = processedModuleIds[index] ?? "";
+    const processedModuleId = resolveProcessedModuleId(index, {
+      title: modTitle,
+      order: mod?.order,
+    });
 
     if (!processedModuleId) {
       console.warn(
@@ -230,7 +320,6 @@ export default function SprintScreen({
       >
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <View style={styles.header}>
-          {/* <Text style={styles.headerTitle}>Performance Sprint</Text> */}
           <Text style={styles.headerTitle} numberOfLines={2}>
             {planTitle}
           </Text>
@@ -300,6 +389,51 @@ export default function SprintScreen({
           ) : null}
         </View>
 
+        {/* ── Additional Readings ─────────────────────────────────────────── */}
+        {additionalReadings.length > 0 && (
+          <View style={styles.moduleSection}>
+            <View style={styles.readingsHeaderRow}>
+              <View style={styles.readingsIconCircle}>
+                <MaterialCommunityIcons
+                  name="book-open-page-variant-outline"
+                  size={18}
+                  color="#4F46E5"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sectionTitle}>Additional Readings</Text>
+                <Text style={styles.readingsSubtitle}>
+                  Extra resources curated for this sprint.
+                </Text>
+              </View>
+            </View>
+
+            {additionalReadings.map((reading, idx) => (
+              <View key={`reading-${idx}`} style={styles.readingCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.readingTitle} numberOfLines={2}>
+                    {reading.title}
+                  </Text>
+                  <Text style={styles.readingUrl} numberOfLines={1}>
+                    {reading.url}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.readingOpenButton}
+                  onPress={() => handleOpenReading(reading.url)}
+                >
+                  <Text style={styles.readingOpenButtonText}>Open</Text>
+                  <MaterialCommunityIcons
+                    name="open-in-new"
+                    size={14}
+                    color="white"
+                  />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* ── Module List ─────────────────────────────────────────────────── */}
         <View style={styles.moduleSection}>
           <Text style={styles.sectionTitle}>Your Modules</Text>
@@ -316,8 +450,8 @@ export default function SprintScreen({
           ) : (
             modules.map((mod, index) => {
               const isDone = moduleDoneFlags[index];
-              const hasProcessedId = !!processedModuleIds[index];
-              const pid = processedModuleIds[index];
+              const pid = resolveProcessedModuleId(index, mod);
+              const hasProcessedId = !!pid;
               const isQuizPassed =
                 !!pid && quizPassedProcessedModuleIds.has(pid);
 
@@ -354,7 +488,7 @@ export default function SprintScreen({
                         !hasProcessedId && styles.viewButtonDisabled,
                       ]}
                       disabled={!hasProcessedId}
-                      onPress={() => handleViewContent(index, mod.title)}
+                      onPress={() => handleViewContent(index, mod.title, mod)}
                     >
                       <Text style={styles.viewButtonText}>View Content</Text>
                     </TouchableOpacity>
@@ -368,7 +502,7 @@ export default function SprintScreen({
                         isQuizPassed && styles.quizButtonPassed,
                       ]}
                       disabled={!hasProcessedId || isQuizPassed}
-                      onPress={() => handleModuleQuiz(index, mod.title)}
+                      onPress={() => handleModuleQuiz(index, mod.title, mod)}
                     >
                       {isQuizPassed && (
                         <MaterialCommunityIcons
@@ -495,6 +629,62 @@ const styles = StyleSheet.create({
 
   emptyState: { alignItems: "center", paddingVertical: 40, gap: 10 },
   emptyText: { fontSize: 14, color: "#94A3B8" },
+
+  // ── Additional Readings ────────────────────────────────────────────────
+  readingsHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  readingsIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  readingsSubtitle: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 2,
+  },
+  readingCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "white",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    gap: 12,
+  },
+  readingTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1F2937",
+    marginBottom: 3,
+  },
+  readingUrl: {
+    fontSize: 11,
+    color: "#94A3B8",
+  },
+  readingOpenButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: "#4F46E5",
+  },
+  readingOpenButtonText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "700",
+  },
 
   moduleCard: {
     backgroundColor: "white",

@@ -266,6 +266,15 @@ export interface TasksResponse {
 
 export type TaskSubmissionType = "image" | "text" | "options";
 
+export type TaskSubmissionWireType = "image" | "text" | "multiple_choice";
+
+export interface TaskAnswer {
+  question_id: string;
+  question: string;
+  correct_answer?: string;
+  selected_option: string;
+}
+
 export interface TaskSubmissionPayload {
   assignment_id: string;
   task_id: string;
@@ -275,7 +284,9 @@ export interface TaskSubmissionPayload {
   score: number;
   image_url?: string;
   text_answer?: string;
+  /** @deprecated use `answers` — kept for backwards compatibility */
   selected_options?: string[];
+  answers?: TaskAnswer[];
 }
 
 export interface TaskSubmissionResponse {

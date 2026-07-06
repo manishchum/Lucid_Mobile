@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   StatusBar,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -131,7 +133,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   useFocusEffect(
     React.useCallback(() => {
       refetch(false); // Silent background update on screen focus
-    }, [refetch])
+    }, [refetch]),
   );
 
   const isLoading = (userLoading && !cachedUser) || dashboardLoading;
@@ -187,111 +189,127 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
-        {/* ── HEADER ──────────────────────────────────────────────────────── */}
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.greetingText}>
-              Welcome, {firstName || "there"}
-            </Text>
-            <Text style={styles.emailText}>
-              {position || user?.email || ""}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.notificationBtn}
-            onPress={() => navigation.navigate(STACK_ROUTES.NOTIFICATIONS)}
-          >
-            <MaterialCommunityIcons name="bell" size={22} color="#475569" />
-            {unreadCount > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* ── YOUR PROGRESS CARD ──────────────────────────────────────────── */}
-        {(
-          <>
-            <View style={styles.sectionWrapper}>
-              <View style={styles.progressCard}>
-                <View style={styles.progressLeft}>
-                  <View style={styles.progressIconBox}>
-                    <MaterialCommunityIcons
-                      name={progressPercentage >= 100 ? "trophy" : "lightning-bolt"}
-                      size={22}
-                      color="#2563EB"
-                    />
-                  </View>
-                  <View style={styles.progressTextBlock}>
-                    <Text style={styles.progressCardTitle}>Your Progress</Text>
-                    <Text style={styles.progressNudge}>{nudgeMessage}</Text>
-                    <View style={styles.completedBadge}>
-                      <Text style={styles.completedBadgeText}>
-                        {completedCount} COMPLETED
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-                <View style={styles.progressRight}>
-                  <ProgressCircle percentage={progressPercentage} />
-                  <Text style={styles.progressOfText}>
-                    {completedCount} of {totalAssigned}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 40 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+        >
+          {/* ── HEADER ──────────────────────────────────────────────────────── */}
+          <View style={styles.header}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.greetingText}>
+                Welcome, {firstName || "there"}
+              </Text>
+              <Text style={styles.emailText}>
+                {position || user?.email || ""}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.notificationBtn}
+              onPress={() => navigation.navigate(STACK_ROUTES.NOTIFICATIONS)}
+            >
+              <MaterialCommunityIcons name="bell" size={22} color="#475569" />
+              {unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {unreadCount > 9 ? "9+" : unreadCount}
                   </Text>
                 </View>
-              </View>
-            </View>
+              )}
+            </TouchableOpacity>
+          </View>
 
-            {/* ── QUICK STATS ─────────────────────────────────────────── */}
-            <View style={styles.sectionWrapper}>
-              <Text style={styles.sectionTitle}>Overview</Text>
-              <View style={styles.statsGrid}>
-                <StatCard
-                  icon="book-multiple"
-                  color="#EEF2FF"
-                  iconColor="#4F46E5"
-                  val={String(resolvedPlanCards.length)}
-                  label="Sprints"
-                />
-                <StatCard
-                  icon="check-decagram"
-                  color="#ECFDF5"
-                  iconColor="#10B981"
-                  val={String(completedCount)}
-                  label="Completed"
-                />
-                <StatCard
-                  icon="lightning-bolt"
-                  color="#FFF7ED"
-                  iconColor="#F59E0B"
-                  val={String(
-                    resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS")
-                      .length,
-                  )}
-                  label="In Progress"
-                />
+          {/* ── YOUR PROGRESS CARD ──────────────────────────────────────────── */}
+          {
+            <>
+              <View style={styles.sectionWrapper}>
+                <View style={styles.progressCard}>
+                  <View style={styles.progressLeft}>
+                    <View style={styles.progressIconBox}>
+                      <MaterialCommunityIcons
+                        name={
+                          progressPercentage >= 100
+                            ? "trophy"
+                            : "lightning-bolt"
+                        }
+                        size={22}
+                        color="#2563EB"
+                      />
+                    </View>
+                    <View style={styles.progressTextBlock}>
+                      <Text style={styles.progressCardTitle}>
+                        Your Progress
+                      </Text>
+                      <Text style={styles.progressNudge}>{nudgeMessage}</Text>
+                      <View style={styles.completedBadge}>
+                        <Text style={styles.completedBadgeText}>
+                          {completedCount} COMPLETED
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                  <View style={styles.progressRight}>
+                    <ProgressCircle percentage={progressPercentage} />
+                    <Text style={styles.progressOfText}>
+                      {completedCount} of {totalAssigned}
+                    </Text>
+                  </View>
+                </View>
               </View>
-            </View>
-          </>
-        )}
 
-        {/* ── ASSIGNED SECTION (sprints + tasks tabbed) ───────────────── */}
-        <AssignedSection
-          planCards={resolvedPlanCards}
-          navigation={navigation}
-          userId={userId ?? null}
-          companyId={companyId ?? null}
-        />
-      </ScrollView>
+              {/* ── QUICK STATS ─────────────────────────────────────────── */}
+              <View style={styles.sectionWrapper}>
+                <Text style={styles.sectionTitle}>Overview</Text>
+                <View style={styles.statsGrid}>
+                  <StatCard
+                    icon="book-multiple"
+                    color="#EEF2FF"
+                    iconColor="#4F46E5"
+                    val={String(resolvedPlanCards.length)}
+                    label="Sprints"
+                  />
+                  <StatCard
+                    icon="check-decagram"
+                    color="#ECFDF5"
+                    iconColor="#10B981"
+                    val={String(completedCount)}
+                    label="Completed"
+                  />
+                  <StatCard
+                    icon="lightning-bolt"
+                    color="#FFF7ED"
+                    iconColor="#F59E0B"
+                    val={String(
+                      resolvedPlanCards.filter(
+                        (p) => p.status === "IN_PROGRESS",
+                      ).length,
+                    )}
+                    label="In Progress"
+                  />
+                </View>
+              </View>
+            </>
+          }
+
+          {/* ── ASSIGNED SECTION (sprints + tasks tabbed) ───────────────── */}
+          <AssignedSection
+            planCards={resolvedPlanCards}
+            navigation={navigation}
+            userId={userId ?? null}
+            companyId={companyId ?? null}
+          />
+        </ScrollView>
+      </KeyboardAvoidingView>
       {/* iOS screen-recording overlay — invisible on Android */}
       <ScreenRecordingGuard isRecording={isRecording} />
     </SafeAreaView>

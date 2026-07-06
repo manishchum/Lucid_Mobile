@@ -11,16 +11,28 @@ export interface PlanCard {
   tips?: string;
   status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
   processedModuleIds?: string[];
+  completedModulesCount?: number;
 }
 
 interface AssignedSprintsListProps {
   planCards: PlanCard[];
   navigation: any;
+  emptyMessage?: string;
 }
+
+export const getSprintProgress = (plan: PlanCard): number => {
+  if (!plan.totalModules) return 0;
+  const completed = Math.min(
+    Math.max(plan.completedModulesCount ?? 0, 0),
+    plan.totalModules,
+  );
+  return Math.round((completed / plan.totalModules) * 100);
+};
 
 export default function AssignedSprintsList({
   planCards,
   navigation,
+  emptyMessage,
 }: AssignedSprintsListProps) {
   if (planCards.length === 0) {
     return (
@@ -30,7 +42,9 @@ export default function AssignedSprintsList({
           size={40}
           color="#CBD5E1"
         />
-        <Text style={styles.emptyStateText}>No sprints assigned yet</Text>
+        <Text style={styles.emptyStateText}>
+          {emptyMessage ?? "No sprints assigned yet"}
+        </Text>
       </View>
     );
   }
@@ -84,11 +98,16 @@ export default function AssignedSprintsList({
               <View style={{ flex: 1 }}>
                 <Text style={styles.planTitleText}>{plan.title}</Text>
                 <Text style={styles.planSubText} numberOfLines={2}>
+                  {Math.min(plan.completedModulesCount ?? 0, plan.totalModules)}
+                  {" / "}
                   {plan.totalModules} module
                   {plan.totalModules !== 1 ? "s" : ""}
                   {plan.tips ? ` · ${plan.tips.substring(0, 55)}…` : ""}
                 </Text>
               </View>
+              <Text style={styles.planProgressText}>
+                {getSprintProgress(plan)}%
+              </Text>
             </View>
 
             <TouchableOpacity
@@ -179,6 +198,13 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   planTitleText: { fontSize: 16, fontWeight: "700", color: "#1E293B" },
+  planProgressText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#2563EB",
+    marginLeft: 6,
+    alignSelf: "flex-start",
+  },
   planSubText: {
     fontSize: 13,
     color: "#64748B",

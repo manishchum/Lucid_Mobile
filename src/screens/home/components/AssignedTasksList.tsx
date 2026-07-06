@@ -16,6 +16,7 @@ interface AssignedTasksListProps {
   onRetry?: () => void;
   userId?: string | null;
   onTaskSubmitted?: (task: Task) => void;
+  isFiltered?: boolean;
 }
 
 const isOverdue = (dueDate: string | null): boolean => {
@@ -30,6 +31,7 @@ export default function AssignedTasksList({
   onRetry,
   userId,
   onTaskSubmitted,
+  isFiltered,
 }: AssignedTasksListProps) {
   // ── Loading ─────────────────────────────────────────────────────────
   if (isLoading) {
@@ -72,12 +74,18 @@ export default function AssignedTasksList({
     return (
       <View style={styles.centerState}>
         <MaterialCommunityIcons
-          name="clipboard-check-outline"
+          name={isFiltered ? "magnify-close" : "clipboard-check-outline"}
           size={44}
           color="#CBD5E1"
         />
-        <Text style={styles.emptyTitle}>All caught up!</Text>
-        <Text style={styles.emptySubtitle}>No tasks assigned right now.</Text>
+        <Text style={styles.emptyTitle}>
+          {isFiltered ? "No matching tasks" : "All caught up!"}
+        </Text>
+        <Text style={styles.emptySubtitle}>
+          {isFiltered
+            ? "Try a different search term."
+            : "No tasks assigned right now."}
+        </Text>
       </View>
     );
   }
