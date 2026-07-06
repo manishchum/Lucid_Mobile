@@ -306,6 +306,21 @@ export default function TaskAccordionItem({
       selectedOption: selectedOption ?? undefined,
     });
 
+    const questionId: string =
+      firstQuestion?.id ?? firstQuestion?.question_id ?? "";
+    const correctAnswer: string | undefined =
+      firstQuestion?.correctAnswer ||
+      firstQuestion?.correct_answer ||
+      undefined;
+
+    const resolvedMaxScore: number =
+      (firstQuestion &&
+        (firstQuestion.max_score ?? firstQuestion.points ?? undefined)) ??
+      (task as any).max_score ??
+      1;
+
+    const resolvedScore: number = resolvedMaxScore;
+
     setSubmitting(true);
     try {
       await submitTaskAnswer(effectiveUserId, {
@@ -313,14 +328,23 @@ export default function TaskAccordionItem({
         task_id: task.task_id,
         user_id: effectiveUserId,
         submission_type: effectiveType,
-        max_score: 1,
-        score: 1,
+        max_score: resolvedMaxScore,
+        score: resolvedScore,
         image_url: isImage
           ? `data:${imageMime};base64,${imageBase64}`
           : undefined,
         text_answer: !isImage && !isOptions ? textValue.trim() : undefined,
-        selected_options:
-          isOptions && selectedOption ? [selectedOption] : undefined,
+        answers:
+          isOptions && selectedOption && firstQuestion
+            ? [
+                {
+                  question_id: questionId,
+                  question: firstQuestion.question ?? "",
+                  correct_answer: correctAnswer,
+                  selected_option: selectedOption,
+                },
+              ]
+            : undefined,
       });
 
       setJustCompleted(true);

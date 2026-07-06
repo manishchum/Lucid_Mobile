@@ -583,7 +583,7 @@ export const useGetTrainingPlan = (
     setError(null);
     try {
       const response = await getTrainingPlan(dbUserId, moduleId);
-      setPlan(response?.data || null);
+      setPlan(response?.data ?? response ?? null);
     } catch (err) {
       setError(
         err instanceof Error ? err : new Error("Failed to fetch training plan"),
@@ -621,6 +621,38 @@ interface DashboardStats {
 
 const ASSIGNED_STATUSES = new Set(["ASSIGNED", "IN_PROGRESS", "COMPLETED"]);
 
+async function fetchAuthoritativeModules(
+  originalModuleId: string,
+  userId: string,
+): Promise<
+  Array<{
+    order?: number;
+    title?: string;
+    processed_module_id?: string;
+    recommended_time?: number;
+  }>
+> {
+  try {
+    const response = await getTrainingPlan(userId, originalModuleId);
+    const authModules: any[] = response?.plan?.modules ?? [];
+    authModules.forEach((m) => {
+      if (m?.processed_module_id) {
+        processedModuleMetadata.set(m.processed_module_id, {
+          title: m.title ?? "Module",
+          recommended_time: m.recommended_time ?? 0,
+        });
+      }
+    });
+    return authModules;
+  } catch (err) {
+    console.error(
+      `[resolveIds] Failed to fetch authoritative /training-plan for original_module_id="${originalModuleId}":`,
+      err,
+    );
+    return [];
+  }
+}
+
 async function resolveProcessedModuleIdsForPlan(
   plan: any,
   userId: string,
@@ -635,36 +667,22 @@ async function resolveProcessedModuleIdsForPlan(
 
   const planModules: Array<{ title: string; processed_module_id?: string }> =
     plan?.plan_json?.modules ?? [];
+  const originalModuleId: string = plan?.module_id ?? "";
 
   if (planModules.length === 0) {
-    // Strategy 0.5: Try to fetch from original-module endpoint if we have module_id
-    const originalModuleId: string = plan?.module_id ?? "";
+    // Strategy 0.5: plan_json is empty — fetch the authoritative plan for
+    // this original module directly and use its own module order.
     if (originalModuleId) {
-      try {
-        const response = await getProcessedModules(originalModuleId, userId);
-        const allProcessed: any[] = response?.data ?? [];
-        allProcessed.forEach((pm: any) => {
-          if (pm?.processed_module_id) {
-            processedModuleMetadata.set(pm.processed_module_id, {
-              title: pm.title ?? "Module",
-              recommended_time: pm.recommended_time ?? 0,
-            });
-          }
-        });
-        const defaultModules = allProcessed.filter(
-          (pm: any) =>
-            String(pm?.learning_style ?? "")
-              .trim()
-              .toLowerCase() === "default",
+      const authModules = await fetchAuthoritativeModules(
+        originalModuleId,
+        userId,
+      );
+      if (authModules.length > 0) {
+        const sorted = [...authModules].sort(
+          (a, b) => (a.order ?? 0) - (b.order ?? 0),
         );
-        if (defaultModules.length > 0) {
-          const sorted = [...defaultModules].sort(
-            (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
-          );
-          return sorted.map((pm) => pm.processed_module_id).filter(Boolean);
-        }
-      } catch (err) {
-        console.error(`[resolveIds] Strategy 0.5 failed:`, err);
+        const ids = sorted.map((m) => m.processed_module_id).filter(Boolean);
+        if (ids.length > 0) return ids as string[];
       }
     }
 
@@ -697,103 +715,44 @@ async function resolveProcessedModuleIdsForPlan(
     return plan.processed_module_ids;
   }
 
-  // ── Strategy 2: Fetch from original-module endpoint (older plans) ──────────
-  const originalModuleId: string = plan?.module_id ?? "";
+  // ── Strategy 2:
   if (originalModuleId) {
-    try {
-      console.log(
-        `[resolveIds] Plan "${plan.learning_plan_id}" — Strategy 2: fetching ` +
-          `/processed-modules/original-module/${originalModuleId}`,
-      );
-      const response = await getProcessedModules(originalModuleId, userId);
-      const allProcessed: any[] = response?.data ?? [];
-      allProcessed.forEach((pm: any) => {
-        if (pm?.processed_module_id) {
-          processedModuleMetadata.set(pm.processed_module_id, {
-            title: pm.title ?? "Module",
-            recommended_time: pm.recommended_time ?? 0,
-          });
+    console.log(
+      `[resolveIds] Plan "${plan.learning_plan_id}" — Strategy 2: fetching ` +
+        `authoritative /training-plan for original_module_id="${originalModuleId}"`,
+    );
+    const authModules = await fetchAuthoritativeModules(
+      originalModuleId,
+      userId,
+    );
+
+    if (authModules.length > 0) {
+      const titleToId = new Map<string, string>();
+      authModules.forEach((m: any) => {
+        const key = (m?.title ?? "").trim().toLowerCase();
+        if (key && m?.processed_module_id) {
+          titleToId.set(key, m.processed_module_id);
         }
       });
 
-      // Always filter to learning_style="default" — this is what the home screen uses
-      const defaultModules = allProcessed.filter(
-        (pm: any) =>
-          String(pm?.learning_style ?? "")
-            .trim()
-            .toLowerCase() === "default",
-      );
-
-      console.log(
-        `[resolveIds] Found ${defaultModules.length} "default" modules ` +
-          `out of ${allProcessed.length} total`,
-      );
-
-      if (defaultModules.length > 0) {
-        const sorted = [...defaultModules].sort(
-          (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
-        );
-
-        // Build title → id lookup for exact matching
-        const titleToId = new Map<string, string>();
-        sorted.forEach((pm: any) => {
-          if (pm?.title && pm?.processed_module_id) {
-            titleToId.set(
-              pm.title.trim().toLowerCase(),
-              pm.processed_module_id,
-            );
-          }
-        });
-
-        const positionalFallbackSafe = sorted.length === planModules.length;
-        if (!positionalFallbackSafe) {
-          console.warn(
-            `Plan "${plan.learning_plan_id}" — planModules.length` +
-              `(${planModules.length}) !== defaultModules.length(${sorted.length}). ` +
-              `Positional fallback disabled for this plan to avoid mismatched IDs.`,
+      const aligned = planModules.map((m: any, i: number) => {
+        const key = m?.title?.trim().toLowerCase() ?? "";
+        const byTitle = titleToId.get(key);
+        if (byTitle) {
+          console.log(
+            `[resolveIds] ✅ Module[${i}] "${m.title}" → title match → "${byTitle}"`,
           );
+          return byTitle;
         }
+        console.error(
+          `[resolveIds] ❌ Module[${i}] "${m.title}" — no title match in ` +
+            `authoritative /training-plan response. Leaving unresolved ` +
+            `(no positional guess) to avoid mismatched completion state.`,
+        );
+        return "";
+      });
 
-        const aligned = planModules
-          .map((m: any, i: number) => {
-            const key = m?.title?.trim().toLowerCase() ?? "";
-            const byTitle = titleToId.get(key);
-            if (byTitle) {
-              console.log(
-                `[resolveIds] ✅ Module[${i}] "${m.title}" → title match → "${byTitle}"`,
-              );
-              return byTitle;
-            }
-            if (!positionalFallbackSafe) {
-              console.error(
-                `Module[${i}] "${m.title}" — no title match and ` +
-                  `positional fallback unsafe (list length mismatch). Leaving unresolved.`,
-              );
-              return "";
-            }
-            // Positional fallback
-            const byPos = sorted[i]?.processed_module_id ?? "";
-            if (byPos) {
-              console.warn(
-                `Module[${i}] "${m.title}" → positional fallback → ` +
-                  `"${byPos}" (matched default module titled "${sorted[i]?.title}")`,
-              );
-            } else {
-              console.error(
-                `[resolveIds] ❌ Module[${i}] "${m.title}" — no ID found`,
-              );
-            }
-            return byPos;
-          })
-          .filter(Boolean);
-
-        if (aligned.length > 0) return aligned;
-      }
-    } catch (err) {
-      console.error(
-        `[resolveIds] ❌ Strategy 2 failed for plan "${plan.learning_plan_id}":`,
-        err,
-      );
+      if (aligned.some(Boolean)) return aligned;
     }
   }
 
@@ -905,11 +864,11 @@ async function processDashboardResponse(
 
   const completedProcessedModuleIds = new Set(
     (data?.progress ?? [])
-      .map((p: any) => p?.processed_module_id)
-      .filter(Boolean),
+      .filter((p: any) => !!p?.processed_module_id && p?.quiz_score !== null)
+      .map((p: any) => p.processed_module_id),
   );
   console.log(
-    "[Hook] Completed processed-module IDs:",
+    "[Hook] Quiz-completed processed-module IDs:",
     completedProcessedModuleIds.size,
   );
 
@@ -1167,11 +1126,13 @@ export const useGetDashboardSummary = (
 
           const completedProcessedModuleIds = new Set(
             (data?.progress ?? [])
-              .map((p: any) => p?.processed_module_id)
-              .filter(Boolean),
+              .filter(
+                (p: any) => !!p?.processed_module_id && p?.quiz_score !== null,
+              )
+              .map((p: any) => p.processed_module_id),
           );
           console.log(
-            "[Hook] Completed processed-module IDs:",
+            "[Hook] Quiz-completed processed-module IDs:",
             completedProcessedModuleIds.size,
           );
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,13 +8,23 @@ import {
   Dimensions,
   ActivityIndicator,
   Alert,
+  Image,
 } from "react-native";
+import { Video, ResizeMode, Audio, AVPlaybackStatus } from "expo-av";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { simplifyHindiText } from "./HindiSimplifier";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface MediaItem {
+  id: string;
+  type: "video" | "audio" | "image";
+  src: string;
+  title: string;
+  description: string;
+}
 
 interface ParsedSection {
   id: string;
@@ -29,6 +39,7 @@ interface ParsedSection {
     tableData: { headers: string[]; rows: string[][] } | null;
     blockquote: string | null;
     figcaption: string | null;
+    media: MediaItem[];
   }>;
   rawBullets: string[]; // top-level <ol> items (objectives, summary, activity)
 }
@@ -55,6 +66,48 @@ function stripTags(html: string): string {
     .replace(/&nbsp;/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function parseMediaEmbeds(html: string): MediaItem[] {
+  const media: MediaItem[] = [];
+  if (!html) return media;
+
+  // Matches the opening <figure ... data-media-type="..." ...> tag emitted
+  // by the module editor for video/audio/image embeds.
+  const figureRegex = /<figure([^>]*data-media-type=[^>]*)>/gi;
+  const figureMatches = [...html.matchAll(figureRegex)];
+
+  figureMatches.forEach((match, idx) => {
+    const attrs = match[1] ?? "";
+
+    const getAttr = (name: string): string => {
+      const m = attrs.match(new RegExp(`data-${name}="([^"]*)"`, "i"));
+      return m ? decodeHtmlEntities(m[1]) : "";
+    };
+
+    const type = getAttr("media-type").toLowerCase();
+    const src = getAttr("media-src");
+    const title = getAttr("media-title");
+    const description = getAttr("media-description");
+    const id = getAttr("media-id") || `media-${idx}`;
+
+    if (!src) return;
+    if (type === "video" || type === "audio" || type === "image") {
+      media.push({ id, type, src, title, description });
+    }
+  });
+
+  return media;
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
 }
 
 function parseTable(tableHtml: string): {
@@ -124,6 +177,11 @@ function parseHtmlContent(html: string): ParsedSection[] {
   const sectionMatches = [...html.matchAll(sectionRegex)];
 
   if (sectionMatches.length === 0) {
+    const media = parseMediaEmbeds(html);
+    const cleanedHtml = html.replace(
+      /<figure[^>]*data-media-type=[^>]*>[\s\S]*?<\/figure>/gi,
+      "",
+    );
     return [
       {
         id: "main",
@@ -133,12 +191,13 @@ function parseHtmlContent(html: string): ParsedSection[] {
         subHeadings: [
           {
             title: "",
-            paragraphs: [stripTags(html)],
+            paragraphs: [stripTags(cleanedHtml)],
             listItems: [],
             orderedItems: [],
             tableData: null,
             blockquote: null,
             figcaption: null,
+            media,
           },
         ],
         rawBullets: [],
@@ -186,7 +245,18 @@ function parseHtmlContent(html: string): ParsedSection[] {
 
       const subHeadings = h3Matches.map((h3) => {
         const title = stripTags(h3[1]);
-        const body = h3[2] ?? "";
+        const rawBody = h3[2] ?? "";
+
+        // Extract media embeds from the raw body FIRST, then strip those
+        // <figure> blocks out before parsing paragraphs/lists/figcaption —
+        // otherwise the media embed's own <figcaption> (which duplicates
+        // its data-media-title) gets picked up again as a generic
+        // section figcaption and the title appears to repeat.
+        const media = parseMediaEmbeds(rawBody);
+        const body = rawBody.replace(
+          /<figure[^>]*data-media-type=[^>]*>[\s\S]*?<\/figure>/gi,
+          "",
+        );
 
         const pMatches = body.match(/<p[^>]*>([\s\S]*?)<\/p>/gi) ?? [];
         const paragraphs = pMatches.map((p) => stripTags(p)).filter(Boolean);
@@ -228,14 +298,25 @@ function parseHtmlContent(html: string): ParsedSection[] {
           tableData,
           blockquote,
           figcaption,
+          media,
         };
       });
 
       // Sections with no h3 — direct paragraphs (module-summary, activity, etc.)
       if (subHeadings.length === 0) {
-        const pMatches = sectionHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/gi) ?? [];
+        const media = parseMediaEmbeds(sectionHtml);
+        const cleanedSectionHtml = sectionHtml.replace(
+          /<figure[^>]*data-media-type=[^>]*>[\s\S]*?<\/figure>/gi,
+          "",
+        );
+        const pMatches =
+          cleanedSectionHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/gi) ?? [];
         const paragraphs = pMatches.map((p) => stripTags(p)).filter(Boolean);
-        if (paragraphs.length > 0 || rawBullets.length > 0) {
+        if (
+          paragraphs.length > 0 ||
+          rawBullets.length > 0 ||
+          media.length > 0
+        ) {
           subHeadings.push({
             title: "",
             paragraphs,
@@ -244,6 +325,7 @@ function parseHtmlContent(html: string): ParsedSection[] {
             tableData: null,
             blockquote: null,
             figcaption: null,
+            media,
           });
         }
       }
@@ -260,8 +342,10 @@ function parseHtmlContent(html: string): ParsedSection[] {
     .filter((section) => section.sectionClass !== "activity");
 }
 
-
-async function translateText(text: string, targetLang: string = "hi"): Promise<string> {
+async function translateText(
+  text: string,
+  targetLang: string = "hi",
+): Promise<string> {
   if (!text || !text.trim()) return "";
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text.trim())}`;
@@ -283,7 +367,10 @@ async function translateParsedSection(
   const translatedSection = { ...section };
 
   if (section.heading) {
-    translatedSection.heading = await translateText(section.heading, targetLang);
+    translatedSection.heading = await translateText(
+      section.heading,
+      targetLang,
+    );
   }
 
   if (section.displayLabel) {
@@ -297,7 +384,10 @@ async function translateParsedSection(
       const num = section.displayLabel.replace("Section ", "");
       translatedSection.displayLabel = `भाग ${num}`;
     } else {
-      translatedSection.displayLabel = await translateText(section.displayLabel, targetLang);
+      translatedSection.displayLabel = await translateText(
+        section.displayLabel,
+        targetLang,
+      );
     }
   }
 
@@ -330,10 +420,16 @@ async function translateParsedSection(
           );
         }
         if (sub.blockquote) {
-          translatedSub.blockquote = await translateText(sub.blockquote, targetLang);
+          translatedSub.blockquote = await translateText(
+            sub.blockquote,
+            targetLang,
+          );
         }
         if (sub.figcaption) {
-          translatedSub.figcaption = await translateText(sub.figcaption, targetLang);
+          translatedSub.figcaption = await translateText(
+            sub.figcaption,
+            targetLang,
+          );
         }
         if (sub.tableData) {
           const translatedHeaders = await Promise.all(
@@ -341,7 +437,9 @@ async function translateParsedSection(
           );
           const translatedRows = await Promise.all(
             sub.tableData.rows.map(async (row) => {
-              return Promise.all(row.map((cell) => translateText(cell, targetLang)));
+              return Promise.all(
+                row.map((cell) => translateText(cell, targetLang)),
+              );
             }),
           );
           translatedSub.tableData = {
@@ -361,7 +459,9 @@ async function translateAllSections(
   sections: ParsedSection[],
   targetLang: string = "hi",
 ): Promise<ParsedSection[]> {
-  return Promise.all(sections.map((sec) => translateParsedSection(sec, targetLang)));
+  return Promise.all(
+    sections.map((sec) => translateParsedSection(sec, targetLang)),
+  );
 }
 
 function renderFormattedText(text: string, textStyle: any) {
@@ -379,12 +479,161 @@ function renderFormattedText(text: string, textStyle: any) {
   return <Text style={textStyle}>{text}</Text>;
 }
 
+// ─── Media embed renderer (video / audio / image) ─────────────────────────────
+
+function MediaEmbedView({ media }: { media: MediaItem }) {
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [positionMillis, setPositionMillis] = useState(0);
+  const [durationMillis, setDurationMillis] = useState(0);
+
+  useEffect(() => {
+    return () => {
+      soundRef.current?.unloadAsync().catch(() => {});
+    };
+  }, []);
+
+  const formatTime = (ms: number) => {
+    const totalSec = Math.floor(ms / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${min}:${sec < 10 ? "0" : ""}${sec}`;
+  };
+
+  const onAudioStatusUpdate = (status: AVPlaybackStatus) => {
+    if (!status.isLoaded) return;
+    setPositionMillis(status.positionMillis ?? 0);
+    setDurationMillis(status.durationMillis ?? 0);
+    setIsPlaying(status.isPlaying ?? false);
+    if (status.didJustFinish) {
+      setIsPlaying(false);
+      soundRef.current?.setPositionAsync(0).catch(() => {});
+    }
+  };
+
+  const toggleAudioPlayback = async () => {
+    try {
+      if (!soundRef.current) {
+        setIsLoadingAudio(true);
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: media.src },
+          { shouldPlay: true },
+          onAudioStatusUpdate,
+        );
+        soundRef.current = sound;
+        setIsLoadingAudio(false);
+        return;
+      }
+      const status = await soundRef.current.getStatusAsync();
+      if (status.isLoaded && status.isPlaying) {
+        await soundRef.current.pauseAsync();
+      } else {
+        await soundRef.current.playAsync();
+      }
+    } catch (err) {
+      console.error("[CoreContentSection] Audio playback error:", err);
+      setIsLoadingAudio(false);
+      Alert.alert("Playback error", "Unable to play this audio file.");
+    }
+  };
+
+  if (media.type === "video") {
+    return (
+      <View style={styles.mediaWrapper}>
+        <Video
+          source={{ uri: media.src }}
+          style={styles.mediaVideo}
+          useNativeControls
+          resizeMode={ResizeMode.CONTAIN}
+        />
+        {!!media.title && <Text style={styles.mediaTitle}>{media.title}</Text>}
+        {!!media.description && (
+          <Text style={styles.mediaDescription}>{media.description}</Text>
+        )}
+      </View>
+    );
+  }
+
+  if (media.type === "image") {
+    return (
+      <View style={styles.mediaWrapper}>
+        <Image
+          source={{ uri: media.src }}
+          style={styles.mediaImage}
+          resizeMode="cover"
+        />
+        {!!media.title && <Text style={styles.mediaTitle}>{media.title}</Text>}
+        {!!media.description && (
+          <Text style={styles.mediaDescription}>{media.description}</Text>
+        )}
+      </View>
+    );
+  }
+
+  // audio
+  const progress =
+    durationMillis > 0 ? Math.min(positionMillis / durationMillis, 1) : 0;
+
+  return (
+    <View style={styles.mediaWrapper}>
+      <View style={styles.audioPlayer}>
+        <TouchableOpacity
+          onPress={toggleAudioPlayback}
+          style={styles.audioPlayButton}
+          disabled={isLoadingAudio}
+        >
+          {isLoadingAudio ? (
+            <ActivityIndicator size="small" color="white" />
+          ) : (
+            <MaterialCommunityIcons
+              name={isPlaying ? "pause" : "play"}
+              size={20}
+              color="white"
+            />
+          )}
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          {!!media.title && (
+            <Text style={styles.mediaTitle} numberOfLines={1}>
+              {media.title}
+            </Text>
+          )}
+          <View style={styles.audioProgressTrack}>
+            <View
+              style={[
+                styles.audioProgressFill,
+                { width: `${progress * 100}%` },
+              ]}
+            />
+          </View>
+          <Text style={styles.audioTimeText}>
+            {formatTime(positionMillis)}
+            {durationMillis > 0 ? ` / ${formatTime(durationMillis)}` : ""}
+          </Text>
+        </View>
+      </View>
+      {!!media.description && (
+        <Text style={styles.mediaDescription}>{media.description}</Text>
+      )}
+    </View>
+  );
+}
+
 // ─── Sub-section renderer ─────────────────────────────────────────────────────
 
 function SubSection({ sub }: { sub: ParsedSection["subHeadings"][0] }) {
   return (
     <View style={styles.subSection}>
       {sub.title ? <Text style={styles.h3}>{sub.title}</Text> : null}
+
+      {sub.media && sub.media.length > 0 && (
+        <View style={styles.mediaList}>
+          {sub.media.map((m) => (
+            <MediaEmbedView key={m.id} media={m} />
+          ))}
+        </View>
+      )}
 
       {sub.paragraphs.map((p, i) => (
         <Text key={`p-${i}`} style={styles.para}>
@@ -496,7 +745,9 @@ export default function CoreContentSection({
   const [activeIdx, setActiveIdx] = useState(0);
   const [lang, setLang] = useState<"en" | "hi">("en");
   const [isTranslating, setIsTranslating] = useState(false);
-  const [translatedSections, setTranslatedSections] = useState<ParsedSection[] | null>(null);
+  const [translatedSections, setTranslatedSections] = useState<
+    ParsedSection[] | null
+  >(null);
   const translationPromiseRef = useRef<Promise<ParsedSection[]> | null>(null);
 
   const rawSections = useMemo(
@@ -511,14 +762,18 @@ export default function CoreContentSection({
     translationPromiseRef.current = null;
 
     if (htmlContent && rawSections.length > 0) {
-      console.log("[Translation] Starting silent background translation to Hindi...");
+      console.log(
+        "[Translation] Starting silent background translation to Hindi...",
+      );
       const promise = translateAllSections(rawSections, "hi");
       translationPromiseRef.current = promise;
       promise
         .then((translated) => {
           if (translationPromiseRef.current === promise) {
             setTranslatedSections(translated);
-            console.log("[Translation] Background translation completed and cached.");
+            console.log(
+              "[Translation] Background translation completed and cached.",
+            );
           }
         })
         .catch((err) => {
@@ -527,7 +782,8 @@ export default function CoreContentSection({
     }
   }, [htmlContent, rawSections]);
 
-  const sections = lang === "hi" && translatedSections ? translatedSections : rawSections;
+  const sections =
+    lang === "hi" && translatedSections ? translatedSections : rawSections;
   const activeSection = sections[activeIdx] ?? null;
 
   const handleLanguageChange = async (newLang: "en" | "hi") => {
@@ -557,7 +813,10 @@ export default function CoreContentSection({
       setLang("hi");
     } catch (err) {
       console.error("[Translation] Failed to translate:", err);
-      Alert.alert("Translation Error", "Failed to translate content. Please check your internet connection.");
+      Alert.alert(
+        "Translation Error",
+        "Failed to translate content. Please check your internet connection.",
+      );
     } finally {
       setIsTranslating(false);
     }
@@ -598,18 +857,34 @@ export default function CoreContentSection({
                 <TouchableOpacity
                   onPress={() => handleLanguageChange("en")}
                   disabled={isTranslating}
-                  style={[styles.langPill, lang === "en" && styles.activeLangPill]}
+                  style={[
+                    styles.langPill,
+                    lang === "en" && styles.activeLangPill,
+                  ]}
                 >
-                  <Text style={[styles.langPillText, lang === "en" && styles.activeLangPillText]}>
+                  <Text
+                    style={[
+                      styles.langPillText,
+                      lang === "en" && styles.activeLangPillText,
+                    ]}
+                  >
                     English
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => handleLanguageChange("hi")}
                   disabled={isTranslating}
-                  style={[styles.langPill, lang === "hi" && styles.activeLangPill]}
+                  style={[
+                    styles.langPill,
+                    lang === "hi" && styles.activeLangPill,
+                  ]}
                 >
-                  <Text style={[styles.langPillText, lang === "hi" && styles.activeLangPillText]}>
+                  <Text
+                    style={[
+                      styles.langPillText,
+                      lang === "hi" && styles.activeLangPillText,
+                    ]}
+                  >
                     हिन्दी
                   </Text>
                 </TouchableOpacity>
@@ -620,8 +895,12 @@ export default function CoreContentSection({
           {isTranslating ? (
             <View style={styles.translatingOverlay}>
               <ActivityIndicator size="large" color="#6366f1" />
-              <Text style={styles.translatingText}>अनुवाद किया जा रहा है...</Text>
-              <Text style={styles.translatingSubtext}>Translating module content to Hindi...</Text>
+              <Text style={styles.translatingText}>
+                अनुवाद किया जा रहा है...
+              </Text>
+              <Text style={styles.translatingSubtext}>
+                Translating module content to Hindi...
+              </Text>
             </View>
           ) : !htmlContent || sections.length === 0 ? (
             <View style={styles.empty}>
@@ -723,6 +1002,71 @@ export default function CoreContentSection({
 const CELL_WIDTH = Math.max(120, (SCREEN_WIDTH - 64) / 3);
 
 const styles = StyleSheet.create({
+  mediaList: { marginBottom: 12, gap: 12 },
+  mediaWrapper: {
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    padding: 10,
+    backgroundColor: "#f8fafc",
+    marginBottom: 4,
+    overflow: "hidden",
+    alignSelf: "stretch",
+  },
+  mediaVideo: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+    borderRadius: 8,
+    backgroundColor: "#020617",
+  },
+  mediaImage: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+    borderRadius: 8,
+    backgroundColor: "#e2e8f0",
+  },
+  mediaTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1e293b",
+    marginTop: 8,
+  },
+  mediaDescription: {
+    fontSize: 12,
+    color: "#64748b",
+    marginTop: 2,
+  },
+  audioPlayer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  audioPlayButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#6366f1",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  audioProgressTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#e2e8f0",
+    overflow: "hidden",
+    marginTop: 6,
+  },
+  audioProgressFill: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#6366f1",
+  },
+  audioTimeText: {
+    fontSize: 11,
+    color: "#94a3b8",
+    marginTop: 4,
+  },
   card: {
     backgroundColor: "white",
     borderRadius: 16,

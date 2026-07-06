@@ -349,14 +349,13 @@ export const getTrainingPlan = async (
   moduleId: string,
 ): Promise<any> => {
   try {
-    const currentUser = getAuth().currentUser;
-    if (!currentUser) throw new Error("No authenticated Firebase user");
+    if (!dbUserId) throw new Error("No authenticated user id (dbUserId)");
 
     const headers = await getHeaders(dbUserId);
     const response = await fetch(`${API_BASE_URL}/training-plan`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ user_id: currentUser.uid, module_id: moduleId }),
+      body: JSON.stringify({ user_id: dbUserId, module_id: moduleId }),
     });
 
     if (!response.ok) {
@@ -923,11 +922,18 @@ export const submitTaskAnswer = async (
     const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/text-analysis/submit`;
 
+    // Map internal submission_type → the wire value the API actually expects.
+    // "options" tasks must be posted as "multiple_choice".
+    const wireSubmissionType =
+      payload.submission_type === "options"
+        ? "multiple_choice"
+        : payload.submission_type;
+
     const body: Record<string, any> = {
-      assignment_id: payload.assignment_id,
       task_id: payload.task_id,
+      assignment_id: payload.assignment_id,
       user_id: payload.user_id,
-      submission_type: payload.submission_type,
+      submission_type: wireSubmissionType,
       max_score: payload.max_score,
       score: payload.score,
     };
@@ -935,9 +941,15 @@ export const submitTaskAnswer = async (
     if (payload.submission_type === "image") {
       body.image_url = payload.image_url ?? "";
     } else if (payload.submission_type === "text") {
-      body.text_answer = payload.text_answer ?? "";
+      body.text_response = payload.text_answer ?? "";
     } else if (payload.submission_type === "options") {
-      body.selected_options = payload.selected_options ?? [];
+      body.answers =
+        payload.answers ??
+        (payload.selected_options ?? []).map((opt) => ({
+          question_id: "",
+          question: "",
+          selected_option: opt,
+        }));
     }
 
     console.log("[Request] submitTaskAnswer →", url, {
