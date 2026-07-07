@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
 } from "react-native";
 import { Video, ResizeMode, Audio, AVPlaybackStatus } from "expo-av";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -342,6 +343,81 @@ function parseHtmlContent(html: string): ParsedSection[] {
     .filter((section) => section.sectionClass !== "activity");
 }
 
+type SupportedLang = "en" | "hi" | "bn" | "ta" | "te" | "mr" | "gu" | "kn";
+
+interface LanguageOption {
+  code: SupportedLang;
+  label: string; // Native name shown in UI
+  englishName: string;
+}
+
+const LANGUAGES: LanguageOption[] = [
+  { code: "en", label: "English", englishName: "English" },
+  { code: "hi", label: "हिन्दी", englishName: "Hindi" },
+  { code: "bn", label: "বাংলা", englishName: "Bengali" },
+  { code: "ta", label: "தமிழ்", englishName: "Tamil" },
+  { code: "te", label: "తెలుగు", englishName: "Telugu" },
+  { code: "mr", label: "मराठी", englishName: "Marathi" },
+  { code: "gu", label: "ગુજરાતી", englishName: "Gujarati" },
+  { code: "kn", label: "ಕನ್ನಡ", englishName: "Kannada" },
+];
+
+const TAB_LABEL_TRANSLATIONS: Record<string, Record<string, string>> = {
+  hi: {
+    Overview: "अवलोकन",
+    Summary: "सारांश",
+    Activity: "गतिविधि",
+    Section: "भाग",
+  },
+  bn: {
+    Overview: "সংক্ষিপ্ত বিবরণ",
+    Summary: "সারসংক্ষেপ",
+    Activity: "কার্যকলাপ",
+    Section: "বিভাগ",
+  },
+  ta: {
+    Overview: "கண்ணோட்டம்",
+    Summary: "சுருக்கம்",
+    Activity: "செயல்பாடு",
+    Section: "பகுதி",
+  },
+  te: {
+    Overview: "అవలోకనం",
+    Summary: "సారాంశం",
+    Activity: "కార్యకలాపం",
+    Section: "విభాగం",
+  },
+  mr: {
+    Overview: "आढावा",
+    Summary: "सारांश",
+    Activity: "कृती",
+    Section: "विभाग",
+  },
+  gu: {
+    Overview: "અવલોકન",
+    Summary: "સારાંશ",
+    Activity: "પ્રવૃત્તિ",
+    Section: "વિભાગ",
+  },
+  kn: {
+    Overview: "ಅವಲೋಕನ",
+    Summary: "ಸಾರಾಂಶ",
+    Activity: "ಚಟುವಟಿಕೆ",
+    Section: "ಭಾಗ",
+  },
+};
+
+const TRANSLATING_MESSAGES: Record<SupportedLang, { native: string; english: string }> = {
+  en: { native: "Translating...", english: "Translating..." },
+  hi: { native: "अनुवाद किया जा रहा है...", english: "Translating module content to Hindi..." },
+  bn: { native: "অনুবাদ করা হচ্ছে...", english: "Translating module content to Bengali..." },
+  ta: { native: "மொழிபெயர்க்கப்படுகிறது...", english: "Translating module content to Tamil..." },
+  te: { native: "అनुవదించబడుతోంది...", english: "Translating module content to Telugu..." },
+  mr: { native: "भाषांतर होत आहे...", english: "Translating module content to Marathi..." },
+  gu: { native: "અનુવાદ થઈ રહ્યો છે...", english: "Translating module content to Gujarati..." },
+  kn: { native: "ಅನುವಾದಿಸಲಾಗುತ್ತಿದೆ...", english: "Translating module content to Kannada..." },
+};
+
 async function translateText(
   text: string,
   targetLang: string = "hi",
@@ -374,15 +450,12 @@ async function translateParsedSection(
   }
 
   if (section.displayLabel) {
-    if (section.displayLabel === "Overview") {
-      translatedSection.displayLabel = "अवलोकन";
-    } else if (section.displayLabel === "Summary") {
-      translatedSection.displayLabel = "सारांश";
-    } else if (section.displayLabel === "Activity") {
-      translatedSection.displayLabel = "गतिविधि";
-    } else if (section.displayLabel.startsWith("Section")) {
+    const langDict = TAB_LABEL_TRANSLATIONS[targetLang];
+    if (langDict && langDict[section.displayLabel]) {
+      translatedSection.displayLabel = langDict[section.displayLabel];
+    } else if (langDict && section.displayLabel.startsWith("Section ")) {
       const num = section.displayLabel.replace("Section ", "");
-      translatedSection.displayLabel = `भाग ${num}`;
+      translatedSection.displayLabel = `${langDict["Section"]} ${num}`;
     } else {
       translatedSection.displayLabel = await translateText(
         section.displayLabel,
@@ -743,12 +816,14 @@ export default function CoreContentSection({
   htmlContent,
 }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
-  const [lang, setLang] = useState<"en" | "hi">("en");
+  const [lang, setLang] = useState<SupportedLang>("en");
   const [isTranslating, setIsTranslating] = useState(false);
+  const [translatingTo, setTranslatingTo] = useState<SupportedLang | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [translatedSections, setTranslatedSections] = useState<
-    ParsedSection[] | null
-  >(null);
-  const translationPromiseRef = useRef<Promise<ParsedSection[]> | null>(null);
+    Record<string, ParsedSection[]>
+  >({});
+  const translationPromisesRef = useRef<Record<string, Promise<ParsedSection[]>>>({});
 
   const rawSections = useMemo(
     () => parseHtmlContent(htmlContent ?? ""),
@@ -758,19 +833,21 @@ export default function CoreContentSection({
   React.useEffect(() => {
     setActiveIdx(0);
     setLang("en");
-    setTranslatedSections(null);
-    translationPromiseRef.current = null;
+    setTranslatedSections({});
+    translationPromisesRef.current = {};
+    setTranslatingTo(null);
+    setIsDropdownOpen(false);
 
     if (htmlContent && rawSections.length > 0) {
       console.log(
         "[Translation] Starting silent background translation to Hindi...",
       );
       const promise = translateAllSections(rawSections, "hi");
-      translationPromiseRef.current = promise;
+      translationPromisesRef.current["hi"] = promise;
       promise
         .then((translated) => {
-          if (translationPromiseRef.current === promise) {
-            setTranslatedSections(translated);
+          if (translationPromisesRef.current["hi"] === promise) {
+            setTranslatedSections((prev) => ({ ...prev, hi: translated }));
             console.log(
               "[Translation] Background translation completed and cached.",
             );
@@ -783,42 +860,45 @@ export default function CoreContentSection({
   }, [htmlContent, rawSections]);
 
   const sections =
-    lang === "hi" && translatedSections ? translatedSections : rawSections;
+    lang !== "en" && translatedSections[lang] ? translatedSections[lang] : rawSections;
   const activeSection = sections[activeIdx] ?? null;
 
-  const handleLanguageChange = async (newLang: "en" | "hi") => {
+  const handleLanguageChange = async (newLang: SupportedLang) => {
     if (newLang === "en") {
       setLang("en");
       return;
     }
 
-    if (translatedSections) {
-      setLang("hi");
+    if (translatedSections[newLang]) {
+      setLang(newLang);
       return;
     }
 
     setIsTranslating(true);
+    setTranslatingTo(newLang);
     try {
       let translated: ParsedSection[];
-      if (translationPromiseRef.current) {
-        console.log("[Translation] Awaiting active background translation...");
-        translated = await translationPromiseRef.current;
+      const existingPromise = translationPromisesRef.current[newLang];
+      if (existingPromise) {
+        console.log(`[Translation] Awaiting active background/previous translation for ${newLang}...`);
+        translated = await existingPromise;
       } else {
-        console.log("[Translation] Starting on-demand translation...");
-        const promise = translateAllSections(rawSections, "hi");
-        translationPromiseRef.current = promise;
+        console.log(`[Translation] Starting on-demand translation for ${newLang}...`);
+        const promise = translateAllSections(rawSections, newLang);
+        translationPromisesRef.current[newLang] = promise;
         translated = await promise;
       }
-      setTranslatedSections(translated);
-      setLang("hi");
+      setTranslatedSections((prev) => ({ ...prev, [newLang]: translated }));
+      setLang(newLang);
     } catch (err) {
-      console.error("[Translation] Failed to translate:", err);
+      console.error(`[Translation] Failed to translate to ${newLang}:`, err);
       Alert.alert(
         "Translation Error",
         "Failed to translate content. Please check your internet connection.",
       );
     } finally {
       setIsTranslating(false);
+      setTranslatingTo(null);
     }
   };
 
@@ -852,54 +932,83 @@ export default function CoreContentSection({
           {/* Language Selector Row */}
           {htmlContent && rawSections.length > 0 && (
             <View style={styles.langSelectorRow}>
-              <Text style={styles.langLabel}>Language / भाषा:</Text>
-              <View style={styles.langPills}>
+              <Text style={styles.langLabel}>Language:</Text>
+              <TouchableOpacity
+                onPress={() => setIsDropdownOpen(true)}
+                style={styles.dropdownButton}
+                activeOpacity={0.7}
+                disabled={isTranslating}
+              >
+                <MaterialCommunityIcons name="translate" size={16} color="#6366f1" />
+                <Text style={styles.dropdownButtonText}>
+                  {LANGUAGES.find((l) => l.code === lang)?.label || "English"}
+                </Text>
+                <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
+              </TouchableOpacity>
+
+              {/* Language Selection Modal */}
+              <Modal
+                visible={isDropdownOpen}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setIsDropdownOpen(false)}
+              >
                 <TouchableOpacity
-                  onPress={() => handleLanguageChange("en")}
-                  disabled={isTranslating}
-                  style={[
-                    styles.langPill,
-                    lang === "en" && styles.activeLangPill,
-                  ]}
+                  style={styles.modalOverlay}
+                  activeOpacity={1}
+                  onPress={() => setIsDropdownOpen(false)}
                 >
-                  <Text
-                    style={[
-                      styles.langPillText,
-                      lang === "en" && styles.activeLangPillText,
-                    ]}
-                  >
-                    English
-                  </Text>
+                  <View style={styles.dropdownMenu}>
+                    <View style={styles.dropdownMenuHeader}>
+                      <Text style={styles.dropdownMenuTitle}>Select Language</Text>
+                      <TouchableOpacity onPress={() => setIsDropdownOpen(false)}>
+                        <MaterialCommunityIcons name="close" size={20} color="#64748b" />
+                      </TouchableOpacity>
+                    </View>
+                    <ScrollView style={styles.dropdownScroll} showsVerticalScrollIndicator={false}>
+                      {LANGUAGES.map((option) => {
+                        const isActive = lang === option.code;
+                        return (
+                          <TouchableOpacity
+                            key={option.code}
+                            style={[
+                              styles.dropdownItem,
+                              isActive && styles.dropdownItemActive,
+                            ]}
+                            onPress={() => {
+                              setIsDropdownOpen(false);
+                              handleLanguageChange(option.code);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.dropdownItemText,
+                                isActive && styles.dropdownItemTextActive,
+                              ]}
+                            >
+                              {option.label} {option.code !== "en" ? `(${option.englishName})` : ""}
+                            </Text>
+                            {isActive && (
+                              <MaterialCommunityIcons name="check" size={18} color="#6366f1" />
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleLanguageChange("hi")}
-                  disabled={isTranslating}
-                  style={[
-                    styles.langPill,
-                    lang === "hi" && styles.activeLangPill,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.langPillText,
-                      lang === "hi" && styles.activeLangPillText,
-                    ]}
-                  >
-                    हिन्दी
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              </Modal>
             </View>
           )}
 
-          {isTranslating ? (
+          {isTranslating && translatingTo ? (
             <View style={styles.translatingOverlay}>
               <ActivityIndicator size="large" color="#6366f1" />
               <Text style={styles.translatingText}>
-                अनुवाद किया जा रहा है...
+                {TRANSLATING_MESSAGES[translatingTo]?.native || "Translating..."}
               </Text>
               <Text style={styles.translatingSubtext}>
-                Translating module content to Hindi...
+                {TRANSLATING_MESSAGES[translatingTo]?.english || "Translating module content..."}
               </Text>
             </View>
           ) : !htmlContent || sections.length === 0 ? (
@@ -960,8 +1069,8 @@ export default function CoreContentSection({
                   <View style={styles.body}>
                     {/* Section heading — for "Overview" we show "Overview", not raw h2 */}
                     <Text style={styles.h2}>
-                      {activeSection.displayLabel === "Overview"
-                        ? "Overview"
+                      {rawSections[activeIdx]?.displayLabel === "Overview"
+                        ? activeSection.displayLabel
                         : activeSection.heading}
                     </Text>
 
@@ -1099,8 +1208,7 @@ const styles = StyleSheet.create({
   langSelectorRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
@@ -1110,28 +1218,83 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#64748b",
+    marginRight: 8,
   },
-  langPills: {
+  dropdownButton: {
     flexDirection: "row",
-    backgroundColor: "#e2e8f0",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#f1f5f9",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
     borderRadius: 20,
-    padding: 2,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    minWidth: 140,
+    gap: 6,
   },
-  langPill: {
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 18,
-  },
-  activeLangPill: {
-    backgroundColor: "#6366f1",
-  },
-  langPillText: {
-    fontSize: 12,
+  dropdownButtonText: {
+    fontSize: 13,
     fontWeight: "600",
-    color: "#64748b",
+    color: "#334155",
+    flex: 1,
   },
-  activeLangPillText: {
-    color: "white",
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  dropdownMenu: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    width: "85%",
+    maxWidth: 320,
+    maxHeight: "60%",
+    padding: 16,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  dropdownMenuHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+    paddingBottom: 10,
+    marginBottom: 8,
+  },
+  dropdownMenuTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1e293b",
+  },
+  dropdownScroll: {
+    maxHeight: 280,
+  },
+  dropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    marginVertical: 2,
+  },
+  dropdownItemActive: {
+    backgroundColor: "#eef2ff",
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: "#475569",
+    fontWeight: "500",
+  },
+  dropdownItemTextActive: {
+    color: "#6366f1",
+    fontWeight: "600",
   },
 
   // ── Translating Loader ────────────────────────────────────────────────────
