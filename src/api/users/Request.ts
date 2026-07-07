@@ -921,7 +921,7 @@ export const submitTaskAnswer = async (
 ): Promise<TaskSubmissionResponse> => {
   try {
     const headers = await getHeaders(userId);
-    const url = `${API_BASE_URL}/text-analysis/submit`;
+    const url = `${API_BASE_URL}/task-manager/tasks/submit`;
 
     // Map internal submission_type → the wire value the API actually expects.
     // "options" tasks must be posted as "multiple_choice".
