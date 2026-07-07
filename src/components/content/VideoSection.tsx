@@ -60,9 +60,14 @@ interface LangDropdownProps {
   onSelect: (code: VideoLanguageCode) => void;
 }
 
-function LanguageDropdown({ languages, selected, onSelect }: LangDropdownProps) {
+function LanguageDropdown({
+  languages,
+  selected,
+  onSelect,
+}: LangDropdownProps) {
   const [open, setOpen] = useState(false);
-  const selectedLang = languages.find((l) => l.code === selected) ?? languages[0];
+  const selectedLang =
+    languages.find((l) => l.code === selected) ?? languages[0];
 
   if (languages.length <= 1) return null;
 
@@ -113,7 +118,11 @@ function LanguageDropdown({ languages, selected, onSelect }: LangDropdownProps) 
                       {item.label}
                     </Text>
                     {isActive && (
-                      <MaterialCommunityIcons name="check" size={18} color="#4338CA" />
+                      <MaterialCommunityIcons
+                        name="check"
+                        size={18}
+                        color="#4338CA"
+                      />
                     )}
                   </TouchableOpacity>
                 );
@@ -226,9 +235,10 @@ export default function VideoSection({
 
   // Resolve active video URL from selected language
   const currentLang =
-    availableLanguages.find((l) => l.code === language) ?? availableLanguages[0];
+    availableLanguages.find((l) => l.code === language) ??
+    availableLanguages[0];
   const activeVideoUrl = currentLang
-    ? (propMap[currentLang.videoUrlKey as string] as string | null) ?? null
+    ? ((propMap[currentLang.videoUrlKey as string] as string | null) ?? null)
     : null;
 
   const isLoaded = status?.isLoaded ?? false;
@@ -239,16 +249,9 @@ export default function VideoSection({
 
   // Reset on language switch — show transition overlay while new source loads
   useEffect(() => {
-    const reset = async () => {
-      setIsTransitioning(true);
-      if (videoRef.current) {
-        await videoRef.current.stopAsync().catch(() => {});
-        await videoRef.current.unloadAsync().catch(() => {});
-      }
-      setStatus(null);
-      setIsBuffering(false);
-    };
-    reset();
+    setIsTransitioning(true);
+    setStatus(null);
+    setIsBuffering(false);
   }, [language]);
 
   // Track screen size changes (orientation flips)
@@ -305,7 +308,7 @@ export default function VideoSection({
 
   const togglePlay = async (ref?: React.RefObject<Video>) => {
     const target = ref?.current ?? videoRef.current;
-    if (!target || !isLoaded) return;
+    if (!target || !isLoaded || isTransitioning) return;
     if (isPlaying) {
       await target.pauseAsync();
     } else {
@@ -320,8 +323,11 @@ export default function VideoSection({
 
   const seekBy = async (seconds: number, ref?: React.RefObject<Video>) => {
     const target = ref?.current ?? videoRef.current;
-    if (!target || !isLoaded) return;
-    const newPos = Math.max(0, Math.min(positionMs + seconds * 1000, durationMs));
+    if (!target || !isLoaded || isTransitioning) return;
+    const newPos = Math.max(
+      0,
+      Math.min(positionMs + seconds * 1000, durationMs),
+    );
     await target.setPositionAsync(newPos);
     resetControlsTimer();
   };
@@ -353,7 +359,9 @@ export default function VideoSection({
     await fsVideoRef.current?.pauseAsync();
     setIsFullscreen(false);
     StatusBar.setHidden(false, "fade");
-    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    await ScreenOrientation.lockAsync(
+      ScreenOrientation.OrientationLock.PORTRAIT_UP,
+    );
     setTimeout(async () => {
       if (videoRef.current) {
         await videoRef.current.setPositionAsync(currentPos);
@@ -395,6 +403,7 @@ export default function VideoSection({
       >
         <View style={[fsStyles.container, { width: fsW, height: fsH }]}>
           <Video
+            key={activeVideoUrl ?? "no-video"}
             ref={fsVideoRef}
             source={{ uri: activeVideoUrl ?? "" }}
             style={StyleSheet.absoluteFill}
@@ -418,17 +427,30 @@ export default function VideoSection({
 
           {showControls && !isBuffering && (
             <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-              <View style={[fsStyles.topBar, { paddingTop: Math.max(insets.top, 12) }]}>
+              <View
+                style={[
+                  fsStyles.topBar,
+                  { paddingTop: Math.max(insets.top, 12) },
+                ]}
+              >
                 <TouchableOpacity
                   onPress={exitFullscreen}
                   style={fsStyles.iconBtn}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <MaterialCommunityIcons name="arrow-left" size={26} color="white" />
+                  <MaterialCommunityIcons
+                    name="arrow-left"
+                    size={26}
+                    color="white"
+                  />
                 </TouchableOpacity>
                 <View style={{ flex: 1 }} />
                 <TouchableOpacity style={fsStyles.iconBtn}>
-                  <MaterialCommunityIcons name="dots-vertical" size={24} color="white" />
+                  <MaterialCommunityIcons
+                    name="dots-vertical"
+                    size={24}
+                    color="white"
+                  />
                 </TouchableOpacity>
               </View>
 
@@ -472,23 +494,45 @@ export default function VideoSection({
                 </View>
               </View>
 
-              <View style={[fsStyles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+              <View
+                style={[
+                  fsStyles.bottomBar,
+                  { paddingBottom: Math.max(insets.bottom, 12) },
+                ]}
+              >
                 <View style={fsStyles.progressTrack}>
                   <View
-                    style={[fsStyles.progressFill, { width: `${progress * 100}%` as any }]}
+                    style={[
+                      fsStyles.progressFill,
+                      { width: `${progress * 100}%` as any },
+                    ]}
                   />
                   <View
-                    style={[fsStyles.progressThumb, { left: `${progress * 100}%` as any }]}
+                    style={[
+                      fsStyles.progressThumb,
+                      { left: `${progress * 100}%` as any },
+                    ]}
                   />
                 </View>
 
                 <View style={fsStyles.timeRow}>
-                  <Text style={fsStyles.timeText}>{formatTime(positionMs)}</Text>
+                  <Text style={fsStyles.timeText}>
+                    {formatTime(positionMs)}
+                  </Text>
                   <Text style={fsStyles.timeSep}> / </Text>
-                  <Text style={fsStyles.timeText}>{formatTime(durationMs)}</Text>
+                  <Text style={fsStyles.timeText}>
+                    {formatTime(durationMs)}
+                  </Text>
                   <View style={{ flex: 1 }} />
-                  <TouchableOpacity onPress={exitFullscreen} style={fsStyles.iconBtn}>
-                    <MaterialCommunityIcons name="fullscreen-exit" size={22} color="white" />
+                  <TouchableOpacity
+                    onPress={exitFullscreen}
+                    style={fsStyles.iconBtn}
+                  >
+                    <MaterialCommunityIcons
+                      name="fullscreen-exit"
+                      size={22}
+                      color="white"
+                    />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -501,7 +545,11 @@ export default function VideoSection({
       <View style={styles.card}>
         <TouchableOpacity onPress={handleToggle} style={styles.header}>
           <View style={[styles.iconBox, { backgroundColor: "#FDF2F8" }]}>
-            <MaterialCommunityIcons name="play-circle" size={22} color="#DB2777" />
+            <MaterialCommunityIcons
+              name="play-circle"
+              size={22}
+              color="#DB2777"
+            />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Explainer Video</Text>
@@ -565,22 +613,36 @@ export default function VideoSection({
                     >
                       {!isPlaying && (
                         <View style={styles.playIconCircle}>
-                          <MaterialCommunityIcons name="play" size={36} color="white" />
+                          <MaterialCommunityIcons
+                            name="play"
+                            size={36}
+                            color="white"
+                          />
                         </View>
                       )}
                     </TouchableOpacity>
                   )}
 
                   {/* Fullscreen button */}
-                  <TouchableOpacity style={styles.fsCornerBtn} onPress={enterFullscreen}>
-                    <MaterialCommunityIcons name="fullscreen" size={20} color="white" />
+                  <TouchableOpacity
+                    style={styles.fsCornerBtn}
+                    onPress={enterFullscreen}
+                  >
+                    <MaterialCommunityIcons
+                      name="fullscreen"
+                      size={20}
+                      color="white"
+                    />
                   </TouchableOpacity>
                 </View>
 
                 {/* Progress bar */}
                 <View style={styles.progressTrack}>
                   <View
-                    style={[styles.progressFill, { width: `${progress * 100}%` }]}
+                    style={[
+                      styles.progressFill,
+                      { width: `${progress * 100}%` },
+                    ]}
                   />
                 </View>
 
@@ -750,7 +812,12 @@ const fsStyles = StyleSheet.create({
     paddingBottom: 8,
     backgroundColor: "rgba(0,0,0,0.5)",
   },
-  iconBtn: { width: 44, height: 44, justifyContent: "center", alignItems: "center" },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   centreArea: { flex: 1, justifyContent: "center", alignItems: "center" },
   centreControls: { flexDirection: "row", alignItems: "center", gap: 32 },
   ctrlBtn: {
@@ -796,5 +863,9 @@ const fsStyles = StyleSheet.create({
   },
   timeRow: { flexDirection: "row", alignItems: "center", paddingBottom: 2 },
   timeText: { fontSize: 13, fontWeight: "600", color: "rgba(255,255,255,0.9)" },
-  timeSep: { fontSize: 13, color: "rgba(255,255,255,0.5)", marginHorizontal: 2 },
+  timeSep: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.5)",
+    marginHorizontal: 2,
+  },
 });

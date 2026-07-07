@@ -61,7 +61,41 @@ export default function SprintScreen({
     moduleId || null,
   );
   const additionalReadings: Array<{ url: string; title: string }> =
-    trainingPlan?.additional_readings ?? [];
+    useMemo(() => {
+      const raw = trainingPlan?.additional_readings;
+
+      const toEntry = (item: unknown, idx: number) => {
+        if (item && typeof item === "object") {
+          const obj = item as { url?: string; title?: string };
+          return {
+            url: obj.url ?? "",
+            title: obj.title ?? `Reading ${idx + 1}`,
+          };
+        }
+        const url = String(item ?? "").trim();
+        return { url, title: `Reading ${idx + 1}` };
+      };
+
+      if (Array.isArray(raw)) {
+        return raw.map(toEntry).filter((r) => r.url.length > 0);
+      }
+
+      if (typeof raw === "string" && raw.trim().length > 0) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            return parsed.map(toEntry).filter((r) => r.url.length > 0);
+          }
+        } catch {}
+        return raw
+          .split(/[\n,]+/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map((url, idx) => ({ url, title: `Reading ${idx + 1}` }));
+      }
+
+      return [];
+    }, [trainingPlan]);
 
   const trainingPlanModulesByTitle = useMemo(() => {
     const map = new Map<string, string>();
