@@ -16,6 +16,7 @@ import {
   getDashboardSummary,
   getModuleProgress,
   getTasks,
+  getLeaderboardHighlight,
 } from "./Request";
 import {
   User,
@@ -35,6 +36,8 @@ import {
   ModuleProgressEntry,
   Task,
   TasksResponse,
+  LeaderboardHighlightData,
+  LeaderboardHighlightResponse,
 } from "./Dto";
 
 // Cache to store resolved processed module metadata (such as titles) for fallback rendering
@@ -1497,4 +1500,73 @@ export const useGetTasks = (
   }, [userId, companyId]);
 
   return { tasks, total, isLoading, error, refetch: fetchTasks };
+};
+
+interface UseGetLeaderboardHighlightReturn {
+  leaderboardData: LeaderboardHighlightData | null;
+  isLoading: boolean;
+  error: Error | null;
+  refetch: (showSpinner?: boolean) => Promise<void>;
+}
+
+export const useGetLeaderboardHighlight = (
+  companyId: string | null,
+  userId: string | null,
+  topLimit: number = 10,
+): UseGetLeaderboardHighlightReturn => {
+  const [leaderboardData, setLeaderboardData] = useState<LeaderboardHighlightData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const fetchPromiseRef = useRef<Promise<any> | null>(null);
+
+  const fetchLeaderboard = useCallback(
+    async (showSpinner: boolean = true) => {
+      if (!companyId || !userId) return;
+
+      if (fetchPromiseRef.current) {
+        if (showSpinner) setIsLoading(true);
+        try {
+          await fetchPromiseRef.current;
+        } finally {
+          if (showSpinner) setIsLoading(false);
+        }
+        return;
+      }
+
+      if (showSpinner) setIsLoading(true);
+      setError(null);
+
+      const promise = getLeaderboardHighlight(companyId, userId, topLimit);
+      fetchPromiseRef.current = promise;
+
+      try {
+        const response = await promise;
+        if (response.success && response.data) {
+          setLeaderboardData(response.data);
+        } else if (response.error) {
+          throw new Error(response.error);
+        }
+      } catch (err) {
+        console.error("[Hook] useGetLeaderboardHighlight error:", err);
+        setError(
+          err instanceof Error ? err : new Error("Failed to fetch leaderboard"),
+        );
+      } finally {
+        fetchPromiseRef.current = null;
+        setIsLoading(false);
+      }
+    },
+    [companyId, userId, topLimit],
+  );
+
+  useEffect(() => {
+    fetchLeaderboard(true);
+  }, [companyId, userId, topLimit]);
+
+  return {
+    leaderboardData,
+    isLoading,
+    error,
+    refetch: fetchLeaderboard,
+  };
 };

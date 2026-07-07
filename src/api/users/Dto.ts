@@ -294,3 +294,33 @@ export interface TaskSubmissionResponse {
   status: string;
   submission_id: string;
 }
+
+export interface LeaderboardUser {
+  user_id: string;
+  name: string;
+  email?: string | null;
+  avatar_url?: string | null;
+  completion_percentage: number;
+  modules_completed: number;
+  modules_assigned: number;
+  rank: number;
+}
+
+export interface UserRankInfo {
+  rank: number | null;
+  top_percentile: number | null;
+  modules_completed: number;
+}
+
+export interface LeaderboardHighlightData {
+  top_performers: LeaderboardUser[];
+  user_rank_info: UserRankInfo | null;
+  total_users: number;
+  user_in_top: boolean;
+}
+
+export interface LeaderboardHighlightResponse {
+  success: boolean;
+  data: LeaderboardHighlightData;
+  error: string | null;
+}

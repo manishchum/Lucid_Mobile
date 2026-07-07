@@ -18,6 +18,7 @@ import {
   ModuleProgress,
   TaskSubmissionPayload,
   TaskSubmissionResponse,
+  LeaderboardHighlightResponse,
 } from "./Dto";
 
 const EXPO_API_URL =
@@ -990,5 +991,31 @@ export const getEmployeeAssessments = async (
   } catch (err) {
     console.warn("[Quiz] getEmployeeAssessments error:", err);
     return null;
+  }
+};
+
+export const getLeaderboardHighlight = async (
+  companyId: string,
+  userId: string,
+  topLimit: number = 10,
+): Promise<LeaderboardHighlightResponse> => {
+  try {
+    const url = `${API_BASE_URL}/analytics/leaderboard/${companyId}/highlight?top_limit=${topLimit}`;
+    console.log("[Request] getLeaderboardHighlight →", url);
+    const headers = await getHeaders(userId);
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      console.error(`[Request] getLeaderboardHighlight ${response.status}:`, body);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const json = await response.json();
+    return json;
+  } catch (error) {
+    console.error("[Request] Error fetching leaderboard highlight:", error);
+    throw error;
   }
 };
