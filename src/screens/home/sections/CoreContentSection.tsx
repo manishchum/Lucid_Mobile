@@ -445,13 +445,13 @@ async function translateTextBatch(
   if (uniqueTexts.length === 0) return [];
 
   const translationMap: Record<string, string> = {};
-  const chunkSize = 15;
+  const chunkSize = 25;
 
   for (let i = 0; i < uniqueTexts.length; i += chunkSize) {
     const chunk = uniqueTexts.slice(i, i + chunkSize);
     try {
-      const qParams = chunk.map((text) => `q=${encodeURIComponent(text)}`).join("&");
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&${qParams}`;
+      const joinedTexts = chunk.join("\n");
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(joinedTexts)}`;
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -461,10 +461,10 @@ async function translateTextBatch(
 
       segments.forEach((seg: any) => {
         if (seg && seg[0] !== undefined && seg[1] !== undefined) {
-          const translatedText = seg[0];
-          const originalText = String(seg[1]).trim();
-          if (originalText) {
-            translationMap[originalText] = (translationMap[originalText] || "") + translatedText;
+          const translatedText = String(seg[0]).replace(/\n$/, "");
+          const originalText = String(seg[1]).replace(/\n$/, "");
+          if (originalText.trim()) {
+            translationMap[originalText.trim()] = translatedText.trim();
           }
         }
       });
@@ -473,7 +473,10 @@ async function translateTextBatch(
       chunk.forEach((originalText, index) => {
         const trimmed = originalText.trim();
         if (!translationMap[trimmed] && segments[index]) {
-          translationMap[trimmed] = segments[index][0];
+          const trans = String(segments[index][0] || "").replace(/\n$/, "").trim();
+          if (trans) {
+            translationMap[trimmed] = trans;
+          }
         }
       });
     } catch (err) {
