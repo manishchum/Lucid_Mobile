@@ -14,10 +14,12 @@ import FlashcardsSection from '../../components/content/FlashcardsSection';
 import MindmapSection from '../../components/content/MindmapSection';
 import VideoSection from '../../components/content/VideoSection';
 import AIAssistantSection from '../../components/content/AIAssistantSection';
+import { useModuleTranslation } from '../../hooks/useModuleTranslation';
 
 export default function ContentDetailScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState<string | null>('core');
+  const [lang, setLang] = useState<'en' | 'hi' | 'bn' | 'ta' | 'te' | 'mr' | 'gu' | 'kn'>('en');
 
   // Get the authenticated user directly — no email lookup needed
   const { cachedUser } = useAuth();
@@ -31,8 +33,16 @@ export default function ContentDetailScreen({ route, navigation }: any) {
     userId,
   );
 
-  // Use first processed module variant for content (order_index 0)
   const primaryModule = modules?.[0] ?? null;
+
+  const { isTranslating, translatedSections, translatedFlashcards } = useModuleTranslation(
+    originalModuleId || null,
+    primaryModule?.content ?? null,
+    primaryModule?.flashcard_data ?? null,
+    lang,
+  );
+
+
 
   const toggle = (key: string) =>
     setExpanded((prev) => (prev === key ? null : key));
@@ -108,12 +118,19 @@ export default function ContentDetailScreen({ route, navigation }: any) {
               onToggle={() => toggle('core')}
               htmlContent={primaryModule?.content ?? null}
               moduleId={originalModuleId}
+              lang={lang}
+              onLangChange={setLang}
+              sections={translatedSections}
+              isTranslating={isTranslating}
             />
 
             <FlashcardsSection
               isExpanded={expanded === 'flashcards'}
               onToggle={() => toggle('flashcards')}
-              flashcardData={primaryModule?.flashcard_data ?? null}
+              flashcardData={translatedFlashcards}
+              moduleId={originalModuleId}
+              lang={lang}
+              isTranslating={isTranslating}
             />
 
             <MindmapSection

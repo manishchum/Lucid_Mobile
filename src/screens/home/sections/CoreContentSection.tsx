@@ -445,7 +445,7 @@ async function translateTextBatch(
   if (uniqueTexts.length === 0) return [];
 
   const translationMap: Record<string, string> = {};
-  const chunkSize = 25;
+  const chunkSize = 5;
 
   for (let i = 0; i < uniqueTexts.length; i += chunkSize) {
     const chunk = uniqueTexts.slice(i, i + chunkSize);
@@ -868,6 +868,10 @@ interface Props {
   onToggle: () => void;
   htmlContent: string | null;
   moduleId?: string | null;
+  lang?: SupportedLang;
+  onLangChange?: (lang: SupportedLang) => void;
+  sections?: ParsedSection[] | null;
+  isTranslating?: boolean;
 }
 
 export default function CoreContentSection({
@@ -875,96 +879,35 @@ export default function CoreContentSection({
   onToggle,
   htmlContent,
   moduleId = null,
+  lang: langProp,
+  onLangChange,
+  sections: translatedSectionsProp,
+  isTranslating: isTranslatingProp = false,
 }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
-  const [lang, setLang] = useState<SupportedLang>("en");
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [translatingTo, setTranslatingTo] = useState<SupportedLang | null>(null);
+  const [localLang, setLocalLang] = useState<SupportedLang>("en");
+
+  const lang = langProp ?? localLang;
+  const setLang = onLangChange ?? setLocalLang;
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [translatedSections, setTranslatedSections] = useState<
-    Record<string, ParsedSection[]>
-  >({});
-  const translationPromisesRef = useRef<Record<string, Promise<ParsedSection[]>>>({});
 
   const rawSections = useMemo(
     () => parseHtmlContent(htmlContent ?? ""),
     [htmlContent],
   );
 
-  React.useEffect(() => {
+  const sections = translatedSectionsProp ?? rawSections;
+  const isTranslating = isTranslatingProp;
+
+  useEffect(() => {
     setActiveIdx(0);
-    setLang("en");
-    setTranslatedSections({});
-    translationPromisesRef.current = {};
-    setTranslatingTo(null);
     setIsDropdownOpen(false);
+  }, [htmlContent, sections]);
 
-    const loadPersistedTranslations = async () => {
-      if (!moduleId) return;
-      try {
-        const loaded: Record<string, ParsedSection[]> = {};
-        for (const option of LANGUAGES) {
-          if (option.code === "en") continue;
-          const key = `lucid_trans_${moduleId}_${option.code}`;
-          const saved = await AsyncStorage.getItem(key);
-          if (saved) {
-            loaded[option.code] = JSON.parse(saved);
-          }
-        }
-        if (Object.keys(loaded).length > 0) {
-          setTranslatedSections((prev) => ({ ...prev, ...loaded }));
-          console.log("[Translation] Loaded cached translations from AsyncStorage.");
-        }
-      } catch (err) {
-        console.warn("[Translation] Failed to load cached translations:", err);
-      }
-    };
-
-    loadPersistedTranslations();
-  }, [htmlContent, rawSections, moduleId]);
-
-  const sections =
-    lang !== "en" && translatedSections[lang] ? translatedSections[lang] : rawSections;
   const activeSection = sections[activeIdx] ?? null;
 
-  const handleLanguageChange = async (newLang: SupportedLang) => {
-    if (newLang === "en") {
-      setLang("en");
-      return;
-    }
-
-    if (translatedSections[newLang]) {
-      setLang(newLang);
-      return;
-    }
-
-    setIsTranslating(true);
-    setTranslatingTo(newLang);
-    try {
-      console.log(`[Translation] Starting batch translation to ${newLang}...`);
-      const translated = await translateAllSectionsBatch(rawSections, newLang);
-      
-      // Cache in memory state
-      setTranslatedSections((prev) => ({ ...prev, [newLang]: translated }));
-
-      // Persist in AsyncStorage
-      if (moduleId) {
-        const key = `lucid_trans_${moduleId}_${newLang}`;
-        await AsyncStorage.setItem(key, JSON.stringify(translated));
-        console.log(`[Translation] Persisted translation for ${newLang} under key: ${key}`);
-      }
-
-      setLang(newLang);
-    } catch (err) {
-      console.error(`[Translation] Failed to translate to ${newLang}:`, err);
-      Alert.alert(
-        "Translation Error",
-        "Failed to translate content. Please check your internet connection.",
-      );
-    } finally {
-      setIsTranslating(false);
-      setTranslatingTo(null);
-    }
+  const handleLanguageChange = (newLang: SupportedLang) => {
+    setLang(newLang);
   };
 
   return (
@@ -1066,14 +1009,14 @@ export default function CoreContentSection({
             </View>
           )}
 
-          {isTranslating && translatingTo ? (
+          {isTranslating && lang !== "en" ? (
             <View style={styles.translatingOverlay}>
               <ActivityIndicator size="large" color="#6366f1" />
               <Text style={styles.translatingText}>
-                {TRANSLATING_MESSAGES[translatingTo]?.native || "Translating..."}
+                {TRANSLATING_MESSAGES[lang]?.native || "Translating..."}
               </Text>
               <Text style={styles.translatingSubtext}>
-                {TRANSLATING_MESSAGES[translatingTo]?.english || "Translating module content..."}
+                {TRANSLATING_MESSAGES[lang]?.english || "Translating module content..."}
               </Text>
             </View>
           ) : !htmlContent || sections.length === 0 ? (

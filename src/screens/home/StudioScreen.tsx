@@ -25,6 +25,7 @@ import FlashcardsSection from "../../components/content/FlashcardsSection";
 import VideoSection from "../../components/content/VideoSection";
 import AIAssistantSection from "../../components/content/AIAssistantSection";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
+import { useModuleTranslation } from "../../hooks/useModuleTranslation";
 
 /**
  * StudioScreen
@@ -66,6 +67,8 @@ export default function StudioScreen({ route }: any) {
   const userId = cachedUser?.userId ?? null;
   const companyId = cachedUser?.companyId ?? "";
 
+  const [lang, setLang] = useState<'en' | 'hi' | 'bn' | 'ta' | 'te' | 'mr' | 'gu' | 'kn'>('en');
+
   // ─── Debug logging: Validate incoming params ──────────────────────────────
   useEffect(() => {
     console.log("[v0] [StudioScreen] Mounted with params:", {
@@ -94,6 +97,13 @@ export default function StudioScreen({ route }: any) {
     isLoading,
     error,
   } = useGetProcessedModuleById(processedModuleId || null, userId);
+
+  const { isTranslating, translatedSections, translatedFlashcards } = useModuleTranslation(
+    processedModuleId || null,
+    processedModule?.content ?? null,
+    processedModule?.flashcard_data ?? null,
+    lang,
+  );
 
   // ─── Debug logging: Track module data loading ─────────────────────────────
   useEffect(() => {
@@ -243,6 +253,11 @@ export default function StudioScreen({ route }: any) {
               isExpanded={expanded === "core"}
               onToggle={() => toggle("core")}
               htmlContent={processedModule?.content ?? null}
+              moduleId={processedModuleId}
+              lang={lang}
+              onLangChange={setLang}
+              sections={translatedSections}
+              isTranslating={isTranslating}
             />
           )}
 
@@ -251,7 +266,10 @@ export default function StudioScreen({ route }: any) {
             <FlashcardsSection
               isExpanded={expanded === "flashcards"}
               onToggle={() => toggle("flashcards")}
-              flashcardData={processedModule?.flashcard_data ?? null}
+              flashcardData={translatedFlashcards}
+              moduleId={processedModuleId}
+              lang={lang}
+              isTranslating={isTranslating}
             />
           )}
 
