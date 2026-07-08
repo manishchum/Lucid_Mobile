@@ -14,6 +14,7 @@ import {
 import { Video, ResizeMode, Audio, AVPlaybackStatus } from "expo-av";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { simplifyHindiText } from "./HindiSimplifier";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -436,105 +437,160 @@ async function translateText(
   }
 }
 
-async function translateParsedSection(
-  section: ParsedSection,
+async function translateTextBatch(
+  texts: string[],
   targetLang: string = "hi",
-): Promise<ParsedSection> {
-  const translatedSection = { ...section };
+): Promise<string[]> {
+  const uniqueTexts = Array.from(new Set(texts.map(t => t.trim()).filter(Boolean)));
+  if (uniqueTexts.length === 0) return [];
 
-  if (section.heading) {
-    translatedSection.heading = await translateText(
-      section.heading,
-      targetLang,
-    );
-  }
+  const translationMap: Record<string, string> = {};
+  const chunkSize = 15;
 
-  if (section.displayLabel) {
-    const langDict = TAB_LABEL_TRANSLATIONS[targetLang];
-    if (langDict && langDict[section.displayLabel]) {
-      translatedSection.displayLabel = langDict[section.displayLabel];
-    } else if (langDict && section.displayLabel.startsWith("Section ")) {
-      const num = section.displayLabel.replace("Section ", "");
-      translatedSection.displayLabel = `${langDict["Section"]} ${num}`;
-    } else {
-      translatedSection.displayLabel = await translateText(
-        section.displayLabel,
-        targetLang,
-      );
+  for (let i = 0; i < uniqueTexts.length; i += chunkSize) {
+    const chunk = uniqueTexts.slice(i, i + chunkSize);
+    try {
+      const qParams = chunk.map((text) => `q=${encodeURIComponent(text)}`).join("&");
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&${qParams}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      const segments = data[0] || [];
+
+      segments.forEach((seg: any) => {
+        if (seg && seg[0] !== undefined && seg[1] !== undefined) {
+          const translatedText = seg[0];
+          const originalText = String(seg[1]).trim();
+          if (originalText) {
+            translationMap[originalText] = (translationMap[originalText] || "") + translatedText;
+          }
+        }
+      });
+
+      // Positional fallback to prevent missing mappings
+      chunk.forEach((originalText, index) => {
+        const trimmed = originalText.trim();
+        if (!translationMap[trimmed] && segments[index]) {
+          translationMap[trimmed] = segments[index][0];
+        }
+      });
+    } catch (err) {
+      console.error("[Translation Batch] Error translating chunk:", err, chunk);
+      chunk.forEach((text) => {
+        translationMap[text.trim()] = text;
+      });
     }
   }
 
-  if (section.rawBullets && section.rawBullets.length > 0) {
-    translatedSection.rawBullets = await Promise.all(
-      section.rawBullets.map((bullet) => translateText(bullet, targetLang)),
-    );
-  }
+  return texts.map((t) => {
+    const trimmed = t.trim();
+    if (!trimmed) return "";
+    let trans = translationMap[trimmed] || t;
+    if (targetLang === "hi") {
+      trans = simplifyHindiText(trans);
+    }
+    return trans;
+  });
+}
 
-  if (section.subHeadings && section.subHeadings.length > 0) {
-    translatedSection.subHeadings = await Promise.all(
-      section.subHeadings.map(async (sub) => {
+async function translateAllSectionsBatch(
+  sections: ParsedSection[],
+  targetLang: string = "hi",
+): Promise<ParsedSection[]> {
+  const stringsToTranslate: string[] = [];
+
+  const add = (text?: string | null) => {
+    if (text && text.trim()) {
+      stringsToTranslate.push(text.trim());
+    }
+  };
+
+  sections.forEach((sec) => {
+    add(sec.heading);
+    
+    const langDict = TAB_LABEL_TRANSLATIONS[targetLang];
+    const isPreTranslated = langDict && (
+      langDict[sec.displayLabel] || 
+      (sec.displayLabel.startsWith("Section ") && langDict["Section"])
+    );
+    if (!isPreTranslated) {
+      add(sec.displayLabel);
+    }
+
+    sec.rawBullets.forEach((bullet) => add(bullet));
+
+    sec.subHeadings.forEach((sub) => {
+      add(sub.title);
+      sub.paragraphs?.forEach((p) => add(p));
+      sub.listItems?.forEach((item) => add(item));
+      sub.orderedItems?.forEach((item) => add(item));
+      add(sub.blockquote);
+      add(sub.figcaption);
+      if (sub.tableData) {
+        sub.tableData.headers.forEach((h) => add(h));
+        sub.tableData.rows.forEach((row) => {
+          row.forEach((cell) => add(cell));
+        });
+      }
+    });
+  });
+
+  const uniqueStrings = Array.from(new Set(stringsToTranslate));
+  const translatedStrings = await translateTextBatch(uniqueStrings, targetLang);
+
+  const translationCache: Record<string, string> = {};
+  uniqueStrings.forEach((orig, idx) => {
+    translationCache[orig] = translatedStrings[idx] || orig;
+  });
+
+  const lookup = (text?: string | null): string => {
+    if (!text || !text.trim()) return "";
+    const trimmed = text.trim();
+    return translationCache[trimmed] || text;
+  };
+
+  return sections.map((sec) => {
+    const translatedSec: ParsedSection = {
+      ...sec,
+      rawBullets: sec.rawBullets.map((b) => lookup(b)),
+      subHeadings: sec.subHeadings.map((sub) => {
         const translatedSub = { ...sub };
-        if (sub.title) {
-          translatedSub.title = await translateText(sub.title, targetLang);
-        }
-        if (sub.paragraphs && sub.paragraphs.length > 0) {
-          translatedSub.paragraphs = await Promise.all(
-            sub.paragraphs.map((p) => translateText(p, targetLang)),
-          );
-        }
-        if (sub.listItems && sub.listItems.length > 0) {
-          translatedSub.listItems = await Promise.all(
-            sub.listItems.map((item) => translateText(item, targetLang)),
-          );
-        }
-        if (sub.orderedItems && sub.orderedItems.length > 0) {
-          translatedSub.orderedItems = await Promise.all(
-            sub.orderedItems.map((item) => translateText(item, targetLang)),
-          );
-        }
-        if (sub.blockquote) {
-          translatedSub.blockquote = await translateText(
-            sub.blockquote,
-            targetLang,
-          );
-        }
-        if (sub.figcaption) {
-          translatedSub.figcaption = await translateText(
-            sub.figcaption,
-            targetLang,
-          );
-        }
+        if (sub.title) translatedSub.title = lookup(sub.title);
+        if (sub.paragraphs) translatedSub.paragraphs = sub.paragraphs.map((p) => lookup(p));
+        if (sub.listItems) translatedSub.listItems = sub.listItems.map((item) => lookup(item));
+        if (sub.orderedItems) translatedSub.orderedItems = sub.orderedItems.map((item) => lookup(item));
+        if (sub.blockquote) translatedSub.blockquote = lookup(sub.blockquote);
+        if (sub.figcaption) translatedSub.figcaption = lookup(sub.figcaption);
         if (sub.tableData) {
-          const translatedHeaders = await Promise.all(
-            sub.tableData.headers.map((h) => translateText(h, targetLang)),
-          );
-          const translatedRows = await Promise.all(
-            sub.tableData.rows.map(async (row) => {
-              return Promise.all(
-                row.map((cell) => translateText(cell, targetLang)),
-              );
-            }),
-          );
           translatedSub.tableData = {
-            headers: translatedHeaders,
-            rows: translatedRows,
+            headers: sub.tableData.headers.map((h) => lookup(h)),
+            rows: sub.tableData.rows.map((row) => row.map((cell) => lookup(cell))),
           };
         }
         return translatedSub;
       }),
-    );
-  }
+    };
 
-  return translatedSection;
-}
+    if (sec.heading) {
+      translatedSec.heading = lookup(sec.heading);
+    }
 
-async function translateAllSections(
-  sections: ParsedSection[],
-  targetLang: string = "hi",
-): Promise<ParsedSection[]> {
-  return Promise.all(
-    sections.map((sec) => translateParsedSection(sec, targetLang)),
-  );
+    if (sec.displayLabel) {
+      const langDict = TAB_LABEL_TRANSLATIONS[targetLang];
+      if (langDict && langDict[sec.displayLabel]) {
+        translatedSec.displayLabel = langDict[sec.displayLabel];
+      } else if (langDict && sec.displayLabel.startsWith("Section ")) {
+        const num = sec.displayLabel.replace("Section ", "");
+        translatedSec.displayLabel = `${langDict["Section"]} ${num}`;
+      } else {
+        translatedSec.displayLabel = lookup(sec.displayLabel);
+      }
+    }
+
+    return translatedSec;
+  });
 }
 
 function renderFormattedText(text: string, textStyle: any) {
@@ -808,12 +864,14 @@ interface Props {
   isExpanded: boolean;
   onToggle: () => void;
   htmlContent: string | null;
+  moduleId?: string | null;
 }
 
 export default function CoreContentSection({
   isExpanded,
   onToggle,
   htmlContent,
+  moduleId = null,
 }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [lang, setLang] = useState<SupportedLang>("en");
@@ -838,26 +896,29 @@ export default function CoreContentSection({
     setTranslatingTo(null);
     setIsDropdownOpen(false);
 
-    if (htmlContent && rawSections.length > 0) {
-      console.log(
-        "[Translation] Starting silent background translation to Hindi...",
-      );
-      const promise = translateAllSections(rawSections, "hi");
-      translationPromisesRef.current["hi"] = promise;
-      promise
-        .then((translated) => {
-          if (translationPromisesRef.current["hi"] === promise) {
-            setTranslatedSections((prev) => ({ ...prev, hi: translated }));
-            console.log(
-              "[Translation] Background translation completed and cached.",
-            );
+    const loadPersistedTranslations = async () => {
+      if (!moduleId) return;
+      try {
+        const loaded: Record<string, ParsedSection[]> = {};
+        for (const option of LANGUAGES) {
+          if (option.code === "en") continue;
+          const key = `lucid_trans_${moduleId}_${option.code}`;
+          const saved = await AsyncStorage.getItem(key);
+          if (saved) {
+            loaded[option.code] = JSON.parse(saved);
           }
-        })
-        .catch((err) => {
-          console.warn("[Translation] Background translation failed:", err);
-        });
-    }
-  }, [htmlContent, rawSections]);
+        }
+        if (Object.keys(loaded).length > 0) {
+          setTranslatedSections((prev) => ({ ...prev, ...loaded }));
+          console.log("[Translation] Loaded cached translations from AsyncStorage.");
+        }
+      } catch (err) {
+        console.warn("[Translation] Failed to load cached translations:", err);
+      }
+    };
+
+    loadPersistedTranslations();
+  }, [htmlContent, rawSections, moduleId]);
 
   const sections =
     lang !== "en" && translatedSections[lang] ? translatedSections[lang] : rawSections;
@@ -877,18 +938,19 @@ export default function CoreContentSection({
     setIsTranslating(true);
     setTranslatingTo(newLang);
     try {
-      let translated: ParsedSection[];
-      const existingPromise = translationPromisesRef.current[newLang];
-      if (existingPromise) {
-        console.log(`[Translation] Awaiting active background/previous translation for ${newLang}...`);
-        translated = await existingPromise;
-      } else {
-        console.log(`[Translation] Starting on-demand translation for ${newLang}...`);
-        const promise = translateAllSections(rawSections, newLang);
-        translationPromisesRef.current[newLang] = promise;
-        translated = await promise;
-      }
+      console.log(`[Translation] Starting batch translation to ${newLang}...`);
+      const translated = await translateAllSectionsBatch(rawSections, newLang);
+      
+      // Cache in memory state
       setTranslatedSections((prev) => ({ ...prev, [newLang]: translated }));
+
+      // Persist in AsyncStorage
+      if (moduleId) {
+        const key = `lucid_trans_${moduleId}_${newLang}`;
+        await AsyncStorage.setItem(key, JSON.stringify(translated));
+        console.log(`[Translation] Persisted translation for ${newLang} under key: ${key}`);
+      }
+
       setLang(newLang);
     } catch (err) {
       console.error(`[Translation] Failed to translate to ${newLang}:`, err);

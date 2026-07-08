@@ -107,6 +107,7 @@ export default function ContentDetailScreen({ route, navigation }: any) {
               isExpanded={expanded === 'core'}
               onToggle={() => toggle('core')}
               htmlContent={primaryModule?.content ?? null}
+              moduleId={originalModuleId}
             />
 
             <FlashcardsSection
@@ -140,6 +141,10 @@ export default function ContentDetailScreen({ route, navigation }: any) {
             <AIAssistantSection
               isExpanded={expanded === 'ai'}
               onToggle={() => toggle('ai')}
+              processedModuleId={primaryModule?.processed_module_id ?? ""}
+              moduleTitle={primaryModule?.title ?? moduleTitle}
+              userId={userId ?? ""}
+              companyId={cachedUser?.companyId ?? ""}
             />
           </View>
         </ScrollView>

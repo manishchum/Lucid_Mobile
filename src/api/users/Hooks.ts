@@ -179,6 +179,7 @@ interface UseGetProcessedModulesReturn {
 }
 
 export const useGetProcessedModules = (
+  originalModuleId: string | null,
   userId: string | null,
 ): UseGetProcessedModulesReturn => {
   const [modules, setModules] = useState<any[] | null>(null);
@@ -186,11 +187,11 @@ export const useGetProcessedModules = (
   const [error, setError] = useState<Error | null>(null);
 
   const fetchModules = async () => {
-    if (!userId) return;
+    if (!originalModuleId || !userId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const response = await getProcessedModules(userId, userId);
+      const response = await getProcessedModules(originalModuleId, userId);
       setModules(response?.data || []);
     } catch (err) {
       setError(
@@ -205,7 +206,7 @@ export const useGetProcessedModules = (
 
   useEffect(() => {
     fetchModules();
-  }, [userId]);
+  }, [originalModuleId, userId]);
 
   return { modules, isLoading, error, refetch: fetchModules };
 };
@@ -372,11 +373,11 @@ export const useGetTrainingModuleDetail = (
     setIsLoading(true);
     setError(null);
     try {
-      const response: TrainingModulesResponse = await getTrainingModuleDetail(
+      const response = await getTrainingModuleDetail(
         moduleId,
         moduleId,
       );
-      setModule(response.modules?.[0] || null);
+      setModule(response.module || null);
     } catch (err) {
       setError(
         err instanceof Error ? err : new Error("Failed to fetch module detail"),
@@ -503,7 +504,7 @@ export const useGetLearningStyle = (
     setError(null);
     try {
       const response: LearningStyleResponse = await getLearningStyle(userId);
-      setLearningStyle(response.learning_style);
+      setLearningStyle(response.data);
     } catch (err) {
       setError(
         err instanceof Error
@@ -547,7 +548,7 @@ export const useGetCompanyUsers = (
         companyId,
         userId,
       );
-      setUsers(response.users || []);
+      setUsers(response.data?.users || []);
     } catch (err) {
       setError(
         err instanceof Error ? err : new Error("Failed to fetch company users"),
@@ -606,7 +607,7 @@ export const useGetTrainingPlan = (
 export interface ResolvedPlanCard {
   planKey: string;
   moduleId: string;
-  status: string;
+  status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
   title: string;
   tips: string;
   totalModules: number;
@@ -987,7 +988,7 @@ async function processDashboardResponse(
         (id) => !!id && completedProcessedModuleIds.has(id),
       ).length;
 
-      let status: string;
+      let status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
       if (modules.length > 0 && completedModulesCount >= modules.length) {
         status = "COMPLETED";
       } else if (completedModulesCount > 0) {
@@ -1195,7 +1196,7 @@ export const useGetDashboardSummary = (
                 (id) => !!id && completedProcessedModuleIds.has(id),
               ).length;
 
-              let status: string;
+              let status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
               if (
                 modules.length > 0 &&
                 completedModulesCount >= modules.length
