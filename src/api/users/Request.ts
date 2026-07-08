@@ -858,7 +858,22 @@ export const submitQuizForGrading = async (
     if (!response.ok) {
       const body = await response.text();
       console.error("[Quiz] submitQuizForGrading HTTP", response.status, body);
-      return null;
+      let detail = body;
+      try {
+        const parsedBody = JSON.parse(body);
+        detail = parsedBody?.details ?? parsedBody?.error ?? body;
+        if (typeof detail === "string" && detail.trim().startsWith("{")) {
+          try {
+            const inner = JSON.parse(detail);
+            detail = inner?.error ?? detail;
+          } catch {}
+        }
+      } catch {}
+      throw new Error(
+        typeof detail === "string" && detail
+          ? detail
+          : `Grading request failed with status ${response.status}`,
+      );
     }
 
     const json = await response.json();
@@ -910,7 +925,7 @@ export const submitQuizForGrading = async (
     return json;
   } catch (err) {
     console.error("[Quiz] submitQuizForGrading error:", err);
-    return null;
+    throw err;
   }
 };
 
