@@ -10,16 +10,21 @@ import {
   KeyboardEvent,
   Animated,
   useWindowDimensions,
+  Alert,
+  Text,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Audio } from "expo-av";
+import * as FileSystem from "expo-file-system/legacy";
 import ChatMessage from "./ChatMessage";
-import { postModuleChat, ModuleChatMessage } from "../../api/users/Request";
+import { postModuleChat, ModuleChatMessage, getFirebaseToken } from "../../api/users/Request";
 
 // ─── Exported so AIAssistantSection can own the state ────────────────────────
 export interface Message {
   id: string;
   text: string;
   isUser: boolean;
+  isVoice?: boolean;
 }
 
 interface ChatInterfaceProps {
@@ -110,6 +115,8 @@ const eg = StyleSheet.create({
 });
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
+const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
+
 export default function ChatInterface({
   processedModuleId,
   moduleTitle,
@@ -124,6 +131,56 @@ export default function ChatInterface({
   const scrollRef = useRef<ScrollView>(null);
 
   const hasConversation = messages.length > 0;
+
+  // ── Speech-to-Speech Mode & Playback states ──
+  const [speechMode, setSpeechMode] = React.useState(false); // Controls auto-play on bot responses
+  const [currentlyPlayingId, setCurrentlyPlayingId] = React.useState<string | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  // ── Audio Recording (STT) states ──
+  const [isRecording, setIsRecording] = React.useState(false);
+  const [recordingDuration, setRecordingDuration] = React.useState(0);
+  const [isProcessingVoice, setIsProcessingVoice] = React.useState(false);
+
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingStartRef = useRef<number>(0);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Clean up sound and recording on unmount
+  useEffect(() => {
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+      }
+      if (recordingRef.current) {
+        recordingRef.current.stopAndUnloadAsync().catch(() => {});
+      }
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Timer logic for recording duration
+  useEffect(() => {
+    if (!isRecording) {
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = null;
+      }
+      return;
+    }
+
+    recordingIntervalRef.current = setInterval(() => {
+      setRecordingDuration(Date.now() - recordingStartRef.current);
+    }, 100);
+
+    return () => {
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+    };
+  }, [isRecording]);
 
   // ── Keyboard listeners ──
   useEffect(() => {
@@ -148,13 +205,98 @@ export default function ChatInterface({
     return () => clearTimeout(t);
   }, [messages, isLoading]);
 
-  const handleSend = async () => {
-    const text = inputText.trim();
-    if (!text || isLoading) return;
+  // ── Start Audio Recording ──
+  const startRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== "granted") {
+        Alert.alert("Permission Denied", "Microphone access is required to record voice.");
+        return;
+      }
 
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingRef.current = recording;
+      recordingStartRef.current = Date.now();
+      setIsRecording(true);
+      setRecordingDuration(0);
+    } catch (err) {
+      console.error("Failed to start recording:", err);
+      Alert.alert("Error", "Could not start microphone recording.");
+    }
+  };
+
+  // ── Stop Audio Recording ──
+  const stopRecording = async () => {
+    if (!recordingRef.current) return;
+    setIsRecording(false);
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      recordingRef.current = null;
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+      });
+
+      if (uri) {
+        await transcribeAudio(uri);
+      }
+    } catch (err) {
+      console.error("Failed to stop recording:", err);
+    }
+  };
+
+  // ── Upload Audio and Transcribe ──
+  const transcribeAudio = async (uri: string) => {
+    setIsProcessingVoice(true);
+    try {
+      const token = await getFirebaseToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const uploadUrl = `${EXPO_API_URL}/api/speech-to-text`;
+      console.log("[STT] Uploading audio file to:", uploadUrl);
+
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, uri, {
+        fieldName: "audio",
+        httpMethod: "POST",
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        headers,
+      });
+
+      if (uploadResult.status < 200 || uploadResult.status >= 300) {
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+      }
+
+      const data = JSON.parse(uploadResult.body);
+      const text = data.text?.trim();
+      if (text) {
+        console.log("[STT] Transcription success:", text);
+        await sendTranscribedText(text);
+      } else {
+        Alert.alert("Speech Recognition", "Could not understand any speech. Please try again.");
+      }
+    } catch (err: any) {
+      console.error("[STT] Error transcribing audio:", err);
+      Alert.alert("Transcription Failed", err.message || "Failed to transcribe audio.");
+    } finally {
+      setIsProcessingVoice(false);
+    }
+  };
+
+  // ── Send Voice Message ──
+  const sendTranscribedText = async (text: string) => {
     setInputText("");
-
-    const userMsg: Message = { id: `u-${Date.now()}`, text, isUser: true };
+    const userMsg: Message = { id: `u-${Date.now()}`, text, isUser: true, isVoice: true };
     onMessagesChange((prev) => [...prev, userMsg]);
     setIsLoading(true);
 
@@ -163,7 +305,126 @@ export default function ChatInterface({
       const chat_history: ModuleChatMessage[] = allMessages.map((m) => ({
         role: m.isUser ? "user" : "assistant",
         content: m.text,
-        isVoice: false,
+        isVoice: m.isVoice || false,
+      }));
+
+      const res = await postModuleChat({
+        processed_module_id: processedModuleId,
+        user_message: text,
+        chat_history,
+        user_id: userId,
+        company_id: companyId,
+      });
+
+      if (!res.success) throw new Error(res.message || "API returned failure");
+
+      const assistantMsgId = `a-${Date.now()}`;
+      onMessagesChange((prev) => [
+        ...prev,
+        { id: assistantMsgId, text: res.message, isUser: false },
+      ]);
+
+      // If speechMode is enabled, play the reply automatically!
+      if (speechMode) {
+        await playSpeech(res.message, assistantMsgId);
+      }
+    } catch (err) {
+      const errText = err instanceof Error ? err.message : "Failed to get a response. Please try again.";
+      console.error("[ChatInterface] error:", err);
+      onMessagesChange((prev) => [
+        ...prev,
+        { id: `e-${Date.now()}`, text: `⚠️ ${errText}`, isUser: false },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Play/Stop Speech ──
+  const playSpeech = async (text: string, messageId: string) => {
+    try {
+      // If already playing this message, stop it
+      if (currentlyPlayingId === messageId) {
+        if (soundRef.current) {
+          await soundRef.current.stopAsync().catch(() => {});
+          await soundRef.current.unloadAsync().catch(() => {});
+          soundRef.current = null;
+        }
+        setCurrentlyPlayingId(null);
+        return;
+      }
+
+      // If playing another message, stop it first
+      if (soundRef.current) {
+        await soundRef.current.stopAsync().catch(() => {});
+        await soundRef.current.unloadAsync().catch(() => {});
+        soundRef.current = null;
+      }
+
+      setCurrentlyPlayingId(messageId);
+
+      const frontendBaseUrl = EXPO_API_URL.replace(":8000", ":3000");
+      const ttsUrl = `${frontendBaseUrl}/api/text-to-speech`;
+      console.log("[TTS] Requesting speech from:", ttsUrl);
+
+      const response = await fetch(ttsUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`TTS failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      const audioBase64 = data.audio;
+
+      if (!audioBase64) {
+        throw new Error("No audio returned from TTS");
+      }
+
+      const tempFileUri = `${FileSystem.cacheDirectory}tts_audio_${Date.now()}.mp3`;
+      await FileSystem.writeAsStringAsync(tempFileUri, audioBase64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: tempFileUri },
+        { shouldPlay: true }
+      );
+      soundRef.current = sound;
+
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setCurrentlyPlayingId(null);
+          soundRef.current = null;
+        }
+      });
+    } catch (err) {
+      console.error("[TTS] Failed to synthesize or play speech:", err);
+      setCurrentlyPlayingId(null);
+    }
+  };
+
+  const handleSend = async () => {
+    const text = inputText.trim();
+    if (!text || isLoading) return;
+
+    setInputText("");
+
+    const userMsg: Message = { id: `u-${Date.now()}`, text, isUser: true, isVoice: false };
+    onMessagesChange((prev) => [...prev, userMsg]);
+    setIsLoading(true);
+
+    try {
+      const allMessages = [...messages, userMsg];
+      const chat_history: ModuleChatMessage[] = allMessages.map((m) => ({
+        role: m.isUser ? "user" : "assistant",
+        content: m.text,
+        isVoice: m.isVoice || false,
       }));
 
       console.log("[ChatInterface] Sending payload:", {
@@ -184,9 +445,10 @@ export default function ChatInterface({
 
       if (!res.success) throw new Error(res.message || "API returned failure");
 
+      const assistantMsgId = `a-${Date.now()}`;
       onMessagesChange((prev) => [
         ...prev,
-        { id: `a-${Date.now()}`, text: res.message, isUser: false },
+        { id: assistantMsgId, text: res.message, isUser: false },
       ]);
     } catch (err) {
       const errText = err instanceof Error ? err.message : "Failed to get a response. Please try again.";
@@ -200,12 +462,36 @@ export default function ChatInterface({
     }
   };
 
+  const formatDuration = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+  };
+
   const canSend = inputText.trim().length > 0 && !isLoading;
 
   return (
     // FIX 3 — nestedScrollEnabled lets this ScrollView scroll independently
     // inside the parent screen ScrollView on Android. On iOS it works by default.
     <View style={[styles.flex, { paddingBottom: keyboardHeight }]}>
+      {/* Speech Mode Toggle Bar */}
+      <View style={styles.controlHeader}>
+        <Text style={styles.controlHeaderText}>Speech Mode</Text>
+        <TouchableOpacity
+          onPress={() => setSpeechMode(!speechMode)}
+          style={[styles.toggleBtn, speechMode && styles.toggleBtnActive]}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons
+            name={speechMode ? "volume-high" : "volume-mute"}
+            size={16}
+            color={speechMode ? "#6366f1" : "#9ca3af"}
+          />
+          <Text style={[styles.toggleBtnText, speechMode && styles.toggleBtnTextActive]}>
+            {speechMode ? "Auto-Play ON" : "Auto-Play OFF"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {hasConversation ? (
         <ScrollView
           ref={scrollRef}
@@ -216,7 +502,24 @@ export default function ChatInterface({
           nestedScrollEnabled={true}
         >
           {messages.map((msg) => (
-            <ChatMessage key={msg.id} message={msg.text} isUserMessage={msg.isUser} />
+            <View key={msg.id} style={msg.isUser ? null : styles.aiMessageRow}>
+              <View style={msg.isUser ? null : styles.aiMessageContent}>
+                <ChatMessage message={msg.text} isUserMessage={msg.isUser} />
+              </View>
+              {!msg.isUser && (
+                <TouchableOpacity
+                  style={styles.speakerBtn}
+                  onPress={() => playSpeech(msg.text, msg.id)}
+                  activeOpacity={0.7}
+                >
+                  <MaterialCommunityIcons
+                    name={currentlyPlayingId === msg.id ? "volume-high" : "volume-mute"}
+                    size={18}
+                    color="#6366f1"
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
           ))}
           {isLoading && <TypingIndicator />}
         </ScrollView>
@@ -226,22 +529,49 @@ export default function ChatInterface({
       )}
 
       <View style={styles.inputBar}>
+        {isProcessingVoice && (
+          <View style={styles.processingVoiceRow}>
+            <Text style={styles.processingVoiceText}>Transcribing your voice...</Text>
+          </View>
+        )}
         <View style={styles.inputRow}>
+          {/* Microphone Button */}
+          <TouchableOpacity
+            style={[
+              styles.micBtn,
+              isRecording && styles.micBtnRecording,
+              isProcessingVoice && styles.micBtnDisabled,
+            ]}
+            onPress={isRecording ? stopRecording : startRecording}
+            disabled={isProcessingVoice}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons
+              name={isRecording ? "stop" : "microphone"}
+              size={20}
+              color="#fff"
+            />
+          </TouchableOpacity>
+
           <TextInput
             style={styles.input}
-            placeholder="Ask anything about this module..."
-            placeholderTextColor="#9ca3af"
-            value={inputText}
+            placeholder={
+              isRecording
+                ? `Recording... ${formatDuration(recordingDuration)}`
+                : "Ask anything about this module..."
+            }
+            placeholderTextColor={isRecording ? "#ef4444" : "#9ca3af"}
+            value={isRecording ? "" : inputText}
             onChangeText={setInputText}
             multiline
             maxLength={1000}
-            editable={!isLoading}
+            editable={!isLoading && !isRecording && !isProcessingVoice}
             blurOnSubmit={false}
           />
           <TouchableOpacity
             style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
             onPress={handleSend}
-            disabled={!canSend}
+            disabled={!canSend || isRecording || isProcessingVoice}
             activeOpacity={0.8}
           >
             <MaterialCommunityIcons name="send" size={18} color="#fff" />
@@ -256,6 +586,63 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: "#fff" },
   scroll: { flex: 1 },
   scrollContent: { paddingTop: 12, paddingBottom: 8 },
+  controlHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+    backgroundColor: "#f9fafb",
+  },
+  controlHeaderText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#6b7280",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  toggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  toggleBtnActive: {
+    borderColor: "#c7d2fe",
+    backgroundColor: "#eef2ff",
+  },
+  toggleBtnText: {
+    fontSize: 10,
+    color: "#6b7280",
+    fontWeight: "600",
+  },
+  toggleBtnTextActive: {
+    color: "#6366f1",
+  },
+  aiMessageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    paddingRight: 40,
+  },
+  aiMessageContent: {
+    flexShrink: 1,
+  },
+  speakerBtn: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: "#f0f2fe",
+    marginLeft: 2,
+    alignSelf: "center",
+    marginBottom: 12,
+  },
   inputBar: {
     backgroundColor: "#fff",
     borderTopWidth: 1,
@@ -270,7 +657,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     borderColor: "#e5e7eb",
-    paddingLeft: 14,
+    paddingLeft: 8,
     paddingRight: 6,
     paddingVertical: 6,
     gap: 8,
@@ -292,4 +679,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   sendBtnDisabled: { backgroundColor: "#d1d5db" },
+  micBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#6366f1",
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "flex-end",
+  },
+  micBtnRecording: {
+    backgroundColor: "#ef4444",
+  },
+  micBtnDisabled: {
+    backgroundColor: "#d1d5db",
+  },
+  processingVoiceRow: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    marginBottom: 6,
+    backgroundColor: "#eff6ff",
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  processingVoiceText: {
+    fontSize: 12,
+    color: "#1d4ed8",
+    fontWeight: "500",
+  },
 });
