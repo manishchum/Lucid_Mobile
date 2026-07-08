@@ -35,6 +35,7 @@ interface AssignedSectionProps {
   navigation: any;
   userId: string | null;
   companyId: string | null;
+  userName?: string | null;
 }
 
 export default function AssignedSection({
@@ -42,6 +43,7 @@ export default function AssignedSection({
   navigation,
   userId,
   companyId,
+  userName,
 }: AssignedSectionProps) {
   const [activeTab, setActiveTab] = useState<TabId>("sprints");
 
@@ -294,6 +296,7 @@ export default function AssignedSection({
         <AssignedSprintsList
           planCards={filteredSprints}
           navigation={navigation}
+          userName={userName}
           emptyMessage={
             sprintQuery
               ? "No sprints match your search"
