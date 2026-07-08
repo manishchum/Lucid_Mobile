@@ -44,7 +44,8 @@ type LoadPhase =
   | "generating"
   | "ready"
   | "grading"
-  | "error";
+  | "error"
+  | "grading_error";
 
 // ─── Confetti ─────────────────────────────────────────────────────────────────
 
@@ -176,6 +177,10 @@ export default function ModuleQuizScreen({
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(0);
+  const isSubmittingRef = useRef(false);
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(
+    null,
+  );
   const scrollRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -300,6 +305,8 @@ export default function ModuleQuizScreen({
       setShowNoInternet(true);
       return;
     }
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setPhase("grading");
     try {
       // Integer indices of selected options
@@ -340,9 +347,27 @@ export default function ModuleQuizScreen({
         setTimeout(() => setShowConfetti(false), 3200);
       }
       setPhase("ready");
-    } catch {
-      setPhase("error");
-      setErrorMsg("Grading failed. Please try again.");
+    } catch (err: any) {
+      const message = typeof err?.message === "string" ? err.message : "";
+      const match = message.match(/Try again in (\d+) seconds?/i);
+      if (match) {
+        const seconds = parseInt(match[1], 10);
+        setRetryAfterSeconds(seconds);
+        const minutes = Math.ceil(seconds / 60);
+        setErrorMsg(
+          `Grading is temporarily rate-limited by the server. Please wait about ${minutes} minute${minutes === 1 ? "" : "s"} and try submitting again — your answers have been kept.`,
+        );
+      } else {
+        setRetryAfterSeconds(null);
+        setErrorMsg("Grading failed. Please try again.");
+      }
+      // Use a dedicated phase (not the quiz-loading "error" phase) so that
+      // retrying re-submits the existing answers instead of regenerating
+      // an entirely new quiz — which was silently burning extra LLM calls
+      // against the same rate limit on every retry.
+      setPhase("grading_error");
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
@@ -396,7 +421,12 @@ export default function ModuleQuizScreen({
     idle: "Starting…",
   };
 
-  if (phase !== "ready" && phase !== "error" && phase !== "grading") {
+  if (
+    phase !== "ready" &&
+    phase !== "error" &&
+    phase !== "grading" &&
+    phase !== "grading_error"
+  ) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
@@ -469,6 +499,47 @@ export default function ModuleQuizScreen({
           <TouchableOpacity
             style={styles.primaryBtn}
             onPress={loadQuiz}
+            activeOpacity={0.85}
+          >
+            <MaterialCommunityIcons
+              name="refresh"
+              size={16}
+              color="white"
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.primaryBtnText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  if (phase === "grading_error") {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        {renderHeader()}
+        <View style={styles.centerBody}>
+          <View style={styles.errorIconCircle}>
+            <MaterialCommunityIcons
+              name={
+                retryAfterSeconds
+                  ? "clock-alert-outline"
+                  : "alert-circle-outline"
+              }
+              size={44}
+              color="#EF4444"
+            />
+          </View>
+          <Text style={styles.errorTitle}>
+            {retryAfterSeconds
+              ? "Please wait a moment"
+              : "Something went wrong"}
+          </Text>
+          <Text style={styles.errorMsg}>{errorMsg}</Text>
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            onPress={handleSubmit}
             activeOpacity={0.85}
           >
             <MaterialCommunityIcons
