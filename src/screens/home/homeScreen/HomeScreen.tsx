@@ -329,6 +329,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             navigation={navigation}
             userId={userId ?? null}
             companyId={companyId ?? null}
+            userName={user?.name ?? null}
           />
         </ScrollView>
       </KeyboardAvoidingView>

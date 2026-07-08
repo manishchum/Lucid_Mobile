@@ -4260,6 +4260,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"expo-print@npm:~15.0.8":
+  version: 15.0.8
+  resolution: "expo-print@npm:15.0.8"
+  peerDependencies:
+    expo: "*"
+    react-native: "*"
+  checksum: 10c0/b9b4ed4df6d3443e30738198b5edc4819806aea328561090ff0d59b566cfd19d9e439f6a2f746df1c975c0727578ad3df5462afcac9bbacb84963b2debecb337
+  languageName: node
+  linkType: hard
+
 "expo-screen-capture@npm:~8.0.9":
   version: 8.0.9
   resolution: "expo-screen-capture@npm:8.0.9"
@@ -5368,6 +5378,7 @@ __metadata:
     expo-file-system: "npm:~19.0.23"
     expo-font: "npm:~14.0.12"
     expo-image-picker: "npm:~17.0.11"
+    expo-print: "npm:~15.0.8"
     expo-screen-capture: "npm:~8.0.9"
     expo-screen-orientation: "npm:~9.0.9"
     expo-sharing: "npm:~14.0.8"
