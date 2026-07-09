@@ -7,10 +7,12 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
+  BackHandler,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useAuth } from "../../contex/AuthContext";
 
 import { useContentCategories, useContentItems } from "../../api/content-library/Hooks";
 import { ContentCategory, ContentItem } from "../../api/content-library/Dto";
@@ -19,14 +21,32 @@ import { STACK_ROUTES } from "../../navigations/Routes";
 export default function ContentLibraryScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
+  const { cachedUser } = useAuth();
+  const companyId = cachedUser?.companyId ?? null;
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<ContentCategory | null>(null);
   const [sortBy, setSortBy] = useState<"Newest" | "A-Z" | "Z-A">("Newest");
   const [showSortDropdown, setShowSortDropdown] = useState(false);
 
-  const { data: categories = [], isLoading: loadingCats } = useContentCategories();
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        if (selectedCategory !== null) {
+          setSelectedCategory(null);
+          return true;
+        }
+        return false;
+      };
+
+      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => subscription.remove();
+    }, [selectedCategory])
+  );
+
+  const { data: categories = [], isLoading: loadingCats } = useContentCategories(companyId);
   // Fetch ALL items to count them by category
-  const { data: allItems = [], isLoading: loadingItems } = useContentItems();
+  const { data: allItems = [], isLoading: loadingItems } = useContentItems(undefined, companyId);
 
   const getItemsForCategory = (categoryId: string) => {
     return allItems.filter(item => item.category_id === categoryId);

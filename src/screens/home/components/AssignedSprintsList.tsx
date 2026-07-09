@@ -4,7 +4,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
-import { APP_ROUTES } from "../../../navigations/Routes";
+import { STACK_ROUTES } from "../../../navigations/Routes";
 
 export interface PlanCard {
   planKey: string;
@@ -344,7 +344,7 @@ export default function AssignedSprintsList({
                 ]}
                 activeOpacity={0.8}
                 onPress={() =>
-                  navigation.navigate(APP_ROUTES.SPRINT, {
+                  navigation.navigate(STACK_ROUTES.SPRINT, {
                     moduleId: plan.moduleId,
                     planId: plan.planKey,
                     planTitle: plan.title,

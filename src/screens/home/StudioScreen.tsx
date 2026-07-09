@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  TouchableOpacity,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -48,7 +49,7 @@ import { useModuleTranslation } from "../../hooks/useModuleTranslation";
  *   Mind Map     → data.mindmap_data   (Phase 2: { nodes, edges })
  * ─────────────────────────────────────────────────────────────────────────────
  */
-export default function StudioScreen({ route }: any) {
+export default function StudioScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState<string | null>("core");
   const { cachedUser } = useAuth();
@@ -144,6 +145,13 @@ export default function StudioScreen({ route }: any) {
   if (!processedModuleId) {
     return (
       <View style={[styles.emptyContainer, { paddingTop: insets.top }]}>
+        <TouchableOpacity
+          style={styles.backBtnAbsolute}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#4F46E5" />
+        </TouchableOpacity>
         <View style={styles.emptyIconWrap}>
           <MaterialCommunityIcons name="brush" size={44} color="#A5B4FC" />
         </View>
@@ -191,6 +199,13 @@ export default function StudioScreen({ route }: any) {
       >
         {/* ── Hero ── */}
         <View style={styles.hero}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#4F46E5" />
+          </TouchableOpacity>
           <View style={styles.studioBadge}>
             <MaterialCommunityIcons name="brush" size={14} color="#4F46E5" />
             <Text style={styles.studioBadgeText}>Studio</Text>
@@ -408,4 +423,16 @@ const styles = StyleSheet.create({
   metaTextHi: { fontSize: 12, fontWeight: "600", color: "#C2410C" },
 
   accordionList: { paddingHorizontal: 16, gap: 12 },
+  backBtn: {
+    marginBottom: 12,
+    alignSelf: "flex-start",
+    padding: 4,
+  },
+  backBtnAbsolute: {
+    position: "absolute",
+    left: 20,
+    top: 20,
+    padding: 4,
+    zIndex: 10,
+  },
 });
