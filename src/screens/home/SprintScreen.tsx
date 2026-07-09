@@ -16,7 +16,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { APP_ROUTES, STACK_ROUTES } from "../../navigations/Routes";
+import { STACK_ROUTES } from "../../navigations/Routes";
 import { useAuth } from "../../contex/AuthContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
@@ -293,7 +293,7 @@ export default function SprintScreen({
 			`[SprintScreen] ✅ View Content: Module[${index}] "${modTitle}" → processedModuleId="${processedModuleId}"`,
 		);
 
-		navigation.navigate(APP_ROUTES.STUDIO, {
+		navigation.navigate(STACK_ROUTES.STUDIO, {
 			processedModuleId,
 			moduleTitle: modTitle,
 			sprintTitle: planTitle,
@@ -365,6 +365,13 @@ export default function SprintScreen({
 				contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
 				{/* ── Header ──────────────────────────────────────────────────────── */}
 				<View style={styles.header}>
+					<TouchableOpacity
+						style={styles.backBtn}
+						onPress={() => navigation.goBack()}
+						activeOpacity={0.7}
+					>
+						<MaterialCommunityIcons name="arrow-left" size={24} color="#111827" />
+					</TouchableOpacity>
 					<Text style={styles.headerTitle} numberOfLines={2}>
 						{planTitle}
 					</Text>
@@ -875,4 +882,9 @@ const styles = StyleSheet.create({
 	},
 	quizButtonText: { fontSize: 13, fontWeight: "700", color: "white" },
 	quizButtonTextPassed: { color: "#6EE7B7", fontWeight: "600" },
+	backBtn: {
+		marginBottom: 12,
+		alignSelf: "flex-start",
+		padding: 4,
+	},
 });

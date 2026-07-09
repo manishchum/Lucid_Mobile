@@ -49,17 +49,11 @@ function BottomTabNavigator() {
           marginTop: 4,
         },
         tabBarIcon: ({ color, size }) => {
-          let iconName;
+          let iconName: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
 
           switch (route.name) {
             case APP_ROUTES.HOME:
               iconName = "home";
-              break;
-            case APP_ROUTES.SPRINT:
-              iconName = "lightning-bolt";
-              break;
-            case APP_ROUTES.STUDIO:
-              iconName = "brush";
               break;
             case APP_ROUTES.CONTENT_LIBRARY:
               iconName = "folder-multiple";
@@ -81,20 +75,6 @@ function BottomTabNavigator() {
         name={APP_ROUTES.HOME}
         component={HomeScreen}
         options={{ tabBarLabel: "Home" }}
-      />
-      <Tab.Screen
-        name={APP_ROUTES.SPRINT}
-        component={SprintScreen}
-        options={{ tabBarLabel: "Sprint" }}
-      />
-      <Tab.Screen
-        name={APP_ROUTES.STUDIO}
-        component={StudioScreen}
-        options={{
-          tabBarLabel: "Studio",
-          // Preserve the module params when user switches away and back
-          unmountOnBlur: false,
-        }}
       />
       <Tab.Screen
         name={APP_ROUTES.CONTENT_LIBRARY}
@@ -146,6 +126,16 @@ export default function AppNavigator() {
         {isLoggedIn ? (
           <>
             <Stack.Screen name="AppTabs" component={BottomTabNavigator} />
+            <Stack.Screen
+              name={STACK_ROUTES.SPRINT}
+              component={SprintScreen}
+              options={{ presentation: "card", animation: "slide_from_right" }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.STUDIO}
+              component={StudioScreen}
+              options={{ presentation: "card", animation: "slide_from_right" }}
+            />
             <Stack.Screen
               name={STACK_ROUTES.MODULE_QUIZ}
               component={ModuleQuizScreen}

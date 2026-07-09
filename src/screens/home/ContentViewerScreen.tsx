@@ -8,6 +8,7 @@ import {
   Image,
   Alert,
   Linking,
+  ScrollView,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,6 +26,9 @@ export default function ContentViewerScreen() {
   const item: ContentItem = route.params?.item;
 
   const [loading, setLoading] = useState(true);
+  const [textContent, setTextContent] = useState<string>("");
+  const [textLoading, setTextLoading] = useState(false);
+
 
   if (!item) {
     return (
@@ -43,6 +47,35 @@ export default function ContentViewerScreen() {
   const isVideo = file_type?.startsWith("video/");
   const isAudio = file_type?.startsWith("audio/");
   const isDocument = !isImage && !isVideo && !isAudio;
+
+  const isPdf = file_type?.includes("pdf") || file_url.toLowerCase().endsWith(".pdf");
+  const isText = file_type?.startsWith("text/") || 
+                 file_url.toLowerCase().endsWith(".txt") || 
+                 file_url.toLowerCase().endsWith(".csv") ||
+                 file_url.toLowerCase().endsWith(".json") ||
+                 file_url.toLowerCase().endsWith(".xml");
+
+  useEffect(() => {
+    if (isDocument && isText) {
+      setTextLoading(true);
+      fetch(file_url)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP status ${res.status}`);
+          return res.text();
+        })
+        .then((text) => {
+          setTextContent(text);
+          setTextLoading(false);
+          setLoading(false);
+        })
+        .catch((error) => {
+          console.error("[ContentViewer] Error loading text file:", error);
+          setTextLoading(false);
+          setLoading(false);
+          Alert.alert("Load Error", "Failed to load plain text file content.");
+        });
+    }
+  }, [file_url, file_type, isDocument, isText]);
 
   // Modern expo-video player hook
   const player = useVideoPlayer(file_url, player => {
@@ -94,13 +127,33 @@ export default function ContentViewerScreen() {
     }
 
     if (isDocument) {
-      // Use Mozilla's robust PDF.js viewer for PDFs instead of Google Docs which aggressively downloads.
-      // For non-PDF documents (docx, xlsx), fallback to a better Google Docs Viewer wrapper.
-      const isPdf = file_type?.includes("pdf") || file_url.toLowerCase().endsWith(".pdf");
-      
+      if (isText) {
+        if (textLoading) {
+          return (
+            <ActivityIndicator style={styles.loader} size="large" color="#3b82f6" />
+          );
+        }
+        return (
+          <ScrollView contentContainerStyle={styles.textScrollView} showsVerticalScrollIndicator={true}>
+            <Text style={styles.textTextContent}>{textContent}</Text>
+          </ScrollView>
+        );
+      }
+
+      const isOfficeDoc = file_type?.includes("document") || 
+                           file_type?.includes("msword") || 
+                           file_url.toLowerCase().endsWith(".doc") || 
+                           file_url.toLowerCase().endsWith(".docx") ||
+                           file_url.toLowerCase().endsWith(".xls") ||
+                           file_url.toLowerCase().endsWith(".xlsx") ||
+                           file_url.toLowerCase().endsWith(".ppt") ||
+                           file_url.toLowerCase().endsWith(".pptx");
+
       let urlToRender;
       if (isPdf) {
         urlToRender = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file_url)}`;
+      } else if (isOfficeDoc) {
+        urlToRender = `https://docs.google.com/viewer?url=${encodeURIComponent(file_url)}&embedded=true`;
       } else {
         urlToRender = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(file_url)}`;
       }
@@ -230,5 +283,14 @@ const styles = StyleSheet.create({
   backButtonText: {
     color: "#ffffff",
     fontWeight: "600",
+  },
+  textScrollView: {
+    padding: 20,
+    backgroundColor: "#ffffff",
+  },
+  textTextContent: {
+    fontSize: 14,
+    color: "#334155",
+    lineHeight: 22,
   },
 });

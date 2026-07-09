@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNotifications, Notification } from "../../contex/NotificationContext";
-import { APP_ROUTES } from "../../navigations/Routes";
+import { STACK_ROUTES } from "../../navigations/Routes";
 
 export default function NotificationsScreen({ navigation }: { navigation: any }) {
   const { notifications, isLoading, fetchNotifications, markAsRead, markAllAsRead } = useNotifications();
@@ -30,9 +30,9 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
     }
     // Deep linking routing based on notification type
     // if (item.type === "sprint_assigned") {
-    //   navigation.navigate("AppTabs", { screen: APP_ROUTES.SPRINT });
+    //   navigation.navigate(STACK_ROUTES.SPRINT);
     // } else if (item.type === "roleplay_assigned") {
-    //   navigation.navigate("AppTabs", { screen: APP_ROUTES.STUDIO });
+    //   navigation.navigate(STACK_ROUTES.STUDIO);
     // }
   };
 
