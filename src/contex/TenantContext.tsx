@@ -19,7 +19,8 @@ export type Addon =
   | "chat_in_studio"
   | "task_management"
   | "kpi"
-  | "role_play";
+  | "role_play"
+  | "sprintverse";
 
 type CompanyInfo = {
   company_id?: string;
@@ -50,6 +51,7 @@ const KNOWN_ADDONS: Addon[] = [
   "task_management",
   "kpi",
   "role_play",
+  "sprintverse",
 ];
 
 const normalizeAddonKey = (value: string): Addon | null => {
