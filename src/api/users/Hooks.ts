@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { eventBus } from "../../utils/EventBus";
 import { useTenant } from "../../contex/TenantContext";
 import {
   getUserByEmail,
@@ -800,7 +801,7 @@ async function resolveProcessedModuleIdsForPlan(
   );
   return [];
 }
-async function resolvePlanModules(
+export async function resolvePlanModules(
   plan: any,
   userId: string,
   progressTitleById: Map<string, string>,
@@ -1347,6 +1348,14 @@ export const useGetDashboardSummary = (
     loadAndFetch();
   }, [userId, companyId]);
 
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log("[Hook] EventBus triggered refresh_dashboard. Refreshing silently...");
+      fetchDashboardData(false).catch(() => {});
+    };
+    return eventBus.on("refresh_dashboard", handleRefresh);
+  }, [fetchDashboardData]);
+
   // ── Stats derived from resolved plan cards ────────────────────────────────
   const stats: DashboardStats = (() => {
     const totalAssigned = resolvedPlanCards.length;
@@ -1549,6 +1558,7 @@ export const useGetLeaderboardHighlight = (
   companyId: string | null,
   userId: string | null,
   topLimit: number = 10,
+  enabled: boolean = true,
 ): UseGetLeaderboardHighlightReturn => {
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardHighlightData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -1598,6 +1608,7 @@ export const useGetLeaderboardHighlight = (
   );
 
   useEffect(() => {
+    if (!enabled) return;
     const loadAndFetch = async () => {
       if (!companyId || !userId) return;
 
@@ -1634,7 +1645,7 @@ export const useGetLeaderboardHighlight = (
     };
 
     loadAndFetch();
-  }, [companyId, userId, topLimit, fetchLeaderboard]);
+  }, [companyId, userId, topLimit, enabled, fetchLeaderboard]);
 
   return {
     leaderboardData,
