@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { eventBus } from "../../utils/EventBus";
 import { getContentCategories, getContentItems } from "./Request";
 import { ContentCategory, ContentItem } from "./Dto";
 
@@ -64,7 +65,15 @@ export const useContentCategories = (companyId?: string | null) => {
     };
   }, [companyId, fetchCategories]);
 
-  return { data, isLoading, error, refetch: () => fetchCategories(true) };
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log("[ContentLibraryHook] EventBus triggered refresh_categories. Refreshing silently...");
+      fetchCategories(false).catch(() => {});
+    };
+    return eventBus.on("refresh_categories", handleRefresh);
+  }, [fetchCategories]);
+
+  return { data, isLoading, error, refetch: (showSpinner = true) => fetchCategories(showSpinner) };
 };
 
 export const useContentItems = (categoryId?: string, companyId?: string | null) => {
@@ -128,5 +137,13 @@ export const useContentItems = (categoryId?: string, companyId?: string | null) 
     };
   }, [categoryId, companyId, fetchItems]);
 
-  return { data, isLoading, error, refetch: () => fetchItems(true) };
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log("[ContentLibraryHook] EventBus triggered refresh_items. Refreshing silently...");
+      fetchItems(false).catch(() => {});
+    };
+    return eventBus.on("refresh_items", handleRefresh);
+  }, [fetchItems]);
+
+  return { data, isLoading, error, refetch: (showSpinner = true) => fetchItems(showSpinner) };
 };

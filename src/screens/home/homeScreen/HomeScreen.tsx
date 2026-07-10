@@ -125,29 +125,36 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     isLoading: leaderboardLoading,
     error: leaderboardError,
     refetch: refetchLeaderboard,
-  } = useGetLeaderboardHighlight(companyId, userId, 10);
+  } = useGetLeaderboardHighlight(companyId, userId, 10, isLeaderboardOpen);
 
   const [refreshing, setRefreshing] = React.useState(false);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([
-        refetch(true),
-        refetchLeaderboard(true).catch((err) => console.warn("[HomeScreen] Leaderboard refresh error:", err))
-      ]);
+      const promises: Promise<any>[] = [refetch(true)];
+      if (isLeaderboardOpen) {
+        promises.push(
+          refetchLeaderboard(true).catch((err) =>
+            console.warn("[HomeScreen] Leaderboard refresh error:", err),
+          ),
+        );
+      }
+      await Promise.all(promises);
     } catch (err) {
       console.error("[HomeScreen] Refresh error:", err);
     } finally {
       setRefreshing(false);
     }
-  }, [refetch, refetchLeaderboard]);
+  }, [refetch, refetchLeaderboard, isLeaderboardOpen]);
 
   useFocusEffect(
     React.useCallback(() => {
       refetch(false); // Silent background update on screen focus
-      refetchLeaderboard(false).catch(() => {});
-    }, [refetch, refetchLeaderboard]),
+      if (isLeaderboardOpen) {
+        refetchLeaderboard(false).catch(() => {});
+      }
+    }, [refetch, refetchLeaderboard, isLeaderboardOpen]),
   );
 
   const isLoading = (userLoading && !cachedUser) || dashboardLoading;

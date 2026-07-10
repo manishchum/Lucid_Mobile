@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
   Text,
@@ -24,16 +25,16 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
     setRefreshing(false);
   };
 
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchNotifications();
+    }, [fetchNotifications])
+  );
+
   const handleNotificationPress = async (item: Notification) => {
     if (!item.read) {
       await markAsRead(item.id);
     }
-    // Deep linking routing based on notification type
-    // if (item.type === "sprint_assigned") {
-    //   navigation.navigate(STACK_ROUTES.SPRINT);
-    // } else if (item.type === "roleplay_assigned") {
-    //   navigation.navigate(STACK_ROUTES.STUDIO);
-    // }
   };
 
   const formatTime = (isoString: string) => {

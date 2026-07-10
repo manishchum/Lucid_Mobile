@@ -44,9 +44,16 @@ export default function ContentLibraryScreen() {
     }, [selectedCategory])
   );
 
-  const { data: categories = [], isLoading: loadingCats } = useContentCategories(companyId);
+  const { data: categories = [], isLoading: loadingCats, refetch: refetchCats } = useContentCategories(companyId);
   // Fetch ALL items to count them by category
-  const { data: allItems = [], isLoading: loadingItems } = useContentItems(undefined, companyId);
+  const { data: allItems = [], isLoading: loadingItems, refetch: refetchItems } = useContentItems(undefined, companyId);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refetchCats(false).catch(() => {});
+      refetchItems(false).catch(() => {});
+    }, [refetchCats, refetchItems])
+  );
 
   const getItemsForCategory = (categoryId: string) => {
     return allItems.filter(item => item.category_id === categoryId);

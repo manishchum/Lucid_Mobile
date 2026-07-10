@@ -4,12 +4,18 @@ import React, {
   useState,
   useEffect,
   useRef,
+  useCallback,
 } from "react";
-import { Alert, AppState, AppStateStatus } from "react-native";
+import { Alert, AppState, AppStateStatus, Animated, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import messaging from "@react-native-firebase/messaging";
 import { getAuth, getIdToken } from "@react-native-firebase/auth";
 import { useAuth } from "./AuthContext";
+import { eventBus } from "../utils/EventBus";
 import { navigate } from "../navigations/NavigationService";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { STACK_ROUTES } from "../navigations/Routes";
 
 let isMessagingSupported = false;
 try {
@@ -41,6 +47,7 @@ interface NotificationContextType {
   fetchNotifications: () => Promise<void>;
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
+  handleSprintNotificationClick: (sprintId: string, assignmentTitle?: string) => Promise<void>;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(
@@ -59,7 +66,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [toast, setToast] = useState<{ title: string; message: string; onPress?: () => void } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  const showToast = useCallback((title: string, message: string, onPress?: () => void) => {
+    setToast({ title, message, onPress });
+  }, []);
+
+  const handleSprintNotificationClick = useCallback(async (sprintId?: string, assignmentTitle?: string) => {
+    navigate("Notifications");
+  }, []);
 
   // Blocking notifications for Release Phase 2 release 2
   const NOTIFICATIONS_LIVE_ENABLED = true; // Toggle to true once push implemented from Firebase
@@ -188,11 +204,33 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log("[FCM] Foreground message received:", remoteMessage);
         // Trigger a fetch to refresh notification log
         fetchNotifications();
-        // Display alert if UI notification payload is present
+
+        // Emit events on EventBus for real-time foreground updates
+        const pushType = remoteMessage.data?.type || "";
+        if (pushType === "dashboard" || pushType === "sprint") {
+          eventBus.emit("refresh_dashboard");
+        } else if (pushType === "categories") {
+          eventBus.emit("refresh_categories");
+        } else if (pushType === "items") {
+          eventBus.emit("refresh_items");
+        } else {
+          // Fallback: refresh all contexts to guarantee consistency
+          eventBus.emit("refresh_dashboard");
+          eventBus.emit("refresh_categories");
+          eventBus.emit("refresh_items");
+        }
+
+        // Display toast if UI notification payload is present
         if (remoteMessage.notification) {
-          Alert.alert(
+          showToast(
             remoteMessage.notification.title || "Notification",
             remoteMessage.notification.body || "",
+            () => {
+              const val = remoteMessage.data?.id || remoteMessage.data?.learning_plan_id || remoteMessage.data?.module_id;
+              if (val) {
+                handleSprintNotificationClick(String(val));
+              }
+            }
           );
         }
       });
@@ -212,8 +250,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
       // 1. Handle when app is in background state and notification is clicked
       const unsubscribeOnNotificationOpened = messaging().onNotificationOpenedApp((remoteMessage) => {
         console.log("[FCM] Notification caused app to open from background state:", remoteMessage);
-        // Navigate to the notifications screen
-        navigate("Notifications");
+        const val = remoteMessage.data?.id || remoteMessage.data?.learning_plan_id || remoteMessage.data?.module_id;
+        const titleVal = remoteMessage.data?.assignment_title;
+        if (val || titleVal) {
+          handleSprintNotificationClick(String(val || ""), String(titleVal || ""));
+        } else {
+          navigate("Notifications");
+        }
       });
 
       // 2. Handle when app is in closed (quit) state and notification is clicked
@@ -222,10 +265,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
         .then((remoteMessage) => {
           if (remoteMessage) {
             console.log("[FCM] Notification caused app to open from quit state:", remoteMessage);
-            // Navigate to the notifications screen (using a small delay to let navigator mount)
-            setTimeout(() => {
-              navigate("Notifications");
-            }, 500);
+            const val = remoteMessage.data?.id || remoteMessage.data?.learning_plan_id || remoteMessage.data?.module_id;
+            const titleVal = remoteMessage.data?.assignment_title;
+            if (val || titleVal) {
+              setTimeout(() => {
+                handleSprintNotificationClick(String(val || ""), String(titleVal || ""));
+              }, 800);
+            } else {
+              setTimeout(() => {
+                navigate("Notifications");
+              }, 500);
+            }
           }
         })
         .catch((error) => {
@@ -263,7 +313,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
         if (!token) return;
 
         const wsUrl = `${WS_BASE_URL}/notifications/ws?token=${token}&user_id=${cachedUser.userId}`;
-        console.log("[WebSocket] Connecting to:", wsUrl);
+        console.log("[WebSocket] Connecting to WS server for user:", cachedUser.userId);
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
@@ -273,7 +323,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
         ws.onmessage = (event) => {
           try {
             const payload = JSON.parse(event.data);
-            if (payload.event === "new_notification") {
+            if (payload.event === "refresh_data") {
+              const refreshType = payload.data?.type || payload.type || "";
+              if (refreshType === "dashboard" || refreshType === "sprint") {
+                eventBus.emit("refresh_dashboard");
+              } else if (refreshType === "categories") {
+                eventBus.emit("refresh_categories");
+              } else if (refreshType === "items") {
+                eventBus.emit("refresh_items");
+              } else {
+                eventBus.emit("refresh_dashboard");
+                eventBus.emit("refresh_categories");
+                eventBus.emit("refresh_items");
+              }
+            } else if (payload.event === "new_notification") {
               const newNotif = payload.data as Notification;
               setNotifications((prev) => {
                 if (prev.some((n) => n.id === newNotif.id)) {
@@ -283,8 +346,40 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
                 return [newNotif, ...prev];
               });
 
-              // Show in-app alert
-              Alert.alert(newNotif.title, newNotif.message);
+              // Trigger updates on receiving new notification
+              const notifType = newNotif.type || "";
+              if (notifType === "new_sprint" || notifType === "sprint_assigned") {
+                eventBus.emit("refresh_dashboard");
+              } else if (notifType === "new_content" || notifType === "library_update") {
+                eventBus.emit("refresh_categories");
+                eventBus.emit("refresh_items");
+              } else {
+                eventBus.emit("refresh_dashboard");
+                eventBus.emit("refresh_categories");
+                eventBus.emit("refresh_items");
+              }
+
+              // Show in-app toast
+              showToast(
+                newNotif.title,
+                newNotif.message,
+                () => {
+                  const val = newNotif.metadata?.sprint_id || newNotif.metadata?.learning_plan_id || newNotif.metadata?.id || newNotif.metadata?.module_id;
+                  const titleVal = newNotif.metadata?.assignment_title;
+                  let metadataObj = newNotif.metadata;
+                  if (typeof metadataObj === "string") {
+                    try {
+                      metadataObj = JSON.parse(metadataObj);
+                    } catch {}
+                  }
+                  const resolvedVal = val || metadataObj?.sprint_id || metadataObj?.learning_plan_id || metadataObj?.id || metadataObj?.module_id;
+                  const resolvedTitle = titleVal || metadataObj?.assignment_title;
+
+                  if (resolvedVal || resolvedTitle) {
+                    handleSprintNotificationClick(String(resolvedVal || ""), String(resolvedTitle || ""));
+                  }
+                }
+              );
             }
           } catch (e) {
             console.error("[WebSocket] Message parsing error:", e);
@@ -316,6 +411,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
           "[WebSocket] App returned to foreground. Reconnecting and refreshing...",
         );
         fetchNotifications();
+        
+        // Broadcast EventBus refresh signals to update screen hooks on app resume
+        eventBus.emit("refresh_dashboard");
+        eventBus.emit("refresh_categories");
+        eventBus.emit("refresh_items");
+
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
           clearTimeout(reconnectTimeout);
           connectWS();
@@ -360,12 +461,179 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
         fetchNotifications,
         markAsRead,
         markAllAsRead,
+        handleSprintNotificationClick,
       }}
     >
       {children}
+      {toast && (
+        <Toast
+          title={toast.title}
+          message={toast.message}
+          onPress={toast.onPress}
+          onDismiss={() => setToast(null)}
+        />
+      )}
     </NotificationContext.Provider>
   );
 };
+
+interface ToastProps {
+  title: string;
+  message: string;
+  onDismiss: () => void;
+  onPress?: () => void;
+}
+
+const Toast: React.FC<ToastProps> = ({ title, message, onDismiss, onPress }) => {
+  const insets = useSafeAreaInsets();
+  const slideAnim = useRef(new Animated.Value(-150)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const dismissTimer = useRef<any>(null);
+
+  const dismissToast = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: -150,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      onDismiss();
+    });
+  }, [onDismiss, slideAnim, opacityAnim]);
+
+  const handlePress = useCallback(() => {
+    if (onPress) {
+      onPress();
+    }
+    dismissToast();
+  }, [onPress, dismissToast]);
+
+  useEffect(() => {
+    // Slide in
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Auto dismiss after 4 seconds
+    dismissTimer.current = setTimeout(() => {
+      dismissToast();
+    }, 4000);
+
+    return () => {
+      if (dismissTimer.current) {
+        clearTimeout(dismissTimer.current);
+      }
+    };
+  }, [slideAnim, opacityAnim, dismissToast]);
+
+  return (
+    <Animated.View
+      style={[
+        toastStyles.toastContainer,
+        {
+          top: insets.top + 12,
+          transform: [{ translateY: slideAnim }],
+          opacity: opacityAnim,
+        },
+      ]}
+    >
+      <View style={toastStyles.toastContent}>
+        <TouchableOpacity
+          style={toastStyles.toastMainTouchable}
+          onPress={handlePress}
+          activeOpacity={0.85}
+          disabled={!onPress}
+        >
+          <View style={toastStyles.iconWrapper}>
+            <MaterialCommunityIcons name="bell-ring" size={22} color="#2563eb" />
+          </View>
+          <View style={toastStyles.textWrapper}>
+            <Text style={toastStyles.toastTitle} numberOfLines={1}>
+              {title}
+            </Text>
+            <Text style={toastStyles.toastMessage} numberOfLines={2}>
+              {message}
+            </Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={toastStyles.closeButton} onPress={dismissToast}>
+          <MaterialCommunityIcons name="close" size={18} color="#64748b" />
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  );
+};
+
+const toastStyles = StyleSheet.create({
+  toastContainer: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    zIndex: 99999,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+  toastContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  toastMainTouchable: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  iconWrapper: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#eff6ff",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  textWrapper: {
+    flex: 1,
+    marginRight: 8,
+  },
+  toastTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0f172a",
+    marginBottom: 2,
+  },
+  toastMessage: {
+    fontSize: 12,
+    color: "#475569",
+    lineHeight: 16,
+  },
+  closeButton: {
+    padding: 4,
+  },
+});
 
 export const useNotifications = () => {
   const context = useContext(NotificationContext);
