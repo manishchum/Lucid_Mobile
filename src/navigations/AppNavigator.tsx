@@ -6,7 +6,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../contex/AuthContext";
-import { TenantProvider } from "../contex/TenantContext";
+import { TenantProvider, useTenant } from "../contex/TenantContext";
 import { APP_ROUTES, STACK_ROUTES } from "./Routes";
 
 // Screens
@@ -20,6 +20,7 @@ import ModuleQuizScreen from "../screens/home/ModuleQuizScreen";
 import NotificationsScreen from "../screens/home/NotificationsScreen";
 import ContentLibraryScreen from "../screens/home/ContentLibraryScreen";
 import ContentViewerScreen from "../screens/home/ContentViewerScreen";
+import SprintverseScreen from "../screens/home/SprintverseScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -27,6 +28,8 @@ const Tab = createBottomTabNavigator();
 // Bottom Tab Navigator
 function BottomTabNavigator() {
   const insets = useSafeAreaInsets();
+  const { addons } = useTenant();
+  const isSprintverseEnabled = addons.includes("sprintverse");
 
   return (
     <Tab.Navigator
@@ -58,6 +61,9 @@ function BottomTabNavigator() {
             case APP_ROUTES.CONTENT_LIBRARY:
               iconName = "folder-multiple";
               break;
+            case APP_ROUTES.SPRINTVERSE:
+              iconName = "compass";
+              break;
             case APP_ROUTES.PROFILE:
               iconName = "account";
               break;
@@ -81,6 +87,13 @@ function BottomTabNavigator() {
         component={ContentLibraryScreen}
         options={{ tabBarLabel: "Library" }}
       />
+      {isSprintverseEnabled && (
+        <Tab.Screen
+          name={APP_ROUTES.SPRINTVERSE}
+          component={SprintverseScreen}
+          options={{ tabBarLabel: "Sprintverse" }}
+        />
+      )}
       <Tab.Screen
         name={APP_ROUTES.PROFILE}
         component={ProfileScreen}

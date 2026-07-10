@@ -7,6 +7,7 @@ export const AUTH_ROUTES = {
 export const APP_ROUTES = {
   HOME: "Home",
   CONTENT_LIBRARY: "ContentLibrary",
+  SPRINTVERSE: "Sprintverse",
   PROFILE: "Profile",
 } as const;
 
