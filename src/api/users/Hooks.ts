@@ -625,6 +625,8 @@ interface DashboardStats {
 
 const ASSIGNED_STATUSES = new Set(["ASSIGNED", "IN_PROGRESS", "COMPLETED"]);
 
+const authModulesCache = new Map<string, any[]>();
+
 async function fetchAuthoritativeModules(
   originalModuleId: string,
   userId: string,
@@ -636,6 +638,34 @@ async function fetchAuthoritativeModules(
     recommended_time?: number;
   }>
 > {
+  // 1. Check in-memory cache
+  if (authModulesCache.has(originalModuleId)) {
+    return authModulesCache.get(originalModuleId)!;
+  }
+
+  // 2. Check AsyncStorage cache
+  const cacheKey = `@auth_modules_${originalModuleId}`;
+  try {
+    const cachedJson = await AsyncStorage.getItem(cacheKey);
+    if (cachedJson) {
+      const parsed = JSON.parse(cachedJson);
+      authModulesCache.set(originalModuleId, parsed);
+      // Populate processedModuleMetadata too
+      parsed.forEach((m: any) => {
+        if (m?.processed_module_id) {
+          processedModuleMetadata.set(m.processed_module_id, {
+            title: m.title ?? "Module",
+            recommended_time: m.recommended_time ?? 0,
+          });
+        }
+      });
+      return parsed;
+    }
+  } catch (err) {
+    console.warn(`[resolveIds] Failed to read auth modules cache for ${originalModuleId}:`, err);
+  }
+
+  // 3. Fetch from network
   try {
     const response = await getTrainingPlan(userId, originalModuleId);
     const authModules: any[] = response?.plan?.modules ?? [];
@@ -647,6 +677,11 @@ async function fetchAuthoritativeModules(
         });
       }
     });
+
+    // Save to caches
+    authModulesCache.set(originalModuleId, authModules);
+    await AsyncStorage.setItem(cacheKey, JSON.stringify(authModules));
+
     return authModules;
   } catch (err) {
     console.error(
@@ -1544,6 +1579,8 @@ export const useGetLeaderboardHighlight = (
         const response = await promise;
         if (response.success && response.data) {
           setLeaderboardData(response.data);
+          const cacheKey = `@leaderboard_highlight_${companyId}_${userId}`;
+          await AsyncStorage.setItem(cacheKey, JSON.stringify(response.data));
         } else if (response.error) {
           throw new Error(response.error);
         }
@@ -1554,15 +1591,50 @@ export const useGetLeaderboardHighlight = (
         );
       } finally {
         fetchPromiseRef.current = null;
-        setIsLoading(false);
+        if (showSpinner) setIsLoading(false);
       }
     },
     [companyId, userId, topLimit],
   );
 
   useEffect(() => {
-    fetchLeaderboard(true);
-  }, [companyId, userId, topLimit]);
+    const loadAndFetch = async () => {
+      if (!companyId || !userId) return;
+
+      setIsLoading(true);
+      setError(null);
+
+      let hasCache = false;
+
+      // 1. Try to load from cache first
+      try {
+        const cacheKey = `@leaderboard_highlight_${companyId}_${userId}`;
+        const cachedJson = await AsyncStorage.getItem(cacheKey);
+        if (cachedJson) {
+          const cachedData = JSON.parse(cachedJson) as LeaderboardHighlightData;
+          setLeaderboardData(cachedData);
+          console.log("[Hook] ✅ Loaded leaderboard from cache");
+          hasCache = true;
+          setIsLoading(false); // Cache found, stop spinner early
+        }
+      } catch (err) {
+        console.warn("[Hook] Failed to load cached leaderboard:", err);
+      }
+
+      // 2. Fetch fresh data from network
+      try {
+        await fetchLeaderboard(!hasCache);
+      } catch (err) {
+        if (!hasCache) {
+          setError(
+            err instanceof Error ? err : new Error("Failed to fetch leaderboard"),
+          );
+        }
+      }
+    };
+
+    loadAndFetch();
+  }, [companyId, userId, topLimit, fetchLeaderboard]);
 
   return {
     leaderboardData,
