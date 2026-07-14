@@ -18,7 +18,8 @@ import { useAuth } from "../../contex/AuthContext";
 import { useTenant } from "../../contex/TenantContext";
 import { useCareerJourneys, CareerJourney, SkillNode } from "../../api/career-journey/Hooks";
 import { useGetDashboardSummary } from "../../api/users/Hooks";
-import { STACK_ROUTES } from "../../navigations/Routes";
+import { STACK_ROUTES, APP_ROUTES } from "../../navigations/Routes";
+import { useActiveSprint } from "../../contex/ActiveSprintContext";
 
 const { width } = Dimensions.get("window");
 
@@ -88,17 +89,21 @@ export default function SprintverseScreen() {
     );
   };
 
+  const { setActiveSprint, setActiveModule } = useActiveSprint();
+
   const handleStartSprint = (moduleId: string) => {
     const card = findMatchingPlanCard(moduleId);
     if (card) {
-      navigation.navigate(STACK_ROUTES.SPRINT, {
+      setActiveSprint({
         moduleId: card.moduleId,
         planId: card.planKey,
         planTitle: card.title,
         modules: card.modules,
         tips: card.tips,
-        processedModuleIds: card.processedModuleIds,
+        processedModuleIds: card.processedModuleIds ?? [],
       });
+      setActiveModule(null); // Unmount old module
+      navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
     }
   };
 
@@ -238,7 +243,7 @@ export default function SprintverseScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <View style={styles.container}>
       {!selectedJourney ? (
         // List View Mode
         <View style={styles.listView}>
@@ -327,7 +332,7 @@ export default function SprintverseScreen() {
           </ScrollView>
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 

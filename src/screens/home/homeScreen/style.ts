@@ -8,7 +8,7 @@ const createStyles = () => {
     // ── Header ────────────────────────────────────────────────────────────
     header: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
+      justifyContent: "flex-end",
       alignItems: 'center',
       paddingHorizontal: 20,
       paddingVertical: 15,
@@ -50,54 +50,41 @@ const createStyles = () => {
     sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1E293B', marginBottom: 14 },
 
     // ── Your Progress Card ────────────────────────────────────────────────
-    // Mirrors the web card: left side (icon + text), right side (circle + subtext)
     progressCard: {
       backgroundColor: '#fff',
-      borderRadius: 24,
-      padding: 20,
+      borderRadius: 16,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
       flexDirection: 'row',
       alignItems: 'center',
       borderWidth: 1,
       borderColor: '#F1F5F9',
-      elevation: 3,
+      elevation: 2,
       shadowColor: '#64748B',
-      shadowOpacity: 0.08,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.05,
+      shadowRadius: 6,
+      shadowOffset: { width: 0, height: 2 },
     },
     progressLeft: {
       flex: 1,
       flexDirection: 'row',
-      alignItems: 'flex-start',
+      alignItems: 'center',
       gap: 12,
       paddingRight: 12,
     },
     progressIconBox: {
-      width: 44, height: 44, borderRadius: 12,
+      width: 40, height: 40, borderRadius: 10,
       backgroundColor: '#EFF6FF',
       justifyContent: 'center', alignItems: 'center',
       flexShrink: 0,
     },
     progressTextBlock: { flex: 1 },
-    progressCardTitle: { fontSize: 16, fontWeight: '800', color: '#1E293B' },
-    progressNudge: {
-      fontSize: 12, color: '#64748B', fontWeight: '500',
-      lineHeight: 17, marginTop: 4, marginBottom: 10,
-    },
-    completedBadge: {
-      alignSelf: 'flex-start',
-      backgroundColor: '#F1F5F9',
-      borderRadius: 6,
-      paddingHorizontal: 8, paddingVertical: 4,
-    },
-    completedBadgeText: { fontSize: 11, fontWeight: '700', color: '#475569', letterSpacing: 0.3 },
-
-    // Right side: circle + "X of Y"
-    progressRight: { alignItems: 'center', gap: 6 },
+    progressCardTitle: { fontSize: 15, fontWeight: '800', color: '#1E293B' },
+    progressCardSubtitle: { fontSize: 12, fontWeight: '600', color: '#64748B', marginTop: 2 },
+    progressRight: { alignItems: 'center', justifyContent: 'center' },
     progressCircleContainer: { justifyContent: 'center', alignItems: 'center' },
     progressCircleInner: { position: 'absolute', alignItems: 'center' },
-    progressCirclePercent: { fontSize: 16, fontWeight: '900', color: '#2563EB' },
-    progressOfText: { fontSize: 11, fontWeight: '700', color: '#94A3B8', textAlign: 'center' },
+    progressCirclePercent: { fontSize: 11, fontWeight: '900', color: '#2563EB' },
 
     // ── Stats Grid ────────────────────────────────────────────────────────
     statsGrid: { flexDirection: 'row', gap: 12 },

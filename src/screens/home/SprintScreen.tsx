@@ -16,12 +16,13 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { STACK_ROUTES } from "../../navigations/Routes";
+import { STACK_ROUTES, APP_ROUTES } from "../../navigations/Routes";
 import { useAuth } from "../../contex/AuthContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
 import { useModuleProgress, useGetTrainingPlan } from "../../api/users/Hooks";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
+import { useActiveSprint } from "../../contex/ActiveSprintContext";
 
 if (
 	Platform.OS === "android" &&
@@ -32,25 +33,22 @@ if (
 
 export default function SprintScreen({
 	navigation,
-	route,
 }: {
 	navigation: any;
-	route: any;
 }) {
 	const insets = useSafeAreaInsets();
 	const { cachedUser } = useAuth();
 	const { hasFeature } = useFeatureGating();
 	const showStudio = hasFeature(FEATURES.LUCID_STUDIO);
+	const { activeSprint, setActiveModule } = useActiveSprint();
 
-	// ── Route params passed from HomeScreen ──────────────────────────────────
-	const moduleId: string = route?.params?.moduleId ?? "";
-	const planTitle: string = route?.params?.planTitle ?? "Performance Sprint";
-	const tips: string = route?.params?.tips ?? "";
-	const rawModules: any[] = route?.params?.modules ?? [];
-	// processedModuleIds are resolved on the home screen from the learning-plans
-	// API (default learning style). Index-aligned with rawModules[].
+	// ── Active Sprint Context params ──────────────────────────────────
+	const moduleId: string = activeSprint?.moduleId ?? "";
+	const planTitle: string = activeSprint?.planTitle ?? "Performance Sprint";
+	const tips: string = activeSprint?.tips ?? "";
+	const rawModules: any[] = activeSprint?.modules ?? [];
 	const processedModuleIds: string[] =
-		route?.params?.processedModuleIds ?? [];
+		activeSprint?.processedModuleIds ?? [];
 
 	const [tipsExpanded, setTipsExpanded] = useState(false);
 	const [showNoInternet, setShowNoInternet] = useState(false);
@@ -293,11 +291,12 @@ export default function SprintScreen({
 			`[SprintScreen] ✅ View Content: Module[${index}] "${modTitle}" → processedModuleId="${processedModuleId}"`,
 		);
 
-		navigation.navigate(STACK_ROUTES.STUDIO, {
+		setActiveModule({
 			processedModuleId,
 			moduleTitle: modTitle,
 			sprintTitle: planTitle,
 		});
+		navigation.navigate("AppTabs", { screen: STACK_ROUTES.STUDIO });
 	};
 
 	/**
@@ -342,36 +341,35 @@ export default function SprintScreen({
 
 	if (!moduleId) {
 		return (
-			<View style={[styles.centered, { paddingTop: insets.top + 20 }]}>
+			<View style={[styles.centered, { paddingTop: 20 }]}>
 				<MaterialCommunityIcons
-					name="lightning-bolt"
-					size={48}
+					name="lightning-bolt-outline"
+					size={56}
 					color="#CBD5E1"
 				/>
-				<Text style={styles.emptyTitle}>No Sprint Selected</Text>
+				<Text style={styles.emptyTitle}>No Sprint Started</Text>
 				<Text style={styles.emptySubtitle}>
-					Go to Home and tap "Start your sprint" on a learning plan to
-					begin.
+					Go to the Home tab and tap "Start Sprint" on a learning plan to begin.
 				</Text>
+				<TouchableOpacity
+					style={styles.emptyBtn}
+					onPress={() => navigation.navigate(APP_ROUTES.HOME)}
+					activeOpacity={0.8}
+				>
+					<Text style={styles.emptyBtnText}>Go to Home</Text>
+				</TouchableOpacity>
 			</View>
 		);
 	}
 
 	return (
-		<View style={[styles.container, { paddingTop: insets.top }]}>
+		<View style={[styles.container, { paddingTop: 10 }]}>
 			<StatusBar barStyle="dark-content" />
 			<ScrollView
 				showsVerticalScrollIndicator={false}
 				contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
 				{/* ── Header ──────────────────────────────────────────────────────── */}
 				<View style={styles.header}>
-					<TouchableOpacity
-						style={styles.backBtn}
-						onPress={() => navigation.goBack()}
-						activeOpacity={0.7}
-					>
-						<MaterialCommunityIcons name="arrow-left" size={24} color="#111827" />
-					</TouchableOpacity>
 					<Text style={styles.headerTitle} numberOfLines={2}>
 						{planTitle}
 					</Text>
@@ -391,11 +389,11 @@ export default function SprintScreen({
 							<Text style={styles.cardTitle}>
 								Your Roadmap to Mastery
 							</Text>
-							<Text style={styles.cardMeta}>
+							{/* <Text style={styles.cardMeta}>
 								{totalModules} Module
 								{totalModules !== 1 ? "s" : ""}
 								{` · ${completedModulesCount} / ${totalModules} Completed`}
-							</Text>
+							</Text> */}
 						</View>
 					</View>
 
@@ -417,7 +415,7 @@ export default function SprintScreen({
 						{`${completedModulesCount} of ${totalModules} modules complete`}
 					</Text>
 
-					{tips ? (
+					{/* {tips ? (
 						<TouchableOpacity
 							onPress={handleToggleTips}
 							activeOpacity={0.85}
@@ -448,7 +446,7 @@ export default function SprintScreen({
 								</Text>
 							)}
 						</TouchableOpacity>
-					) : null}
+					) : null} */}
 				</View>
 
 				{/* ── Additional Readings ─────────────────────────────────────────── */}
@@ -875,16 +873,28 @@ const styles = StyleSheet.create({
 	},
 	quizButtonDisabled: { backgroundColor: "#C7D2FE" },
 	quizButtonPassed: {
-		backgroundColor: "#7a8b87",
-		borderWidth: 1,
-		borderColor: "#065F46",
-		opacity: 0.75,
+		backgroundColor: "#10B981",
+		// borderWidth: 1,
+		// borderColor: "#065F46",
+		// opacity: 0.75,
 	},
 	quizButtonText: { fontSize: 13, fontWeight: "700", color: "white" },
-	quizButtonTextPassed: { color: "#6EE7B7", fontWeight: "600" },
+	quizButtonTextPassed: { color: "#fff", fontWeight: "600" },
 	backBtn: {
 		marginBottom: 12,
 		alignSelf: "flex-start",
 		padding: 4,
+	},
+	emptyBtn: {
+		backgroundColor: "#6366F1",
+		paddingVertical: 12,
+		paddingHorizontal: 24,
+		borderRadius: 12,
+		marginTop: 16,
+	},
+	emptyBtnText: {
+		color: "#ffffff",
+		fontSize: 15,
+		fontWeight: "700",
 	},
 });

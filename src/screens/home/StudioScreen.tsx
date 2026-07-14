@@ -6,12 +6,15 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
+  StatusBar,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "../../contex/AuthContext";
 import { useGetProcessedModuleById } from "../../api/users";
+import { useActiveSprint } from "../../contex/ActiveSprintContext";
+import { APP_ROUTES } from "../../navigations/Routes";
 import CoreContentSection from "./sections/CoreContentSection";
 import PodcastSection from "./sections/PodcastSection";
 import FlashcardsSection from "../../components/content/FlashcardsSection";
@@ -49,7 +52,7 @@ import { useModuleTranslation } from "../../hooks/useModuleTranslation";
  *   Mind Map     → data.mindmap_data   (Phase 2: { nodes, edges })
  * ─────────────────────────────────────────────────────────────────────────────
  */
-export default function StudioScreen({ route, navigation }: any) {
+export default function StudioScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState<string | null>("core");
   const { cachedUser } = useAuth();
@@ -59,11 +62,12 @@ export default function StudioScreen({ route, navigation }: any) {
   const showPodcast = hasFeature(FEATURES.PODCAST);
   const showVideo = hasFeature(FEATURES.VIDEO);
   const showAiAssistant = hasFeature(FEATURES.CHAT_IN_STUDIO);
+  const { activeModule } = useActiveSprint();
 
-  // Params from SprintScreen "View Content" — each module tap passes its own processedModuleId
-  const processedModuleId: string = route?.params?.processedModuleId ?? "";
-  const moduleTitle: string = route?.params?.moduleTitle ?? "";
-  const sprintTitle: string = route?.params?.sprintTitle ?? "";
+  // Params from ActiveSprintContext — each module tap passes its own processedModuleId
+  const processedModuleId: string = activeModule?.processedModuleId ?? "";
+  const moduleTitle: string = activeModule?.moduleTitle ?? "";
+  const sprintTitle: string = activeModule?.sprintTitle ?? "";
 
   const userId = cachedUser?.userId ?? null;
   const companyId = cachedUser?.companyId ?? "";
@@ -144,23 +148,23 @@ export default function StudioScreen({ route, navigation }: any) {
   // ── Empty state: tab opened directly without a module selected ──
   if (!processedModuleId) {
     return (
-      <View style={[styles.emptyContainer, { paddingTop: insets.top }]}>
-        <TouchableOpacity
-          style={styles.backBtnAbsolute}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
-        >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#4F46E5" />
-        </TouchableOpacity>
+      <View style={[styles.emptyContainer, { paddingTop: 20 }]}>
         <View style={styles.emptyIconWrap}>
           <MaterialCommunityIcons name="brush" size={44} color="#A5B4FC" />
         </View>
-        <Text style={styles.emptyTitle}>Studio</Text>
+        <Text style={styles.emptyTitle}>Studio Empty</Text>
         <Text style={styles.emptySubtitle}>
           Tap <Text style={styles.emptyHighlight}>View Content</Text> on any
           Sprint module to explore core content, podcasts, flashcards, videos
           and AI assistance here.
         </Text>
+        <TouchableOpacity
+          style={styles.emptyBtn}
+          onPress={() => navigation.navigate(APP_ROUTES.HOME)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.emptyBtnText}>Go to Home</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -168,7 +172,7 @@ export default function StudioScreen({ route, navigation }: any) {
   // ── Loading ──
   if (isLoading) {
     return (
-      <View style={[styles.loader, { paddingTop: insets.top }]}>
+      <View style={[styles.loader, { paddingTop: 20 }]}>
         <ActivityIndicator size="large" color="#4F46E5" />
         <Text style={styles.loaderText}>Loading content…</Text>
       </View>
@@ -178,7 +182,7 @@ export default function StudioScreen({ route, navigation }: any) {
   // ── Error ──
   if (error) {
     return (
-      <View style={[styles.loader, { paddingTop: insets.top }]}>
+      <View style={[styles.loader, { paddingTop: 20 }]}>
         <MaterialCommunityIcons
           name="alert-circle-outline"
           size={40}
@@ -192,20 +196,14 @@ export default function StudioScreen({ route, navigation }: any) {
 
   // ── Full content view ──
   return (
-    <View style={[styles.main, { paddingTop: insets.top }]}>
+    <View style={[styles.main, { paddingTop: 10 }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
       >
         {/* ── Hero ── */}
         <View style={styles.hero}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons name="arrow-left" size={24} color="#4F46E5" />
-          </TouchableOpacity>
+          {/* Back button removed as Studio is now a primary tab */}
           <View style={styles.studioBadge}>
             <MaterialCommunityIcons name="brush" size={14} color="#4F46E5" />
             <Text style={styles.studioBadgeText}>Studio</Text>
@@ -434,5 +432,17 @@ const styles = StyleSheet.create({
     top: 20,
     padding: 4,
     zIndex: 10,
+  },
+  emptyBtn: {
+    backgroundColor: "#6366F1",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  emptyBtnText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
   },
 });

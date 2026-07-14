@@ -8,8 +8,11 @@ import {
   ScrollView,
   ActivityIndicator,
   StatusBar,
+  Linking,
+  BackHandler,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "../../contex/AuthContext";
 import { getUserByPhone } from "../../api/users/Request";
@@ -27,6 +30,31 @@ function toE164(rawPhone: string): string {
 
 export default function ProfileScreen() {
   const { logout, phoneNumber, cachedUser } = useAuth();
+  const navigation = useNavigation<any>();
+
+  useEffect(() => {
+    const onBackPress = () => {
+      navigation.goBack();
+      return true;
+    };
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [navigation]);
+
+  const handleContactUs = async () => {
+    const url = "https://wa.me/919211540400";
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert("Error", "WhatsApp is not installed or the link cannot be opened.");
+      }
+    } catch (error) {
+      console.error("[ProfileScreen] Failed to open WhatsApp link:", error);
+      Alert.alert("Error", "Something went wrong while opening the link.");
+    }
+  };
 
   const confirmLogout = () => {
     Alert.alert(
@@ -129,6 +157,17 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#1E293B" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>My Profile</Text>
+        <View style={{ width: 32 }} />
+      </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
@@ -402,5 +441,23 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#EF4444",
     marginLeft: 8,
+  },
+  header: {
+    height: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    backgroundColor: "#ffffff",
+  },
+  backBtn: {
+    padding: 4,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1E293B",
   },
 });

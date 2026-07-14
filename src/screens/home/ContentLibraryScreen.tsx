@@ -235,7 +235,7 @@ export default function ContentLibraryScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
       <View style={styles.searchContainer}>
         <MaterialCommunityIcons name="magnify" size={22} color="#94a3b8" style={styles.searchIcon} />
         <TextInput
