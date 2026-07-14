@@ -124,11 +124,11 @@ export default function AssignedSection({
       {/* ── Section heading ───────────────────────────────────────── */}
       <View style={styles.headingRow}>
         <Text style={styles.heading}>My Work</Text>
-        <View style={styles.totalBadge}>
+        {/* <View style={styles.totalBadge}>
           <Text style={styles.totalBadgeText}>
             {effectiveTab === "sprints" ? sprintCount : taskCount}
           </Text>
-        </View>
+        </View> */}
       </View>
 
       {/* ── Tab bar — Sprints always shown; Tasks only if addon is on ── */}

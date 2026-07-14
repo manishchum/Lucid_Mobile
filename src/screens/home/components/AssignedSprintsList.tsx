@@ -4,7 +4,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
-import { STACK_ROUTES } from "../../../navigations/Routes";
+import { STACK_ROUTES, APP_ROUTES } from "../../../navigations/Routes";
+import { useActiveSprint } from "../../../contex/ActiveSprintContext";
 
 export interface PlanCard {
   planKey: string;
@@ -40,6 +41,7 @@ export default function AssignedSprintsList({
   userName,
   emptyMessage,
 }: AssignedSprintsListProps) {
+  const { setActiveSprint, setActiveModule } = useActiveSprint();
   const [activeCertPlan, setActiveCertPlan] = useState<PlanCard | null>(null);
 
   const handleCertificateDownload = async (plan: PlanCard) => {
@@ -279,33 +281,44 @@ export default function AssignedSprintsList({
         return (
           <View key={plan.planKey} style={styles.planCard}>
             <View style={styles.planHeaderRow}>
-              <View
-                style={[
-                  styles.statusBadge,
-                  isCompleted
-                    ? styles.statusBadgeCompleted
-                    : isInProgress
-                      ? styles.statusBadgeInProgress
-                      : styles.statusBadgeNotStarted,
-                ]}
-              >
-                <Text
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View
                   style={[
-                    styles.statusBadgeText,
+                    styles.statusBadge,
                     isCompleted
-                      ? styles.statusTextCompleted
+                      ? styles.statusBadgeCompleted
                       : isInProgress
-                        ? styles.statusTextInProgress
-                        : styles.statusTextNotStarted,
+                        ? styles.statusBadgeInProgress
+                        : styles.statusBadgeNotStarted,
                   ]}
                 >
-                  {isCompleted
-                    ? "Completed"
-                    : isInProgress
-                      ? "In Progress"
-                      : "Not Started"}
+                  <Text
+                    style={[
+                      styles.statusBadgeText,
+                      isCompleted
+                        ? styles.statusTextCompleted
+                        : isInProgress
+                          ? styles.statusTextInProgress
+                          : styles.statusTextNotStarted,
+                    ]}
+                  >
+                    {isCompleted
+                      ? "Completed"
+                      : isInProgress
+                        ? "In Progress"
+                        : "Not Started"}
+                  </Text>
+                </View>
+                <Text style={styles.planHeaderModulesCount}>
+                  {Math.min(plan.completedModulesCount ?? 0, plan.totalModules)}
+                  {" / "}
+                  {plan.totalModules} module
+                  {plan.totalModules !== 1 ? "s" : ""}
                 </Text>
               </View>
+              <Text style={styles.planProgressPercentage}>
+                {getSprintProgress(plan)}%
+              </Text>
             </View>
 
             <View style={styles.planContentRow}>
@@ -316,19 +329,9 @@ export default function AssignedSprintsList({
                   color="#64748B"
                 />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, justifyContent: "center" }}>
                 <Text style={styles.planTitleText}>{plan.title}</Text>
-                <Text style={styles.planSubText} numberOfLines={2}>
-                  {Math.min(plan.completedModulesCount ?? 0, plan.totalModules)}
-                  {" / "}
-                  {plan.totalModules} module
-                  {plan.totalModules !== 1 ? "s" : ""}
-                  {plan.tips ? ` · ${plan.tips.substring(0, 55)}…` : ""}
-                </Text>
               </View>
-              <Text style={styles.planProgressText}>
-                {getSprintProgress(plan)}%
-              </Text>
             </View>
 
             <View style={isCompleted ? styles.buttonRow : null}>
@@ -343,16 +346,18 @@ export default function AssignedSprintsList({
                   isCompleted && { flex: 1 },
                 ]}
                 activeOpacity={0.8}
-                onPress={() =>
-                  navigation.navigate(STACK_ROUTES.SPRINT, {
+                onPress={() => {
+                  setActiveSprint({
                     moduleId: plan.moduleId,
                     planId: plan.planKey,
                     planTitle: plan.title,
                     modules: plan.modules,
                     tips: plan.tips,
-                    processedModuleIds: plan.processedModuleIds,
-                  })
-                }
+                    processedModuleIds: plan.processedModuleIds ?? [],
+                  });
+                  setActiveModule(null); // Unmount old module
+                  navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
+                }}
               >
                 <Text
                   style={[
@@ -495,12 +500,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#F1F5F9",
   },
-  planHeaderRow: { flexDirection: "row", marginBottom: 14 },
+  planHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  planProgressPercentage: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#1E293B",
+  },
+  planHeaderModulesCount: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748B",
+  },
   planContentRow: {
     flexDirection: "row",
     gap: 14,
     marginBottom: 16,
-    alignItems: "flex-start",
+    alignItems: "center",
   },
   planIconCircle: {
     width: 46,
