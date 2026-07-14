@@ -162,6 +162,7 @@ export default function ContentDetailScreen({ route, navigation }: any) {
               moduleTitle={primaryModule?.title ?? moduleTitle}
               userId={userId ?? ""}
               companyId={cachedUser?.companyId ?? ""}
+              lang={lang}
             />
           </View>
         </ScrollView>

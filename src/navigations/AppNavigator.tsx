@@ -105,15 +105,6 @@ function BottomTabNavigator() {
         component={ContentLibraryScreen}
         options={{ tabBarLabel: "Library" }}
       />
-      <Tab.Screen
-        name={APP_ROUTES.SPRINTVERSE}
-        component={SprintverseScreen}
-        options={{
-          tabBarButton: () => null,
-          tabBarItemStyle: { display: "none" },
-          tabBarLabel: "Sprintverse",
-        }}
-      />
     </Tab.Navigator>
   );
 }
@@ -183,6 +174,11 @@ function AppNavigatorContent() {
             <Stack.Screen
               name={STACK_ROUTES.CONTENT_VIEWER}
               component={ContentViewerScreen}
+              options={{ presentation: "card", animation: "slide_from_right", headerShown: false }}
+            />
+            <Stack.Screen
+              name={APP_ROUTES.SPRINTVERSE}
+              component={SprintverseScreen}
               options={{ presentation: "card", animation: "slide_from_right", headerShown: false }}
             />
           </>

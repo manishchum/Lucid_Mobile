@@ -922,11 +922,11 @@ export default function CoreContentSection({
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.title}>Core Content</Text>
-          <Text style={styles.subtitle}>
+          {/* <Text style={styles.subtitle}>
             {sections.length > 0
               ? `${sections.length} section${sections.length > 1 ? "s" : ""} · Tap to read`
               : "Read the core module content."}
-          </Text>
+          </Text> */}
         </View>
         <MaterialCommunityIcons
           name={isExpanded ? "chevron-up" : "chevron-down"}
@@ -947,7 +947,7 @@ export default function CoreContentSection({
                 activeOpacity={0.7}
                 disabled={isTranslating}
               >
-                <MaterialCommunityIcons name="translate" size={16} color="#6366f1" />
+
                 <Text style={styles.dropdownButtonText}>
                   {LANGUAGES.find((l) => l.code === lang)?.label || "English"}
                 </Text>
@@ -1193,7 +1193,7 @@ const styles = StyleSheet.create({
   },
   cardExpanded: {
     borderColor: "#c7d2fe",
-    elevation: 3,
+    // elevation: 3,
     shadowColor: "#6366f1",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,

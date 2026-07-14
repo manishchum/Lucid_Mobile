@@ -277,131 +277,118 @@ export default function AssignedSprintsList({
       {planCards.map((plan) => {
         const isCompleted = plan.status === "COMPLETED";
         const isInProgress = plan.status === "IN_PROGRESS";
+        const progressPercentage = getSprintProgress(plan);
+        const completedCount = Math.min(plan.completedModulesCount ?? 0, plan.totalModules);
+        const totalModules = plan.totalModules;
+
+        const handleCardPress = () => {
+          setActiveSprint({
+            moduleId: plan.moduleId,
+            planId: plan.planKey,
+            planTitle: plan.title,
+            modules: plan.modules,
+            tips: plan.tips,
+            processedModuleIds: plan.processedModuleIds ?? [],
+          });
+          setActiveModule(null); // Unmount old module
+          navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
+        };
 
         return (
-          <View key={plan.planKey} style={styles.planCard}>
+          <TouchableOpacity
+            key={plan.planKey}
+            style={styles.planCard}
+            onPress={handleCardPress}
+            activeOpacity={0.8}
+          >
+            {/* Top row: Status badge */}
             <View style={styles.planHeaderRow}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <View
-                  style={[
-                    styles.statusBadge,
-                    isCompleted
-                      ? styles.statusBadgeCompleted
-                      : isInProgress
-                        ? styles.statusBadgeInProgress
-                        : styles.statusBadgeNotStarted,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.statusBadgeText,
-                      isCompleted
-                        ? styles.statusTextCompleted
-                        : isInProgress
-                          ? styles.statusTextInProgress
-                          : styles.statusTextNotStarted,
-                    ]}
-                  >
-                    {isCompleted
-                      ? "Completed"
-                      : isInProgress
-                        ? "In Progress"
-                        : "Not Started"}
-                  </Text>
-                </View>
-                <Text style={styles.planHeaderModulesCount}>
-                  {Math.min(plan.completedModulesCount ?? 0, plan.totalModules)}
-                  {" / "}
-                  {plan.totalModules} module
-                  {plan.totalModules !== 1 ? "s" : ""}
-                </Text>
-              </View>
-              <Text style={styles.planProgressPercentage}>
-                {getSprintProgress(plan)}%
-              </Text>
-            </View>
-
-            <View style={styles.planContentRow}>
-              <View style={styles.planIconCircle}>
-                <MaterialCommunityIcons
-                  name="school-outline"
-                  size={24}
-                  color="#64748B"
-                />
-              </View>
-              <View style={{ flex: 1, justifyContent: "center" }}>
-                <Text style={styles.planTitleText}>{plan.title}</Text>
-              </View>
-            </View>
-
-            <View style={isCompleted ? styles.buttonRow : null}>
-              <TouchableOpacity
+              <View
                 style={[
-                  styles.sprintButton,
+                  styles.statusBadge,
                   isCompleted
-                    ? styles.sprintButtonReview
+                    ? styles.statusBadgeCompleted
                     : isInProgress
-                      ? styles.sprintButtonContinue
-                      : styles.sprintButtonStart,
-                  isCompleted && { flex: 1 },
+                      ? styles.statusBadgeInProgress
+                      : styles.statusBadgeNotStarted,
                 ]}
-                activeOpacity={0.8}
-                onPress={() => {
-                  setActiveSprint({
-                    moduleId: plan.moduleId,
-                    planId: plan.planKey,
-                    planTitle: plan.title,
-                    modules: plan.modules,
-                    tips: plan.tips,
-                    processedModuleIds: plan.processedModuleIds ?? [],
-                  });
-                  setActiveModule(null); // Unmount old module
-                  navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
-                }}
               >
                 <Text
                   style={[
-                    styles.sprintButtonText,
+                    styles.statusBadgeText,
                     isCompleted
-                      ? styles.sprintButtonTextReview
+                      ? styles.statusTextCompleted
                       : isInProgress
-                        ? styles.sprintButtonTextContinue
-                        : styles.sprintButtonTextStart,
+                        ? styles.statusTextInProgress
+                        : styles.statusTextNotStarted,
                   ]}
                 >
                   {isCompleted
-                    ? "Review Sprint"
+                    ? "Completed"
                     : isInProgress
-                      ? "Continue"
-                      : "Start your sprint"}
+                      ? "In Progress"
+                      : "Not Started"}
                 </Text>
-                <MaterialCommunityIcons
-                  name="arrow-right"
-                  size={16}
-                  color={
-                    isCompleted ? "#475569" : isInProgress ? "#2563EB" : "#fff"
-                  }
-                />
-              </TouchableOpacity>
+              </View>
+            </View>
 
-              {isCompleted && (
+            {/* Content layout matching the uploaded image */}
+            <View style={styles.planContentRow}>
+              {/* Soft blue circle with icon */}
+              <View style={styles.planIconCircle}>
+                <MaterialCommunityIcons
+                  name="layers"
+                  size={22}
+                  color="#2563EB"
+                />
+              </View>
+
+              {/* Title & Progress details */}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.planTitleText}>{plan.title}</Text>
+                
+                {/* Horizontal Progress Bar */}
+                <View style={styles.progressBarTrack}>
+                  <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
+                </View>
+
+                {/* Progress helper text */}
+                <Text style={styles.progressDetailText}>
+                  {completedCount}/{totalModules} modules completed
+                </Text>
+              </View>
+
+              {/* Chevron right */}
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={22}
+                color="#CBD5E1"
+              />
+            </View>
+
+            {/* If completed, we show a certificate button */}
+            {isCompleted && (
+              <View style={styles.certificateRow}>
                 <TouchableOpacity
-                  style={[styles.sprintButton, styles.sprintButtonCertificate, { flex: 1 }]}
-                  activeOpacity={0.8}
-                  onPress={() => setActiveCertPlan(plan)}
+                  style={styles.certificateLinkBtn}
+                  activeOpacity={0.7}
+                  onPress={(e) => {
+                    e.stopPropagation(); // Stop card click from triggering navigation
+                    setActiveCertPlan(plan);
+                  }}
                 >
-                  <Text style={[styles.sprintButtonText, styles.sprintButtonTextCertificate]}>
-                    Certificate
-                  </Text>
                   <MaterialCommunityIcons
                     name="certificate-outline"
                     size={16}
-                    color="#fff"
+                    color="#D97706"
                   />
+                  <Text style={styles.certificateLinkText}>
+                    Download Certificate
+                  </Text>
                 </TouchableOpacity>
-              )}
-            </View>
-          </View>
+              </View>
+            )}
+          </TouchableOpacity>
         );
       })}
 
@@ -499,55 +486,74 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     borderWidth: 1,
     borderColor: "#F1F5F9",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 12,
+    elevation: 3,
   },
   planHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
-  },
-  planProgressPercentage: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#1E293B",
-  },
-  planHeaderModulesCount: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#64748B",
+    marginBottom: 8,
   },
   planContentRow: {
     flexDirection: "row",
     gap: 14,
-    marginBottom: 16,
     alignItems: "center",
   },
   planIconCircle: {
-    width: 46,
-    height: 46,
-    borderRadius: 13,
-    backgroundColor: "#F8FAFC",
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "#EFF6FF",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderColor: "#DBEAFE",
     flexShrink: 0,
   },
   planTitleText: { fontSize: 16, fontWeight: "700", color: "#1E293B" },
-  planProgressText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#2563EB",
-    marginLeft: 6,
-    alignSelf: "flex-start",
+  progressBarTrack: {
+    height: 6,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 3,
+    marginTop: 8,
+    marginBottom: 6,
+    width: "100%",
   },
-  planSubText: {
-    fontSize: 13,
+  progressBarFill: {
+    height: "100%",
+    backgroundColor: "#2563EB",
+    borderRadius: 3,
+  },
+  progressDetailText: {
+    fontSize: 12,
     color: "#64748B",
-    marginTop: 4,
-    lineHeight: 18,
+    fontWeight: "500",
   },
-
+  certificateRow: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    paddingTop: 10,
+    alignItems: "flex-start",
+  },
+  certificateLinkBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  certificateLinkText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#D97706",
+  },
   statusBadge: {
     alignSelf: "flex-start",
     borderRadius: 8,
@@ -561,26 +567,6 @@ const styles = StyleSheet.create({
   statusTextNotStarted: { color: "#64748B" },
   statusTextInProgress: { color: "#2563EB" },
   statusTextCompleted: { color: "#16A34A" },
-
-  sprintButton: {
-    borderRadius: 14,
-    paddingVertical: 13,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-  },
-  sprintButtonStart: { backgroundColor: "#2563EB" },
-  sprintButtonContinue: {
-    borderWidth: 1.5,
-    borderColor: "#2563EB",
-    backgroundColor: "#fff",
-  },
-  sprintButtonReview: { backgroundColor: "#F1F5F9" },
-  sprintButtonText: { fontWeight: "700", fontSize: 14 },
-  sprintButtonTextStart: { color: "#fff" },
-  sprintButtonTextContinue: { color: "#2563EB" },
-  sprintButtonTextReview: { color: "#475569" },
   buttonRow: {
     flexDirection: "row",
     gap: 10,

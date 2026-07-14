@@ -341,7 +341,7 @@ export default function SprintScreen({
 
 	if (!moduleId) {
 		return (
-			<View style={[styles.centered, { paddingTop: 20 }]}>
+			<View style={styles.centered}>
 				<MaterialCommunityIcons
 					name="lightning-bolt-outline"
 					size={56}
@@ -363,32 +363,37 @@ export default function SprintScreen({
 	}
 
 	return (
-		<View style={[styles.container, { paddingTop: 10 }]}>
+		<View style={styles.container}>
 			<StatusBar barStyle="dark-content" />
 			<ScrollView
 				showsVerticalScrollIndicator={false}
 				contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
 				{/* ── Header ──────────────────────────────────────────────────────── */}
-				<View style={styles.header}>
-					<Text style={styles.headerTitle} numberOfLines={2}>
-						{planTitle}
-					</Text>
+				<View style={[styles.header, { paddingBottom: 0 }]}>
+					<TouchableOpacity
+						style={styles.backBtnRow}
+						onPress={() => navigation.navigate(APP_ROUTES.HOME)}
+						activeOpacity={0.7}
+					>
+						<MaterialCommunityIcons name="chevron-left" size={24} color="#6366F1" />
+						<Text style={styles.backBtnText}>Back to Home</Text>
+					</TouchableOpacity>
 				</View>
 
 				{/* ── Hero Card ───────────────────────────────────────────────────── */}
 				<View style={styles.sprintCard}>
 					<View style={styles.cardHeader}>
-						<View style={styles.iconCircle}>
+						{/* <View style={styles.iconCircle}>
 							<MaterialCommunityIcons
 								name="lightning-bolt"
 								size={24}
 								color="white"
 							/>
-						</View>
+						</View> */}
 						<View style={{ flex: 1 }}>
-							<Text style={styles.cardTitle}>
-								Your Roadmap to Mastery
-							</Text>
+							<Text style={styles.headerTitle} numberOfLines={2}>
+						{planTitle}
+					</Text>
 							{/* <Text style={styles.cardMeta}>
 								{totalModules} Module
 								{totalModules !== 1 ? "s" : ""}
@@ -649,6 +654,7 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 		alignItems: "center",
 		paddingHorizontal: 32,
+		paddingTop: 20,
 		gap: 12,
 	},
 	emptyTitle: {
@@ -665,7 +671,18 @@ const styles = StyleSheet.create({
 	},
 
 	header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 4 },
-	headerTitle: { fontSize: 24, fontWeight: "800", color: "#111827" },
+	backBtnRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		marginBottom: 8,
+	},
+	backBtnText: {
+		fontSize: 14,
+		fontWeight: "600",
+		color: "#6366F1",
+		marginLeft: 2,
+	},
+	headerTitle: { fontSize: 24, fontWeight: "800", color: "#fff"},
 	headerSub: { fontSize: 14, color: "#6B7280", marginTop: 2 },
 
 	sprintCard: {

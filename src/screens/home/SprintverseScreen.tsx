@@ -243,11 +243,20 @@ export default function SprintverseScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       {!selectedJourney ? (
         // List View Mode
         <View style={styles.listView}>
           <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.backBtnRow}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="chevron-left" size={24} color="#6366F1" />
+              <Text style={styles.backBtnText}>Back to Home</Text>
+            </TouchableOpacity>
+
             <View style={styles.headerTitleContainer}>
               <MaterialCommunityIcons name="orbit" size={28} color="#3b82f6" style={styles.headerIcon} />
               <Text style={styles.headerTitle}>SprintVerse</Text>
@@ -332,11 +341,22 @@ export default function SprintverseScreen() {
           </ScrollView>
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  backBtnRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  backBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6366F1",
+    marginLeft: 4,
+  },
   container: {
     flex: 1,
     backgroundColor: "#f8fafc", // Whole app matching clean light background
