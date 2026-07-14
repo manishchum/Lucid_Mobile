@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,14 +7,16 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   StatusBar,
+  BackHandler,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 
 import { useAuth } from "../../contex/AuthContext";
 import { useGetProcessedModuleById } from "../../api/users";
 import { useActiveSprint } from "../../contex/ActiveSprintContext";
-import { APP_ROUTES } from "../../navigations/Routes";
+import { APP_ROUTES, STACK_ROUTES } from "../../navigations/Routes";
 import CoreContentSection from "./sections/CoreContentSection";
 import PodcastSection from "./sections/PodcastSection";
 import FlashcardsSection from "../../components/content/FlashcardsSection";
@@ -62,15 +64,29 @@ export default function StudioScreen({ navigation }: any) {
   const showPodcast = hasFeature(FEATURES.PODCAST);
   const showVideo = hasFeature(FEATURES.VIDEO);
   const showAiAssistant = hasFeature(FEATURES.CHAT_IN_STUDIO);
+  const userId = cachedUser?.userId ?? null;
+  const companyId = cachedUser?.companyId ?? "";
+
+  // Intercept physical back press to redirect to Sprint tab
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+
+      return () => subscription.remove();
+    }, [navigation])
+  );
+
   const { activeModule } = useActiveSprint();
 
   // Params from ActiveSprintContext — each module tap passes its own processedModuleId
   const processedModuleId: string = activeModule?.processedModuleId ?? "";
   const moduleTitle: string = activeModule?.moduleTitle ?? "";
   const sprintTitle: string = activeModule?.sprintTitle ?? "";
-
-  const userId = cachedUser?.userId ?? null;
-  const companyId = cachedUser?.companyId ?? "";
 
   const [lang, setLang] = useState<'en' | 'hi' | 'bn' | 'ta' | 'te' | 'mr' | 'gu' | 'kn'>('en');
 
@@ -196,18 +212,26 @@ export default function StudioScreen({ navigation }: any) {
 
   // ── Full content view ──
   return (
-    <View style={[styles.main, { paddingTop: 10 }]}>
+    <View style={styles.main}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
       >
         {/* ── Hero ── */}
         <View style={styles.hero}>
-          {/* Back button removed as Studio is now a primary tab */}
-          <View style={styles.studioBadge}>
+          <TouchableOpacity
+            style={styles.backBtnRow}
+            onPress={() => navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT })}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="chevron-left" size={24} color="#6366F1" />
+            <Text style={styles.backBtnText}>Back to Sprint</Text>
+          </TouchableOpacity>
+
+          {/* <View style={styles.studioBadge}>
             <MaterialCommunityIcons name="brush" size={14} color="#4F46E5" />
             <Text style={styles.studioBadgeText}>Studio</Text>
-          </View>
+          </View> */}
           {/* {sprintTitle ? (
             <Text style={styles.sprintLabel}>{sprintTitle}</Text>
           ) : null} */}
@@ -318,11 +342,26 @@ export default function StudioScreen({ navigation }: any) {
               isExpanded={expanded === "video"}
               onToggle={() => toggle("video")}
               videoUrl={processedModule?.video_url ?? null}
-              videoUrlHinglish={processedModule?.video_url_hinglish ?? null}
-              videoUrlBengali={processedModule?.video_url_bengali ?? null}
-              videoUrlTamil={processedModule?.video_url_tamil ?? null}
-              videoUrlTelugu={processedModule?.video_url_telugu ?? null}
-              videoUrlMarathi={processedModule?.video_url_marathi ?? null}
+              videoUrlHinglish={
+                processedModule?.video_url_hinglish ||
+                (processedModule?.audio_url_hinglish ? processedModule?.video_url : null)
+              }
+              videoUrlBengali={
+                processedModule?.video_url_bengali ||
+                (processedModule?.audio_url_bengali ? processedModule?.video_url : null)
+              }
+              videoUrlTamil={
+                processedModule?.video_url_tamil ||
+                (processedModule?.audio_url_tamil ? processedModule?.video_url : null)
+              }
+              videoUrlTelugu={
+                processedModule?.video_url_telugu ||
+                (processedModule?.audio_url_telugu ? processedModule?.video_url : null)
+              }
+              videoUrlMarathi={
+                processedModule?.video_url_marathi ||
+                (processedModule?.audio_url_marathi ? processedModule?.video_url : null)
+              }
             />
           )}
 
@@ -335,6 +374,7 @@ export default function StudioScreen({ navigation }: any) {
               moduleTitle={moduleTitle}
               userId={userId ?? ""}
               companyId={companyId}
+              lang={lang}
             />
           )}
         </View>
@@ -384,7 +424,7 @@ const styles = StyleSheet.create({
   errorSub: { fontSize: 13, color: "#94A3B8" },
 
   // ── Hero ──
-  hero: { padding: 24, paddingBottom: 16 },
+  hero: { paddingHorizontal: 24, paddingVertical: 16 },
   studioBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -421,6 +461,17 @@ const styles = StyleSheet.create({
   metaTextHi: { fontSize: 12, fontWeight: "600", color: "#C2410C" },
 
   accordionList: { paddingHorizontal: 16, gap: 12 },
+  backBtnRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  backBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6366F1",
+    marginLeft: 2,
+  },
   backBtn: {
     marginBottom: 12,
     alignSelf: "flex-start",

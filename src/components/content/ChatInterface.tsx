@@ -18,6 +18,7 @@ import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import ChatMessage from "./ChatMessage";
 import { postModuleChat, ModuleChatMessage, getFirebaseToken } from "../../api/users/Request";
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 
 // ─── Exported so AIAssistantSection can own the state ────────────────────────
 export interface Message {
@@ -35,6 +36,7 @@ interface ChatInterfaceProps {
   // Lifted state — history lives in AIAssistantSection, survives collapse
   messages: Message[];
   onMessagesChange: (updater: (prev: Message[]) => Message[]) => void;
+  lang: string;
 }
 
 // ─── Typing dots ──────────────────────────────────────────────────────────────
@@ -78,40 +80,26 @@ const ti = StyleSheet.create({
     backgroundColor: "#f3f4f6", borderRadius: 18, borderBottomLeftRadius: 4,
     paddingHorizontal: 14, paddingVertical: 12,
   },
-  dot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: "#6366f1" },
+  dot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: "#4F46E5" },
 });
 
 // ─── Greeting placeholder — shown only when no messages yet ──────────────────
 function EmptyGreeting({ moduleTitle }: { moduleTitle: string }) {
   return (
     <View style={eg.wrapper}>
-      <View style={eg.iconRing}>
-        <MaterialCommunityIcons name="robot-outline" size={28} color="#6366f1" />
-      </View>
-      <View style={eg.bubble}>
-        <ChatMessage
-          message={`Hello! I'm ready to help you understand the ${moduleTitle} module. Ask me anything covered in this module.`}
-          isUserMessage={false}
-        />
-      </View>
+      <ChatMessage
+      message={`Hello! I'm ready to help you understand the ${moduleTitle} module. Ask me anything covered in this module.`}
+        isUserMessage={false}
+      />
     </View>
   );
 }
 
 const eg = StyleSheet.create({
-  wrapper: { flex: 1, justifyContent: "center", paddingHorizontal: 4, paddingBottom: 16 },
-  iconRing: {
-    alignSelf: "flex-start",
-    marginLeft: 12,
-    marginBottom: 4,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#eef2ff",
-    justifyContent: "center",
-    alignItems: "center",
+  wrapper: {
+    paddingHorizontal: 8,
+    paddingTop: 16,
   },
-  bubble: { alignSelf: "stretch" },
 });
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -124,6 +112,7 @@ export default function ChatInterface({
   companyId,
   messages,
   onMessagesChange,
+  lang,
 }: ChatInterfaceProps) {
   const [inputText, setInputText] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
@@ -146,14 +135,32 @@ export default function ChatInterface({
   const recordingStartRef = useRef<number>(0);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Clean up sound and recording on unmount
+  // Speech Recognition Events using expo-speech-recognition hooks
+  useSpeechRecognitionEvent("start", () => {
+    console.log("[Speech] recognition started");
+  });
+
+  useSpeechRecognitionEvent("end", () => {
+    console.log("[Speech] recognition ended");
+  });
+
+  useSpeechRecognitionEvent("error", (e) => {
+    console.error("[Speech] recognition error:", e);
+    setIsRecording(false);
+  });
+
+  useSpeechRecognitionEvent("result", (ev) => {
+    if (ev.results && ev.results[0]?.transcript) {
+      console.log("[Speech] result:", ev.results[0].transcript);
+      setInputText(ev.results[0].transcript);
+    }
+  });
+
+  // Clean up sound on unmount
   useEffect(() => {
     return () => {
       if (soundRef.current) {
         soundRef.current.unloadAsync().catch(() => {});
-      }
-      if (recordingRef.current) {
-        recordingRef.current.stopAndUnloadAsync().catch(() => {});
       }
       if (recordingIntervalRef.current) {
         clearInterval(recordingIntervalRef.current);
@@ -171,6 +178,7 @@ export default function ChatInterface({
       return;
     }
 
+    recordingStartRef.current = Date.now();
     recordingIntervalRef.current = setInterval(() => {
       setRecordingDuration(Date.now() - recordingStartRef.current);
     }, 100);
@@ -205,12 +213,23 @@ export default function ChatInterface({
     return () => clearTimeout(t);
   }, [messages, isLoading]);
 
+  const mapLangToLocale = (code: string): string => {
+    switch (code) {
+      case "hi": return "hi-IN";
+      case "ta": return "ta-IN";
+      case "te": return "te-IN";
+      case "mr": return "mr-IN";
+      case "bn": return "bn-IN";
+      default: return "en-IN";
+    }
+  };
+
   // ── Start Audio Recording ──
   const startRecording = async () => {
     try {
       const permission = await Audio.requestPermissionsAsync();
       if (permission.status !== "granted") {
-        Alert.alert("Permission Denied", "Microphone access is required to record voice.");
+        Alert.alert("Permission Denied", "Microphone access is required to speak.");
         return;
       }
 
@@ -219,124 +238,36 @@ export default function ChatInterface({
         playsInSilentModeIOS: true,
       });
 
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recordingRef.current = recording;
-      recordingStartRef.current = Date.now();
+      setInputText("");
       setIsRecording(true);
       setRecordingDuration(0);
+
+      const locale = mapLangToLocale(lang);
+      console.log("[Speech] Starting speech recognition for locale:", locale);
+      await ExpoSpeechRecognitionModule.start({
+        lang: locale,
+        interimResults: true,
+      });
+      recordingStartRef.current = Date.now();
     } catch (err) {
-      console.error("Failed to start recording:", err);
-      Alert.alert("Error", "Could not start microphone recording.");
+      console.error("[Speech] Failed to start recognition:", err);
+      Alert.alert("Error", "Could not start voice recognition.");
+      setIsRecording(false);
     }
   };
 
   // ── Stop Audio Recording ──
   const stopRecording = async () => {
-    if (!recordingRef.current) return;
-    setIsRecording(false);
     try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      recordingRef.current = null;
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-      });
-
-      if (uri) {
-        await transcribeAudio(uri);
-      }
+      await ExpoSpeechRecognitionModule.stop();
     } catch (err) {
-      console.error("Failed to stop recording:", err);
-    }
-  };
-
-  // ── Upload Audio and Transcribe ──
-  const transcribeAudio = async (uri: string) => {
-    setIsProcessingVoice(true);
-    try {
-      const token = await getFirebaseToken();
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-
-      const uploadUrl = `${EXPO_API_URL}/api/speech-to-text`;
-      console.log("[STT] Uploading audio file to:", uploadUrl);
-
-      const uploadResult = await FileSystem.uploadAsync(uploadUrl, uri, {
-        fieldName: "audio",
-        httpMethod: "POST",
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        headers,
-      });
-
-      if (uploadResult.status < 200 || uploadResult.status >= 300) {
-        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
-      }
-
-      const data = JSON.parse(uploadResult.body);
-      const text = data.text?.trim();
-      if (text) {
-        console.log("[STT] Transcription success:", text);
-        await sendTranscribedText(text);
-      } else {
-        Alert.alert("Speech Recognition", "Could not understand any speech. Please try again.");
-      }
-    } catch (err: any) {
-      console.error("[STT] Error transcribing audio:", err);
-      Alert.alert("Transcription Failed", err.message || "Failed to transcribe audio.");
+      console.error("[Speech] Stop error:", err);
     } finally {
-      setIsProcessingVoice(false);
-    }
-  };
-
-  // ── Send Voice Message ──
-  const sendTranscribedText = async (text: string) => {
-    setInputText("");
-    const userMsg: Message = { id: `u-${Date.now()}`, text, isUser: true, isVoice: true };
-    onMessagesChange((prev) => [...prev, userMsg]);
-    setIsLoading(true);
-
-    try {
-      const allMessages = [...messages, userMsg];
-      const chat_history: ModuleChatMessage[] = allMessages.map((m) => ({
-        role: m.isUser ? "user" : "assistant",
-        content: m.text,
-        isVoice: m.isVoice || false,
-      }));
-
-      const res = await postModuleChat({
-        processed_module_id: processedModuleId,
-        user_message: text,
-        chat_history,
-        user_id: userId,
-        company_id: companyId,
-      });
-
-      if (!res.success) throw new Error(res.message || "API returned failure");
-
-      const assistantMsgId = `a-${Date.now()}`;
-      onMessagesChange((prev) => [
-        ...prev,
-        { id: assistantMsgId, text: res.message, isUser: false },
-      ]);
-
-      // If speechMode is enabled, play the reply automatically!
-      if (speechMode) {
-        await playSpeech(res.message, assistantMsgId);
-      }
-    } catch (err) {
-      const errText = err instanceof Error ? err.message : "Failed to get a response. Please try again.";
-      console.error("[ChatInterface] error:", err);
-      onMessagesChange((prev) => [
-        ...prev,
-        { id: `e-${Date.now()}`, text: `⚠️ ${errText}`, isUser: false },
-      ]);
-    } finally {
-      setIsLoading(false);
+      setIsRecording(false);
+      // Wait a short moment for final transcription to settle, then automatically send
+      setTimeout(() => {
+        handleSend(true);
+      }, 500);
     }
   };
 
@@ -372,7 +303,7 @@ export default function ChatInterface({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, voiceGender: "female" }),
       });
 
       if (!response.ok) {
@@ -409,13 +340,14 @@ export default function ChatInterface({
     }
   };
 
-  const handleSend = async () => {
+  const handleSend = async (isVoiceInput = false) => {
+    // Read input text from latest state.
     const text = inputText.trim();
     if (!text || isLoading) return;
 
     setInputText("");
 
-    const userMsg: Message = { id: `u-${Date.now()}`, text, isUser: true, isVoice: false };
+    const userMsg: Message = { id: `u-${Date.now()}`, text, isUser: true, isVoice: isVoiceInput };
     onMessagesChange((prev) => [...prev, userMsg]);
     setIsLoading(true);
 
@@ -450,6 +382,11 @@ export default function ChatInterface({
         ...prev,
         { id: assistantMsgId, text: res.message, isUser: false },
       ]);
+
+      // If response is result of a voice message, speak it automatically
+      if (isVoiceInput) {
+        await playSpeech(res.message, assistantMsgId);
+      }
     } catch (err) {
       const errText = err instanceof Error ? err.message : "Failed to get a response. Please try again.";
       console.error("[ChatInterface] error:", err);
@@ -473,35 +410,18 @@ export default function ChatInterface({
     // FIX 3 — nestedScrollEnabled lets this ScrollView scroll independently
     // inside the parent screen ScrollView on Android. On iOS it works by default.
     <View style={[styles.flex, { paddingBottom: keyboardHeight }]}>
-      {/* Speech Mode Toggle Bar */}
-      <View style={styles.controlHeader}>
-        <Text style={styles.controlHeaderText}>Speech Mode</Text>
-        <TouchableOpacity
-          onPress={() => setSpeechMode(!speechMode)}
-          style={[styles.toggleBtn, speechMode && styles.toggleBtnActive]}
-          activeOpacity={0.8}
-        >
-          <MaterialCommunityIcons
-            name={speechMode ? "volume-high" : "volume-mute"}
-            size={16}
-            color={speechMode ? "#6366f1" : "#9ca3af"}
-          />
-          <Text style={[styles.toggleBtnText, speechMode && styles.toggleBtnTextActive]}>
-            {speechMode ? "Auto-Play ON" : "Auto-Play OFF"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {hasConversation ? (
-        <ScrollView
-          ref={scrollRef}
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          nestedScrollEnabled={true}
-        >
-          {messages.map((msg) => (
+      <ScrollView
+        ref={scrollRef}
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={true}
+      >
+        {!hasConversation ? (
+          <EmptyGreeting moduleTitle={moduleTitle} />
+        ) : (
+          messages.map((msg) => (
             <View key={msg.id} style={msg.isUser ? null : styles.aiMessageRow}>
               <View style={msg.isUser ? null : styles.aiMessageContent}>
                 <ChatMessage message={msg.text} isUserMessage={msg.isUser} />
@@ -515,41 +435,31 @@ export default function ChatInterface({
                   <MaterialCommunityIcons
                     name={currentlyPlayingId === msg.id ? "volume-high" : "volume-mute"}
                     size={18}
-                    color="#6366f1"
+                    color="#4F46E5"
                   />
                 </TouchableOpacity>
               )}
             </View>
-          ))}
-          {isLoading && <TypingIndicator />}
-        </ScrollView>
-      ) : (
-        // FIX 2 — greeting shown only while no messages; hidden once chat starts
-        <EmptyGreeting moduleTitle={moduleTitle} />
-      )}
+          ))
+        )}
+        {isLoading && <TypingIndicator />}
+      </ScrollView>
 
       <View style={styles.inputBar}>
-        {isProcessingVoice && (
-          <View style={styles.processingVoiceRow}>
-            <Text style={styles.processingVoiceText}>Transcribing your voice...</Text>
-          </View>
-        )}
         <View style={styles.inputRow}>
           {/* Microphone Button */}
           <TouchableOpacity
             style={[
               styles.micBtn,
               isRecording && styles.micBtnRecording,
-              isProcessingVoice && styles.micBtnDisabled,
             ]}
             onPress={isRecording ? stopRecording : startRecording}
-            disabled={isProcessingVoice}
             activeOpacity={0.8}
           >
             <MaterialCommunityIcons
               name={isRecording ? "stop" : "microphone"}
               size={20}
-              color="#fff"
+              color={isRecording ? "#EF4444" : "#4F46E5"}
             />
           </TouchableOpacity>
 
@@ -558,23 +468,27 @@ export default function ChatInterface({
             placeholder={
               isRecording
                 ? `Recording... ${formatDuration(recordingDuration)}`
-                : "Ask anything about this module..."
+                : "Ask a follow-up question..."
             }
-            placeholderTextColor={isRecording ? "#ef4444" : "#9ca3af"}
+            placeholderTextColor={isRecording ? "#ef4444" : "#94A3B8"}
             value={isRecording ? "" : inputText}
             onChangeText={setInputText}
             multiline
             maxLength={1000}
-            editable={!isLoading && !isRecording && !isProcessingVoice}
+            editable={!isLoading && !isRecording}
             blurOnSubmit={false}
           />
           <TouchableOpacity
             style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-            onPress={handleSend}
-            disabled={!canSend || isRecording || isProcessingVoice}
+            onPress={() => handleSend(false)}
+            disabled={!canSend || isRecording}
             activeOpacity={0.8}
           >
-            <MaterialCommunityIcons name="send" size={18} color="#fff" />
+            <MaterialCommunityIcons
+              name="send"
+              size={18}
+              color={canSend ? "#fff" : "#94A3B8"}
+            />
           </TouchableOpacity>
         </View>
       </View>
@@ -583,18 +497,18 @@ export default function ChatInterface({
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: "#fff" },
+  flex: { flex: 1, backgroundColor: "#ffffff" },
   scroll: { flex: 1 },
-  scrollContent: { paddingTop: 12, paddingBottom: 8 },
+  scrollContent: { paddingTop: 16, paddingBottom: 8 },
   controlHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#f3f4f6",
-    backgroundColor: "#f9fafb",
+    borderBottomColor: "#f1f5f9",
+    backgroundColor: "#fff",
   },
   controlHeaderText: {
     fontSize: 10,
@@ -644,20 +558,20 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   inputBar: {
-    backgroundColor: "#fff",
+    backgroundColor: "#ffffff",
     borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderTopColor: "#F1F5F9",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   inputRow: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    backgroundColor: "#f3f4f6",
-    borderRadius: 24,
+    alignItems: "center",
+    backgroundColor: "#FAFAFA",
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
-    paddingLeft: 8,
+    borderColor: "#E2E8F0",
+    paddingLeft: 4,
     paddingRight: 6,
     paddingVertical: 6,
     gap: 8,
@@ -665,34 +579,34 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 14,
-    color: "#1f2937",
+    color: "#1e293b",
     maxHeight: 100,
-    paddingVertical: 4,
-    lineHeight: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    lineHeight: 18,
   },
   sendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#6366f1",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#4F46E5",
     justifyContent: "center",
     alignItems: "center",
   },
-  sendBtnDisabled: { backgroundColor: "#d1d5db" },
+  sendBtnDisabled: { backgroundColor: "#E2E8F0" },
   micBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#6366f1",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "transparent",
     justifyContent: "center",
     alignItems: "center",
-    alignSelf: "flex-end",
   },
   micBtnRecording: {
-    backgroundColor: "#ef4444",
+    backgroundColor: "#FEE2E2",
   },
   micBtnDisabled: {
-    backgroundColor: "#d1d5db",
+    opacity: 0.5,
   },
   processingVoiceRow: {
     paddingVertical: 4,

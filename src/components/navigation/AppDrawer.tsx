@@ -36,7 +36,26 @@ export default function AppDrawer() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { isDrawerOpen, closeDrawer } = useDrawer();
-  const { cachedUser, phoneNumber } = useAuth();
+  const { cachedUser, phoneNumber, logout } = useAuth();
+  
+  const confirmLogout = () => {
+    Alert.alert(
+      "Sign Out",
+      "Are you sure you want to sign out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Sign Out",
+          style: "destructive",
+          onPress: () => {
+            closeDrawer();
+            logout();
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
   
   const [user, setUser] = useState<any>(null);
 
@@ -161,56 +180,68 @@ export default function AppDrawer() {
           },
         ]}
       >
-        {/* User Profile Header */}
-        <TouchableOpacity
-          onPress={handleProfilePress}
-          activeOpacity={0.8}
-          style={styles.profileSection}
-        >
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>{getInitials(displayName)}</Text>
-          </View>
-          <View style={styles.profileDetails}>
-            <Text style={styles.profileName} numberOfLines={1}>
-              {displayName}
-            </Text>
-            <Text style={styles.profilePosition} numberOfLines={1}>
-              {displayPosition}
-            </Text>
-            <Text style={styles.profileEmail} numberOfLines={1}>
-              {displayEmail}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        <View style={styles.divider} />
-
-        {/* Navigation Items */}
-        <View style={styles.navItemsList}>
+        <View style={{ flex: 1 }}>
+          {/* User Profile Header */}
           <TouchableOpacity
-            onPress={handleSprintversePress}
-            activeOpacity={0.7}
-            style={styles.navItem}
+            onPress={handleProfilePress}
+            activeOpacity={0.8}
+            style={styles.profileSection}
           >
-            <View style={styles.navIconWrapper}>
-              <MaterialCommunityIcons name="orbit" size={24} color="#6366F1" />
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarText}>{getInitials(displayName)}</Text>
             </View>
-            <Text style={styles.navItemText}>Sprintverse</Text>
-            <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
+            <View style={styles.profileDetails}>
+              <Text style={styles.profileName} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Text style={styles.profilePosition} numberOfLines={1}>
+                {displayPosition}
+              </Text>
+              <Text style={styles.profileEmail} numberOfLines={1}>
+                {displayEmail}
+              </Text>
+            </View>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={handleSupportPress}
-            activeOpacity={0.7}
-            style={[styles.navItem, { marginTop: 12 }]}
-          >
-            <View style={styles.navIconWrapper}>
-              <MaterialCommunityIcons name="whatsapp" size={24} color="#25D366" />
-            </View>
-            <Text style={styles.navItemText}>Help & Support</Text>
-            <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
-          </TouchableOpacity>
+          <View style={styles.divider} />
+
+          {/* Navigation Items */}
+          <View style={styles.navItemsList}>
+            <TouchableOpacity
+              onPress={handleSprintversePress}
+              activeOpacity={0.7}
+              style={styles.navItem}
+            >
+              <View style={styles.navIconWrapper}>
+                <MaterialCommunityIcons name="orbit" size={24} color="#6366F1" />
+              </View>
+              <Text style={styles.navItemText}>Sprintverse</Text>
+              <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleSupportPress}
+              activeOpacity={0.7}
+              style={[styles.navItem, { marginTop: 12 }]}
+            >
+              <View style={styles.navIconWrapper}>
+                <MaterialCommunityIcons name="whatsapp" size={24} color="#25D366" />
+              </View>
+              <Text style={styles.navItemText}>Help & Support</Text>
+              <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Sign Out Button */}
+        <TouchableOpacity
+          onPress={confirmLogout}
+          activeOpacity={0.8}
+          style={styles.logoutButton}
+        >
+          <MaterialCommunityIcons name="logout" size={22} color="#EF4444" />
+          <Text style={styles.logoutText}>Sign Out</Text>
+        </TouchableOpacity>
       </Animated.View>
     </View>
   );
@@ -308,5 +339,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: "#1E293B",
+  },
+  logoutButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: "#FFF1F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    marginTop: "auto",
+  },
+  logoutText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#EF4444",
+    marginLeft: 10,
   },
 });

@@ -251,16 +251,6 @@ export default function ProfileScreen() {
             update information.
           </Text>
         </View>
-
-        {/* LOGOUT BUTTON */}
-        <TouchableOpacity
-          style={styles.logoutButton}
-          onPress={confirmLogout}
-          activeOpacity={0.8}
-        >
-          <MaterialCommunityIcons name="logout" size={20} color="#EF4444" />
-          <Text style={styles.logoutText}>Sign Out</Text>
-        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );

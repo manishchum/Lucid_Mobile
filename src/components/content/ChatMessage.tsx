@@ -1,12 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-/**
- * ChatMessage Component
- * 
- * Displays individual chat messages with different styling for user vs AI messages.
- * User messages appear right-aligned in blue, AI messages left-aligned in gray.
- */
 interface ChatMessageProps {
   message: string;
   isUserMessage: boolean;
@@ -20,6 +15,11 @@ export default function ChatMessage({ message, isUserMessage }: ChatMessageProps
         isUserMessage ? styles.userContainer : styles.aiContainer,
       ]}
     >
+      {!isUserMessage && (
+        <View style={styles.aiAvatarCircle}>
+          <MaterialCommunityIcons name="robot" size={20} color="#4F46E5" />
+        </View>
+      )}
       <View
         style={[
           styles.messageBubble,
@@ -41,37 +41,66 @@ export default function ChatMessage({ message, isUserMessage }: ChatMessageProps
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 12,
+    marginBottom: 16,
     paddingHorizontal: 8,
+    flexDirection: "row",
   },
   userContainer: {
-    alignItems: 'flex-end',
+    justifyContent: "flex-end",
+    alignSelf: "stretch",
   },
   aiContainer: {
-    alignItems: 'flex-start',
+    justifyContent: "flex-start",
+    alignItems: "flex-end",
+    alignSelf: "stretch",
+    gap: 8,
+  },
+  aiAvatarCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F5F3FF",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#EBE9FE",
+    marginBottom: 2,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   messageBubble: {
-    maxWidth: '85%',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
+    maxWidth: "80%",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
   },
   userBubble: {
-    backgroundColor: '#6366f1',
+    backgroundColor: "#EEF2FF",
     borderBottomRightRadius: 4,
   },
   aiBubble: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
     borderBottomLeftRadius: 4,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    elevation: 2,
   },
   messageText: {
     fontSize: 14,
     lineHeight: 20,
+    fontWeight: "500",
   },
   userText: {
-    color: '#fff',
+    color: "#312E81",
   },
   aiText: {
-    color: '#1f2937',
+    color: "#1E293B",
   },
 });

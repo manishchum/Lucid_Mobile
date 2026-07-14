@@ -15,6 +15,7 @@ interface AIAssistantSectionProps {
   companyId: string;
   isExpanded: boolean;
   onToggle: () => void;
+  lang: string;
 }
 
 export default function AIAssistantSection({
@@ -24,9 +25,8 @@ export default function AIAssistantSection({
   companyId,
   isExpanded,
   onToggle,
+  lang,
 }: AIAssistantSectionProps) {
-  // History lives HERE so it survives collapse/expand (ChatInterface remounts
-  // if parent ever conditionally renders it, but lifting state up is safer).
   const [messages, setMessages] = useState<Message[]>([]);
 
   return (
@@ -39,27 +39,20 @@ export default function AIAssistantSection({
       >
         <View style={styles.headerLeft}>
           <View style={styles.iconBadge}>
-            <MaterialCommunityIcons name="robot-outline" size={18} color="#6366f1" />
+            <MaterialCommunityIcons name="creation" size={22} color="#4F46E5" />
           </View>
           <View>
             <Text style={styles.headerTitle}>AI Assistant</Text>
-            {!isExpanded && (
-              <Text style={styles.headerSubtitle}>Tap to ask a question</Text>
-            )}
           </View>
         </View>
         <MaterialCommunityIcons
           name={isExpanded ? 'chevron-up' : 'chevron-down'}
-          size={22}
-          color="#6b7280"
+          size={24}
+          color="#94A3B8"
         />
       </TouchableOpacity>
 
-      {/*
-        Chat panel — always mounted so state is preserved, but hidden when
-        collapsed via display:none equivalent (height:0 + overflow:hidden).
-        Using a wrapper View with conditional style avoids unmounting.
-      */}
+      {/* Chat panel */}
       <View style={[styles.chatPanel, !isExpanded && styles.chatPanelHidden]}>
         <ChatInterface
           processedModuleId={processedModuleId}
@@ -68,6 +61,7 @@ export default function AIAssistantSection({
           companyId={companyId}
           messages={messages}
           onMessagesChange={setMessages}
+          lang={lang}
         />
       </View>
     </View>
@@ -77,56 +71,49 @@ export default function AIAssistantSection({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderRadius: 20, // Matches the rounded card style in the mockup
+    borderColor: '#F1F5F9',
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    backgroundColor: '#fafafa',
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    backgroundColor: '#ffffff',
   },
   headerExpanded: {
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: '#F1F5F9',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 14,
   },
   iconBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#eef2ff',
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: '#F5F3FF',
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1f2937',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
   },
   headerSubtitle: {
-    fontSize: 12,
-    color: '#9ca3af',
-    marginTop: 1,
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 2,
   },
   chatPanel: {
     height: 480,
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
   },
-  // Collapses the panel without unmounting ChatInterface
   chatPanelHidden: {
     height: 0,
     overflow: 'hidden',

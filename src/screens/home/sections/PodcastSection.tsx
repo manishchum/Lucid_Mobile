@@ -489,11 +489,11 @@ export default function PodcastSection({
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.title}>Podcast</Text>
-          <Text style={styles.subtitle}>
+          {/* <Text style={styles.subtitle}>
             {durationMillis > 0
               ? `${formatTime(durationMillis)} · Listen on the go`
               : "Listen on the go"}
-          </Text>
+          </Text> */}
         </View>
         <MaterialCommunityIcons
           name={isExpanded ? "chevron-up" : "chevron-down"}
