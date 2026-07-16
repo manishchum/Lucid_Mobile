@@ -23,6 +23,10 @@ import {
 } from "../../api/users/Request";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
+import { eventBus } from "../../utils/EventBus";
+import Svg, { Circle } from "react-native-svg";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useInAppReview } from "../../hooks/useInAppReview";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const PAGE_SIZE = 10;
@@ -143,6 +147,61 @@ function Confetti({ visible }: { visible: boolean }) {
   );
 }
 
+const ResultProgressRing = ({
+  score,
+  max,
+  pct,
+  passed,
+}: {
+  score: number;
+  max: number;
+  pct: number;
+  passed: boolean;
+}) => {
+  const size = 160;
+  const strokeWidth = 12;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (circumference * Math.min(Math.max(pct, 0), 100)) / 100;
+  const activeColor = passed ? "#10B981" : "#F59E0B";
+  const trackColor = passed ? "#D1FAE5" : "#FEF3C7";
+
+  return (
+    <View style={{ width: size, height: size, justifyContent: "center", alignItems: "center", alignSelf: "center", marginVertical: 20 }}>
+      <Svg width={size} height={size}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={trackColor}
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={activeColor}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          fill="none"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </Svg>
+      <View style={{ position: "absolute", justifyContent: "center", alignItems: "center" }}>
+        <Text style={{ fontSize: 36, fontWeight: "900", color: "#0F172A", letterSpacing: -1 }}>
+          {Math.round(pct)}%
+        </Text>
+        <Text style={{ fontSize: 13, fontWeight: "600", color: "#64748B", marginTop: 4 }}>
+          {score} / {max} Correct
+        </Text>
+      </View>
+    </View>
+  );
+};
+
 // ─── Option letter badge ──────────────────────────────────────────────────────
 
 const LETTERS = ["A", "B", "C", "D", "E"];
@@ -159,6 +218,8 @@ export default function ModuleQuizScreen({
   const insets = useSafeAreaInsets();
   const { cachedUser } = useAuth();
 
+  const { requestReview } = useInAppReview();
+
   const processedModuleId: string = route?.params?.processedModuleId ?? "";
   const moduleId: string = route?.params?.moduleId ?? ""; // original TrainingModule UUID
   const moduleTitle: string = route?.params?.moduleTitle ?? "Module Quiz";
@@ -172,15 +233,75 @@ export default function ModuleQuizScreen({
   const [gradingResult, setGradingResult] = useState<any>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [showNoInternet, setShowNoInternet] = useState(false);
+  const [showReview, setShowReview] = useState(false);
+
+  const isMountedRef = useRef(true);
+  const pulseAnim = useRef(new Animated.Value(0.8)).current;
+  const opacityAnim = useRef(new Animated.Value(1)).current;
 
   const isOnline = useNetworkStatus();
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let animation: Animated.CompositeAnimation | null = null;
+    if (phase === "grading") {
+      pulseAnim.setValue(0.8);
+      opacityAnim.setValue(1);
+
+      animation = Animated.loop(
+        Animated.parallel([
+          Animated.sequence([
+            Animated.timing(pulseAnim, {
+              toValue: 1.25,
+              duration: 1200,
+              useNativeDriver: true,
+              easing: Easing.inOut(Easing.quad),
+            }),
+            Animated.timing(pulseAnim, {
+              toValue: 0.8,
+              duration: 1200,
+              useNativeDriver: true,
+              easing: Easing.inOut(Easing.quad),
+            }),
+          ]),
+          Animated.sequence([
+            Animated.timing(opacityAnim, {
+              toValue: 0.3,
+              duration: 1200,
+              useNativeDriver: true,
+              easing: Easing.inOut(Easing.quad),
+            }),
+            Animated.timing(opacityAnim, {
+              toValue: 1,
+              duration: 1200,
+              useNativeDriver: true,
+              easing: Easing.inOut(Easing.quad),
+            }),
+          ]),
+        ])
+      );
+      animation.start();
+    } else {
+      pulseAnim.setValue(0.8);
+      opacityAnim.setValue(1);
+    }
+    return () => {
+      if (animation) {
+        animation.stop();
+      }
+    };
+  }, [phase]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(0);
   const isSubmittingRef = useRef(false);
-  const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(
-    null,
-  );
+
   const scrollRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -300,75 +421,101 @@ export default function ModuleQuizScreen({
   const handleSubmit = async () => {
     const userId = cachedUser?.userId;
     if (!userId || !processedModuleId) return;
-    console.log("Not allowing submit as no processed module id is available..");
     if (isOnline === false) {
       setShowNoInternet(true);
       return;
     }
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
-    setPhase("grading");
+
+    // 1. Grade the quiz LOCALLY instantly!
+    const answerIndices = userAnswers.map((idx) => idx ?? 0);
+    const score = answerIndices.reduce((acc, selectedIdx, i) => {
+      return acc + (selectedIdx === questions[i]?.correctIndex ? 1 : 0);
+    }, 0);
+    const maxScore = questions.length;
+    const computedPct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+    const passed = computedPct >= 70;
+
+    // Transition to results screen instantly (within ~10ms!)
+    const localResult = {
+      score,
+      maxScore,
+      percentage: computedPct,
+      feedback: "Submitting details to server in the background...",
+    };
+    setGradingResult(localResult);
+    if (passed) {
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3200);
+      // Trigger native in-app review at the "Aha! Moment" after confetti starts
+      setTimeout(() => requestReview(), 1500);
+    }
+    setPhase("ready");
+
+    // 2. Emit global event updates instantly so lists refresh in real-time
+    eventBus.emit("refresh_dashboard");
+    eventBus.emit("quiz_completed", { processedModuleId, quizScore: score });
+
+    // 3. Write progress to cache instantly so returns are immediate and synced
     try {
-      // Integer indices of selected options
-      const answerIndices = userAnswers.map((idx) => idx ?? 0);
-
-      // FIX: use processedModuleId (NOT original moduleId) inside modules[].module_id.
-      // Web payload: modules: [{ module_id: "94547c82-..." }] where that is the
-      // processedModuleId. Sending [] or the original moduleId caused 403.
-      const moduleObjects = processedModuleId
-        ? [{ module_id: processedModuleId }]
-        : [];
-
-      const result = await submitQuizForGrading(
-        assessmentId,
-        answerIndices,
-        questions,
-        userId,
-        cachedUser?.name ?? cachedUser?.email,
-        moduleObjects,
-        processedModuleId,
-        moduleId,
-      );
-      if (!result) throw new Error("Empty grading response");
-
-      // Server returns { score, maxScore, feedback } — compute percentage here
-      // since the API does not return a `percentage` field directly.
-      const rawScore = typeof result?.score === "number" ? result.score : 0;
-      const rawMax =
-        typeof result?.maxScore === "number"
-          ? result.maxScore
-          : questions.length;
-      const computedPct =
-        rawMax > 0 ? Math.round((rawScore / rawMax) * 100) : 0;
-
-      setGradingResult({ ...result, percentage: computedPct });
-      if (computedPct >= 70) {
-        setShowConfetti(true);
-        setTimeout(() => setShowConfetti(false), 3200);
+      const cacheKey = `@module_progress_${userId}`;
+      const cachedJson = await AsyncStorage.getItem(cacheKey);
+      let progressList = [];
+      if (cachedJson) {
+        progressList = JSON.parse(cachedJson);
       }
-      setPhase("ready");
-    } catch (err: any) {
-      const message = typeof err?.message === "string" ? err.message : "";
-      const match = message.match(/Try again in (\d+) seconds?/i);
-      if (match) {
-        const seconds = parseInt(match[1], 10);
-        setRetryAfterSeconds(seconds);
-        const minutes = Math.ceil(seconds / 60);
-        setErrorMsg(
-          `Grading is temporarily rate-limited by the server. Please wait about ${minutes} minute${minutes === 1 ? "" : "s"} and try submitting again — your answers have been kept.`,
+      const exists = progressList.some((p: any) => p.processed_module_id === processedModuleId);
+      let updatedProgress;
+      if (exists) {
+        updatedProgress = progressList.map((p: any) =>
+          p.processed_module_id === processedModuleId
+            ? { ...p, quiz_score: score }
+            : p
         );
       } else {
-        setRetryAfterSeconds(null);
-        setErrorMsg("Grading failed. Please try again.");
+        updatedProgress = [
+          ...progressList,
+          {
+            processed_module_id: processedModuleId,
+            quiz_score: score,
+            created_at: new Date().toISOString(),
+          },
+        ];
       }
-      // Use a dedicated phase (not the quiz-loading "error" phase) so that
-      // retrying re-submits the existing answers instead of regenerating
-      // an entirely new quiz — which was silently burning extra LLM calls
-      // against the same rate limit on every retry.
-      setPhase("grading_error");
-    } finally {
-      isSubmittingRef.current = false;
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(updatedProgress));
+      console.log("[Quiz Submit] Local cache updated instantly.");
+    } catch (err) {
+      console.warn("[Quiz Submit] Failed to write initial score to cache:", err);
     }
+
+    // 4. Submit to server in the background
+    (async () => {
+      try {
+        const moduleObjects = [{ module_id: processedModuleId }];
+        const serverResult = await submitQuizForGrading(
+          assessmentId,
+          answerIndices,
+          questions,
+          userId,
+          cachedUser?.name ?? cachedUser?.email,
+          moduleObjects,
+          processedModuleId,
+          moduleId,
+        );
+        if (serverResult && isMountedRef.current) {
+          console.log("[Quiz Submit] Background grading succeeded, merging feedback.");
+          setGradingResult((prev: any) => ({
+            ...prev,
+            feedback: serverResult.feedback ?? prev.feedback,
+          }));
+        }
+      } catch (err: any) {
+        console.warn("[Quiz Submit] Background grading failed or rate limited:", err);
+      } finally {
+        isSubmittingRef.current = false;
+      }
+    })();
   };
 
   // ─── Retry ──────────────────────────────────────────────────────────────────
@@ -458,21 +605,24 @@ export default function ModuleQuizScreen({
   // ─────────────────────────────────────────────────────────────────────────
   if (phase === "grading") {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        {renderHeader()}
-        <View style={styles.centerBody}>
-          <View style={styles.gradingCard}>
-            <View style={styles.gradingAccent} />
-            <View style={styles.gradingInner}>
-              <Text style={styles.gradingEmoji}>🎉</Text>
-              <Text style={styles.gradingTitle}>Quiz Submitted!</Text>
-              <View style={styles.gradingRow}>
-                <ActivityIndicator size="small" color="#10B981" />
-                <Text style={styles.gradingSub}>Grading…</Text>
-              </View>
+      <View style={[styles.immersiveGradingContainer, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFF" />
+        <View style={styles.immersiveCenter}>
+          <Animated.View
+            style={[
+              styles.pulseCircleOuter,
+              {
+                transform: [{ scale: pulseAnim }],
+                opacity: opacityAnim,
+              },
+            ]}
+          >
+            <View style={styles.pulseCircleInner}>
+              <MaterialCommunityIcons name="brain" size={48} color="#7C3AED" />
             </View>
-          </View>
+          </Animated.View>
+          <Text style={styles.immersiveTitle}>Analyzing your results...</Text>
+          <Text style={styles.immersiveSubtitle}>Calculating your score and feedback</Text>
         </View>
       </View>
     );
@@ -522,20 +672,12 @@ export default function ModuleQuizScreen({
         <View style={styles.centerBody}>
           <View style={styles.errorIconCircle}>
             <MaterialCommunityIcons
-              name={
-                retryAfterSeconds
-                  ? "clock-alert-outline"
-                  : "alert-circle-outline"
-              }
+              name="alert-circle-outline"
               size={44}
               color="#EF4444"
             />
           </View>
-          <Text style={styles.errorTitle}>
-            {retryAfterSeconds
-              ? "Please wait a moment"
-              : "Something went wrong"}
-          </Text>
+          <Text style={styles.errorTitle}>Something went wrong</Text>
           <Text style={styles.errorMsg}>{errorMsg}</Text>
           <TouchableOpacity
             style={styles.primaryBtn}
@@ -570,6 +712,12 @@ export default function ModuleQuizScreen({
         <Confetti visible={showConfetti} />
         {renderHeader()}
 
+        {/* Curved Elliptical Top Header Background */}
+        <View style={[
+          styles.headerAccentBackground,
+          { backgroundColor: passed ? "#D1FAE5" : "#FEF3C7" }
+        ]} />
+
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={[
@@ -578,99 +726,142 @@ export default function ModuleQuizScreen({
           ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Score card */}
-          <View style={styles.resultCard}>
-            <View
-              style={[
-                styles.resultAccent,
-                { backgroundColor: passed ? "#10B981" : "#F59E0B" },
-              ]}
-            />
-            <View style={styles.resultInner}>
-              <Text style={styles.resultEmoji}>{passed ? "🏆" : "📚"}</Text>
-              <Text style={styles.resultHeading}>Quiz Complete!</Text>
-              <Text
-                style={[
-                  styles.resultPct,
-                  { color: passed ? "#10B981" : "#F59E0B" },
-                ]}
-              >
-                {pct}%
-              </Text>
-              <Text style={styles.resultScore}>
-                {score} / {max} correct
-              </Text>
-              <View
-                style={[
-                  styles.resultBadge,
-                  { backgroundColor: passed ? "#D1FAE5" : "#FEF3C7" },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name={passed ? "check-decagram" : "book-open-outline"}
-                  size={14}
-                  color={passed ? "#065F46" : "#92400E"}
-                  style={{ marginRight: 4 }}
-                />
-                <Text
-                  style={[
-                    styles.resultBadgeText,
-                    { color: passed ? "#065F46" : "#92400E" },
-                  ]}
-                >
-                  {passed
-                    ? "Passed — Great work!"
-                    : "Keep learning — you've got this!"}
-                </Text>
-              </View>
+          {/* Achievement Badge Container */}
+          <View style={styles.achievementBadgeContainer}>
+            <Text style={styles.badgeEmoji}>{passed ? "🏆" : "💪"}</Text>
+            <Text style={styles.badgeHeading}>
+              {passed ? "Achievement Unlocked!" : "Keep Growing!"}
+            </Text>
+            <Text style={styles.badgeSub}>
+              {passed ? "You've successfully mastered this module quiz." : "You're getting closer! Re-review options below."}
+            </Text>
+
+            {/* Circular Progress Ring */}
+            <ResultProgressRing score={score} max={max} pct={pct} passed={passed} />
+
+            {/* Result Pips Row */}
+            <View style={styles.pipsLabelRow}>
+              <Text style={styles.pipsLabel}>Performance Breakdown</Text>
+            </View>
+            <View style={styles.pipsContainer}>
+              {questions.map((q, idx) => {
+                const isCorrect = userAnswers[idx] === q.correctIndex;
+                return (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.pipCircle,
+                      { backgroundColor: isCorrect ? "#10B981" : "#EF4444" }
+                    ]}
+                  >
+                    <Text style={styles.pipNumText}>{idx + 1}</Text>
+                  </View>
+                );
+              })}
             </View>
           </View>
 
-          {/* Progress bar visual */}
-          <View style={styles.progressCard}>
-            <Text style={styles.progressCardLabel}>Your score</Text>
-            <View style={styles.progressTrack}>
-              <View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: `${pct}%` as any,
-                    backgroundColor: passed ? "#10B981" : "#F59E0B",
-                  },
-                ]}
+          {/* Action CTAs */}
+          <View style={styles.actionsWrap}>
+            <TouchableOpacity
+              style={styles.primaryCTA}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.85}
+            >
+              <MaterialCommunityIcons name="arrow-left" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.primaryCTAText}>Back to Sprint</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryCTA}
+              onPress={() => setShowReview(!showReview)}
+              activeOpacity={0.85}
+            >
+              <MaterialCommunityIcons
+                name={showReview ? "eye-off-outline" : "eye-outline"}
+                size={18}
+                color="#475569"
+                style={{ marginRight: 6 }}
               />
-              <View
-                style={[styles.progressThreshold, { left: "30%" as any }]}
-              />
-            </View>
-            <View style={styles.progressLegend}>
-              <Text style={styles.progressLegendText}>0%</Text>
-              <Text style={styles.progressLegendText}>Pass: 30%</Text>
-              <Text style={styles.progressLegendText}>100%</Text>
-            </View>
+              <Text style={styles.secondaryCTAText}>
+                {showReview ? "Hide Review" : "Review Answers"}
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Actions */}
-          {/* <TouchableOpacity
-            style={styles.retryBtn}
-            onPress={handleRetry}
-            activeOpacity={0.85}
-          >
-            <MaterialCommunityIcons
-              name="refresh"
-              size={16}
-              color="#4F46E5"
-              style={{ marginRight: 6 }}
-            />
-            <Text style={styles.retryBtnText}>Retake Quiz</Text>
-          </TouchableOpacity> */}
-          <TouchableOpacity
-            style={styles.backBtn2}
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.backBtn2Text}>← Back to Sprint</Text>
-          </TouchableOpacity>
+          {/* Detailed Question Review Panel */}
+          {showReview && (
+            <View style={styles.reviewSection}>
+              <Text style={styles.reviewSectionTitle}>Detailed Review</Text>
+              {questions.map((q, idx) => {
+                const selectedIdx = userAnswers[idx];
+                const isCorrect = selectedIdx === q.correctIndex;
+                return (
+                  <View key={idx} style={styles.reviewQuestionCard}>
+                    <View style={styles.reviewQuestionHeader}>
+                      <View style={[
+                        styles.reviewQNum,
+                        { backgroundColor: isCorrect ? "#ECFDF5" : "#FEF2F2" }
+                      ]}>
+                        <Text style={[
+                          styles.reviewQNumText,
+                          { color: isCorrect ? "#10B981" : "#EF4444" }
+                        ]}>
+                          Q{idx + 1}
+                        </Text>
+                      </View>
+                      <Text style={[
+                        styles.reviewResultStatus,
+                        { color: isCorrect ? "#10B981" : "#EF4444" }
+                      ]}>
+                        {isCorrect ? "Correct" : "Incorrect"}
+                      </Text>
+                    </View>
+                    
+                    <Text style={styles.reviewQuestionText}>{q.question}</Text>
+                    
+                    <View style={styles.reviewOptionsList}>
+                      {q.options.map((option, optIdx) => {
+                        const isUserSelected = selectedIdx === optIdx;
+                        const isCorrectOpt = optIdx === q.correctIndex;
+                        
+                        let optStyle = styles.reviewOptionRow as any;
+                        let optTextStyle = styles.reviewOptionText as any;
+                        let rightIcon = null;
+                        
+                        if (isCorrectOpt) {
+                          optStyle = [styles.reviewOptionRow, styles.reviewOptionCorrect];
+                          optTextStyle = [styles.reviewOptionText, styles.reviewOptionTextCorrect];
+                          rightIcon = <MaterialCommunityIcons name="check-circle" size={16} color="#10B981" />;
+                        } else if (isUserSelected && !isCorrectOpt) {
+                          optStyle = [styles.reviewOptionRow, styles.reviewOptionIncorrect];
+                          optTextStyle = [styles.reviewOptionText, styles.reviewOptionTextIncorrect];
+                          rightIcon = <MaterialCommunityIcons name="close-circle" size={16} color="#EF4444" />;
+                        }
+
+                        return (
+                          <View key={optIdx} style={optStyle}>
+                            <Text style={optTextStyle}>{LETTERS[optIdx]}. {option}</Text>
+                            {rightIcon}
+                          </View>
+                        );
+                      })}
+                    </View>
+
+                    {q.explanation && (
+                      <View style={styles.explanationBox}>
+                        <View style={styles.explanationTitleRow}>
+                          <MaterialCommunityIcons name="information-outline" size={14} color="#4F46E5" />
+                          <Text style={styles.explanationTitle}>Explanation</Text>
+                        </View>
+                        <Text style={styles.explanationText}>{q.explanation}</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </ScrollView>
       </View>
     );
@@ -1314,4 +1505,292 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
   },
   primaryBtnText: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
+
+  // ─── Immersive Grading Loading State Styles ───
+  immersiveGradingContainer: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+  immersiveCenter: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  pulseCircleOuter: {
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: "rgba(124, 58, 237, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pulseCircleInner: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: "#F5F3FF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#7C3AED",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  immersiveTitle: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#1E1B4B",
+    marginTop: 32,
+    textAlign: "center",
+    letterSpacing: -0.5,
+  },
+  immersiveSubtitle: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginTop: 8,
+    textAlign: "center",
+    fontWeight: "500",
+  },
+
+  // ─── Achievement Card / Elliptical Background Styles ───
+  headerAccentBackground: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 250,
+    borderBottomLeftRadius: 120,
+    borderBottomRightRadius: 120,
+    opacity: 0.4,
+    transform: [{ scaleX: 1.6 }],
+  },
+  achievementBadgeContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  badgeEmoji: {
+    fontSize: 48,
+    marginBottom: 10,
+  },
+  badgeHeading: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#0F172A",
+    textAlign: "center",
+    letterSpacing: -0.5,
+  },
+  badgeSub: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 6,
+    paddingHorizontal: 8,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+
+  // Pips
+  pipsLabelRow: {
+    alignSelf: "stretch",
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    marginTop: 20,
+    paddingTop: 16,
+    marginBottom: 10,
+    alignItems: "center",
+  },
+  pipsLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#94A3B8",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  pipsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  pipCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  pipNumText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+
+  // Action CTAs
+  actionsWrap: {
+    flexDirection: "column",
+    gap: 12,
+    marginBottom: 24,
+  },
+  primaryCTA: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#7C3AED",
+    borderRadius: 16,
+    paddingVertical: 15,
+    shadowColor: "#7C3AED",
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  primaryCTAText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  secondaryCTA: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 15,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+  },
+  secondaryCTAText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#475569",
+  },
+
+  // Detailed Review Panel
+  reviewSection: {
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  reviewSectionTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 16,
+    letterSpacing: -0.3,
+  },
+  reviewQuestionCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  reviewQuestionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  reviewQNum: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  reviewQNumText: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  reviewResultStatus: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  reviewQuestionText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1E293B",
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  reviewOptionsList: {
+    gap: 8,
+    marginBottom: 14,
+  },
+  reviewOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    padding: 12,
+    gap: 10,
+  },
+  reviewOptionCorrect: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#10B981",
+  },
+  reviewOptionIncorrect: {
+    backgroundColor: "#FEF2F2",
+    borderColor: "#EF4444",
+  },
+  reviewOptionText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#475569",
+    lineHeight: 20,
+  },
+  reviewOptionTextCorrect: {
+    color: "#065F46",
+    fontWeight: "700",
+  },
+  reviewOptionTextIncorrect: {
+    color: "#991B1B",
+    fontWeight: "700",
+  },
+  explanationBox: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: "#4F46E5",
+  },
+  explanationTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 6,
+  },
+  explanationTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#4F46E5",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  explanationText: {
+    fontSize: 13,
+    color: "#3730A3",
+    lineHeight: 19,
+    fontWeight: "500",
+  },
 });

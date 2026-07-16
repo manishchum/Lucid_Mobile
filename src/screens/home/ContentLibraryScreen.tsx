@@ -28,6 +28,7 @@ export default function ContentLibraryScreen() {
   const [selectedCategory, setSelectedCategory] = useState<ContentCategory | null>(null);
   const [sortBy, setSortBy] = useState<"Newest" | "A-Z" | "Z-A">("Newest");
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [isGridView, setIsGridView] = useState(false);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -93,44 +94,79 @@ export default function ContentLibraryScreen() {
 
     return (
       <>
-        <View style={styles.sortContainer}>
-          <Text style={styles.sortLabel}>SORT BY:</Text>
-          <View style={{ zIndex: 10 }}>
-            <TouchableOpacity 
-              style={styles.sortDropdown}
-              onPress={() => setShowSortDropdown(!showSortDropdown)}
-            >
-              <Text style={styles.sortDropdownText}>{sortBy}</Text>
-              <MaterialCommunityIcons name={showSortDropdown ? "chevron-up" : "chevron-down"} size={18} color="#475569" />
-            </TouchableOpacity>
-            
-            {showSortDropdown && (
-              <View style={styles.dropdownMenu}>
-                {(["Newest", "A-Z", "Z-A"] as const).map(option => (
-                  <TouchableOpacity 
-                    key={option} 
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      setSortBy(option);
-                      setShowSortDropdown(false);
-                    }}
-                  >
-                    <Text style={[styles.dropdownItemText, sortBy === option && styles.dropdownItemTextSelected]}>{option}</Text>
-                    {sortBy === option && <MaterialCommunityIcons name="check" size={16} color="#3b82f6" />}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
+        <View style={styles.toolbarContainer}>
+          <View style={styles.sortContainer}>
+            <Text style={styles.sortLabel}>SORT BY:</Text>
+            <View style={{ zIndex: 10 }}>
+              <TouchableOpacity 
+                style={styles.sortDropdown}
+                onPress={() => setShowSortDropdown(!showSortDropdown)}
+              >
+                <Text style={styles.sortDropdownText}>{sortBy}</Text>
+                <MaterialCommunityIcons name={showSortDropdown ? "chevron-up" : "chevron-down"} size={18} color="#475569" />
+              </TouchableOpacity>
+              
+              {showSortDropdown && (
+                <View style={styles.dropdownMenu}>
+                  {(["Newest", "A-Z", "Z-A"] as const).map(option => (
+                    <TouchableOpacity 
+                      key={option} 
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setSortBy(option);
+                        setShowSortDropdown(false);
+                      }}
+                    >
+                      <Text style={[styles.dropdownItemText, sortBy === option && styles.dropdownItemTextSelected]}>{option}</Text>
+                      {sortBy === option && <MaterialCommunityIcons name="check" size={16} color="#3b82f6" />}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
           </View>
+
+          <TouchableOpacity
+            style={styles.toggleViewBtn}
+            onPress={() => setIsGridView(!isGridView)}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons 
+              name={isGridView ? "view-list" : "view-grid-outline"} 
+              size={20} 
+              color="#475569" 
+            />
+          </TouchableOpacity>
         </View>
 
         <FlatList
+          key={isGridView ? "grid" : "list"}
+          numColumns={isGridView ? 2 : 1}
           data={filteredCategories}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={isGridView ? styles.gridContent : styles.listContent}
           renderItem={({ item }) => {
             const itemCount = getItemsForCategory(item.id).length;
+            if (isGridView) {
+              return (
+                <TouchableOpacity
+                  style={styles.folderGridCard}
+                  activeOpacity={0.7}
+                  onPress={() => setSelectedCategory(item)}
+                >
+                  <View style={styles.folderIconContainer}>
+                    <MaterialCommunityIcons name="folder-outline" size={24} color="#3b82f6" />
+                  </View>
+                  <View style={styles.folderTextContainer}>
+                    <Text numberOfLines={2} style={styles.folderGridTitle}>{item.name}</Text>
+                    <Text style={styles.folderGridSubtitle}>
+                      {itemCount} {itemCount === 1 ? 'ITEM' : 'ITEMS'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            }
             return (
               <TouchableOpacity
                 style={styles.folderCard}
@@ -186,28 +222,63 @@ export default function ContentLibraryScreen() {
 
     return (
       <>
-        <View style={styles.categoryHeader}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => setSelectedCategory(null)}
-          >
-            <MaterialCommunityIcons name="arrow-left" size={20} color="#0f172a" />
-          </TouchableOpacity>
-          <View>
-            <Text style={styles.categoryHeaderTitle}>{selectedCategory.name}</Text>
-            <Text style={styles.categoryHeaderSubtitle}>
-              {items.length} {items.length === 1 ? 'ITEM' : 'ITEMS'}
-            </Text>
+        <View style={styles.categoryHeaderRow}>
+          <View style={styles.categoryHeader}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => setSelectedCategory(null)}
+            >
+              <MaterialCommunityIcons name="arrow-left" size={20} color="#0f172a" />
+            </TouchableOpacity>
+            <View>
+              <Text numberOfLines={1} style={styles.categoryHeaderTitle}>{selectedCategory.name}</Text>
+              <Text style={styles.categoryHeaderSubtitle}>
+                {items.length} {items.length === 1 ? 'ITEM' : 'ITEMS'}
+              </Text>
+            </View>
           </View>
+
+          <TouchableOpacity
+            style={styles.toggleViewBtn}
+            onPress={() => setIsGridView(!isGridView)}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons 
+              name={isGridView ? "view-list" : "view-grid-outline"} 
+              size={20} 
+              color="#475569" 
+            />
+          </TouchableOpacity>
         </View>
 
         <FlatList
+          key={isGridView ? "grid" : "list"}
+          numColumns={isGridView ? 2 : 1}
           data={items}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={isGridView ? styles.gridContent : styles.listContent}
           renderItem={({ item }) => {
             const iconProps = getFileIconProps(item.file_type);
+            if (isGridView) {
+              return (
+                <TouchableOpacity
+                  style={styles.itemGridCard}
+                  activeOpacity={0.7}
+                  onPress={() => navigation.navigate(STACK_ROUTES.CONTENT_VIEWER, { item })}
+                >
+                  <View style={[styles.itemIconContainer, { backgroundColor: iconProps.bgColor, marginBottom: 12 }]}>
+                    <MaterialCommunityIcons name={iconProps.name} size={24} color={iconProps.color} />
+                  </View>
+                  <View style={styles.itemTextContainer}>
+                    <Text numberOfLines={2} style={styles.itemGridTitle}>{item.title}</Text>
+                    {item.description ? (
+                      <Text numberOfLines={1} style={styles.itemGridSubtitle}>{item.description}</Text>
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+              );
+            }
             return (
               <TouchableOpacity
                 style={styles.itemCard}
@@ -261,7 +332,7 @@ export default function ContentLibraryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#fff",
   },
   searchContainer: {
     flexDirection: "row",
@@ -284,11 +355,39 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#0f172a",
   },
-  sortContainer: {
+  toolbarContainer: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
     marginBottom: 16,
+  },
+  sortContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  toggleViewBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  categoryHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    marginBottom: 20,
+  },
+  categoryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 12,
   },
   sortLabel: {
     fontSize: 12,
@@ -328,7 +427,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
-    elevation: 5,
+    // elevation: 5,
     minWidth: 120,
     zIndex: 100,
   },
@@ -348,12 +447,6 @@ const styles = StyleSheet.create({
   dropdownItemTextSelected: {
     color: "#3b82f6",
     fontWeight: "600",
-  },
-  categoryHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    marginBottom: 20,
   },
   backButton: {
     width: 40,
@@ -390,12 +483,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#f1f5f9",
+    borderColor: "#e2e8f0",
     shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 8,
-    elevation: 2,
+    // elevation: 2,
   },
   folderIconContainer: {
     width: 48,
@@ -428,12 +521,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#f1f5f9",
+    borderColor: "#e2e8f0",
     shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 8,
-    elevation: 2,
+    // elevation: 2,
   },
   itemIconContainer: {
     width: 48,
@@ -469,5 +562,66 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#94a3b8",
     fontWeight: "500",
+  },
+  gridContent: {
+    paddingHorizontal: 10,
+    paddingBottom: 24,
+  },
+  folderGridCard: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 16,
+    margin: 6,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    // elevation: 2,
+    alignItems: "flex-start",
+    minHeight: 120,
+    justifyContent: "space-between",
+  },
+  folderGridTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0f172a",
+    marginBottom: 4,
+    marginTop: 12,
+  },
+  folderGridSubtitle: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#94a3b8",
+    letterSpacing: 0.5,
+  },
+  itemGridCard: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 16,
+    margin: 6,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    // elevation: 2,
+    alignItems: "flex-start",
+    minHeight: 120,
+    justifyContent: "space-between",
+  },
+  itemGridTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0f172a",
+    marginBottom: 4,
+  },
+  itemGridSubtitle: {
+    fontSize: 11,
+    color: "#64748b",
   },
 });

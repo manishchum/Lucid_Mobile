@@ -615,6 +615,7 @@ export interface ResolvedPlanCard {
   modules: Array<{ order: number; title: string; recommended_time: number }>;
   processedModuleIds: string[];
   completedModulesCount: number;
+  completedAt?: string | null;
 }
 
 interface DashboardStats {
@@ -1047,6 +1048,7 @@ async function processDashboardResponse(
         modules,
         processedModuleIds,
         completedModulesCount,
+        completedAt: plan.completed_at || null,
       };
     }),
   );
@@ -1259,6 +1261,7 @@ export const useGetDashboardSummary = (
                 modules,
                 processedModuleIds,
                 completedModulesCount,
+                completedAt: plan.completed_at || null,
               };
             }),
           );
@@ -1476,6 +1479,50 @@ export const useModuleProgress = (
     };
 
     loadAndFetch();
+  }, [userId]);
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log("[Hook] EventBus triggered refresh_dashboard in useModuleProgress. Refreshing silently...");
+      fetchProgressData(false).catch(() => {});
+    };
+    return eventBus.on("refresh_dashboard", handleRefresh);
+  }, [fetchProgressData]);
+
+  useEffect(() => {
+    const handleQuizCompleted = (eventData: { processedModuleId: string; quizScore: number }) => {
+      if (!userId) return;
+      console.log("[Hook] EventBus triggered quiz_completed in useModuleProgress:", eventData);
+      setProgress((prevProgress) => {
+        const exists = prevProgress.some((p) => p.processed_module_id === eventData.processedModuleId);
+        let updatedProgress: ModuleProgressEntry[];
+        if (exists) {
+          updatedProgress = prevProgress.map((p) =>
+            p.processed_module_id === eventData.processedModuleId
+              ? { ...p, quiz_score: eventData.quizScore }
+              : p
+          );
+        } else {
+          updatedProgress = [
+            ...prevProgress,
+            {
+              processed_module_id: eventData.processedModuleId,
+              quiz_score: eventData.quizScore,
+              created_at: new Date().toISOString(),
+            } as any,
+          ];
+        }
+        
+        // Write to cache immediately so any future mount reads the fresh status
+        const cacheKey = `@module_progress_${userId}`;
+        AsyncStorage.setItem(cacheKey, JSON.stringify(updatedProgress)).catch((err) => {
+          console.warn("[Hook] Failed to write updated progress to cache:", err);
+        });
+
+        return updatedProgress;
+      });
+    };
+    return eventBus.on("quiz_completed", handleQuizCompleted);
   }, [userId]);
 
   const completedProcessedModuleIds = new Set(

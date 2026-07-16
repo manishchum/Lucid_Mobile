@@ -137,9 +137,17 @@ function AppNavigatorContent() {
     isLoading: leaderboardLoading,
     error: leaderboardError,
     refetch: refetchLeaderboard,
-  } = useGetLeaderboardHighlight(companyId, userId, 10, isLeaderboardOpen);
+  } = useGetLeaderboardHighlight(
+    isLoggedIn ? companyId : null,
+    isLoggedIn ? userId : null,
+    10,
+    isLeaderboardOpen
+  );
 
-  const { stats } = useGetDashboardSummary(userId, companyId);
+  const { stats } = useGetDashboardSummary(
+    isLoggedIn ? userId : null,
+    isLoggedIn ? companyId : null
+  );
   const progressPercentage = stats?.progressPercentage ?? 0;
 
   if (isInitializing) {

@@ -121,16 +121,6 @@ export default function AssignedSection({
 
   return (
     <View style={styles.container}>
-      {/* ── Section heading ───────────────────────────────────────── */}
-      <View style={styles.headingRow}>
-        <Text style={styles.heading}>My Work</Text>
-        {/* <View style={styles.totalBadge}>
-          <Text style={styles.totalBadgeText}>
-            {effectiveTab === "sprints" ? sprintCount : taskCount}
-          </Text>
-        </View> */}
-      </View>
-
       {/* ── Tab bar — Sprints always shown; Tasks only if addon is on ── */}
       {visibleTabs.length > 1 && (
         <View style={styles.tabBar}>
@@ -158,20 +148,6 @@ export default function AssignedSection({
                 >
                   {label}
                 </Text>
-                {count > 0 && (
-                  <View
-                    style={[styles.tabCount, isActive && styles.tabCountActive]}
-                  >
-                    <Text
-                      style={[
-                        styles.tabCountText,
-                        isActive && styles.tabCountTextActive,
-                      ]}
-                    >
-                      {count}
-                    </Text>
-                  </View>
-                )}
               </TouchableOpacity>
             );
           })}
@@ -405,7 +381,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 4,
-    elevation: 2,
+    // elevation: 1,
   },
   searchInput: {
     flex: 1,
@@ -427,7 +403,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 4,
-    elevation: 2,
+    // elevation: 2,
   },
 
   // ── Sort dropdown menu ───────────────────────────────────────────

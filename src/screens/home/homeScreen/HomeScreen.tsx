@@ -12,8 +12,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import Svg, { Circle } from "react-native-svg";
 import { useFocusEffect } from "@react-navigation/native";
+import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "../../../contex/AuthContext";
 import { useGetUserByPhone, useGetDashboardSummary } from "../../../api/users";
 import createStyles from "./style";
@@ -21,26 +21,21 @@ import { useScreenProtection } from "../../../hooks/security/useScreenProtection
 import ScreenRecordingGuard from "../../../components/security/ScreenRecordingGuard";
 import AssignedSection from "../components/AssignedSection";
 
-const styles = createStyles();
-
-// ── Progress circle ────────────────────────────────────────────────────────────
-const ProgressCircle = ({ percentage }: { percentage: number }) => {
-  const size = 52;
-  const strokeWidth = 5;
+const ProgressRing = ({ percentage }: { percentage: number }) => {
+  const size = 72;
+  const strokeWidth = 7;
   const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const clamped = Math.min(Math.max(percentage, 0), 100);
-  const strokeDashoffset = circumference - (clamped / 100) * circumference;
-  const isComplete = clamped >= 100;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (circumference * Math.min(Math.max(percentage, 0), 100)) / 100;
 
   return (
-    <View style={styles.progressCircleContainer}>
+    <View style={{ width: size, height: size, justifyContent: "center", alignItems: "center" }}>
       <Svg width={size} height={size}>
         <Circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={isComplete ? "#DCFCE7" : "#EFF6FF"}
+          stroke="#F1F5F9"
           strokeWidth={strokeWidth}
           fill="none"
         />
@@ -48,7 +43,7 @@ const ProgressCircle = ({ percentage }: { percentage: number }) => {
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={isComplete ? "#16A34A" : "#2563EB"}
+          stroke="#10B981"
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
@@ -57,20 +52,16 @@ const ProgressCircle = ({ percentage }: { percentage: number }) => {
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </Svg>
-      <View style={styles.progressCircleInner}>
-        <Text
-          style={[
-            styles.progressCirclePercent,
-            { fontSize: 11 },
-            isComplete && { color: "#16A34A" },
-          ]}
-        >
-          {clamped.toFixed(0)}%
+      <View style={{ position: "absolute", justifyContent: "center", alignItems: "center" }}>
+        <Text style={{ fontSize: 13, fontWeight: "800", color: "#0F172A" }}>
+          {Math.round(percentage)}%
         </Text>
       </View>
     </View>
   );
 };
+
+const styles = createStyles();
 
 // ── Main screen ────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }: { navigation: any }) {
@@ -195,26 +186,18 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
         >
-          {/* ── YOUR PROGRESS CARD ──────────────────────────────────────────── */}
-          <View style={styles.sectionWrapper}>
-            <View style={styles.progressCard}>
-              <View style={styles.progressLeft}>
-                <View style={styles.progressIconBox}>
-                  <MaterialCommunityIcons
-                    name={progressPercentage >= 100 ? "trophy" : "lightning-bolt"}
-                    size={22}
-                    color="#2563EB"
-                  />
-                </View>
-                <View style={styles.progressTextBlock}>
-                  <Text style={styles.progressCardTitle}>Your Progress</Text>
-                  <Text style={styles.progressCardSubtitle}>
-                    COMPLETED {completedCount} of {totalAssigned}
-                  </Text>
-                </View>
+          {/* ── CONSOLIDATED HERO ──────────────────────────────────────────── */}
+          <View style={styles.welcomeContainer}>
+            <View style={styles.welcomeHeaderRow}>
+              <View style={styles.welcomeTextColumn}>
+                <Text style={styles.welcomeSub}>Welcome back,</Text>
+                <Text style={styles.welcomeName}>
+                  {(user?.name || "Learner").split(" ")[0]}!
+                </Text>
+                <Text style={styles.welcomeTagline}>Keep learning, keep growing.</Text>
               </View>
-              <View style={styles.progressRight}>
-                <ProgressCircle percentage={progressPercentage} />
+              <View style={styles.ringWrapper}>
+                <ProgressRing percentage={progressPercentage} />
               </View>
             </View>
           </View>
@@ -237,7 +220,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                 label="Completed"
               />
               <StatCard
-                icon="lightning-bolt"
+                icon="clock-time-eight-outline"
                 color="#FFF7ED"
                 iconColor="#F59E0B"
                 val={String(

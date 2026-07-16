@@ -543,27 +543,27 @@ export default function SprintScreen({
 									{/* Module info row */}
 									<View style={styles.cardRow}>
 										<View
-											style={[
-												styles.statusDot,
-												isDone && styles.statusDotDone,
-											]}>
-											<MaterialCommunityIcons
-												name={
-													isDone
-														? "check"
-														: "circle-outline"
-												}
-												size={14}
-												color={
-													isDone ? "#fff" : "#94A3B8"
-												}
-											/>
-										</View>
+									style={[
+										styles.statusDot,
+										isDone && styles.statusDotDone,
+									]}>
+									{isDone ? (
+										<MaterialCommunityIcons
+											name="check"
+											size={14}
+											color="#fff"
+										/>
+									) : (
+										<Text style={styles.statusDotNumber}>
+											{index + 1}
+										</Text>
+									)}
+								</View>
 										<View style={styles.moduleInfo}>
-											<Text style={styles.moduleLabel}>
+											{/* <Text style={styles.moduleLabel}>
 												MODULE {index + 1} OF{" "}
 												{totalModules}
-											</Text>
+											</Text> */}
 											<Text style={styles.moduleTitle}>
 												{mod.title}
 											</Text>
@@ -712,7 +712,7 @@ const styles = StyleSheet.create({
 		borderRadius: 3,
 		backgroundColor: "rgba(255,255,255,0.25)",
 	},
-	progressSegmentFilled: { backgroundColor: "#A5F3FC" },
+	progressSegmentFilled: { backgroundColor: "#10B981" },
 	progressFraction: {
 		color: "rgba(255,255,255,0.65)",
 		fontSize: 12,
@@ -839,6 +839,11 @@ const styles = StyleSheet.create({
 		marginTop: 2,
 	},
 	statusDotDone: { backgroundColor: "#10B981" },
+	statusDotNumber: {
+		fontSize: 11,
+		fontWeight: "800",
+		color: "#64748B",
+	},
 
 	moduleInfo: { flex: 1 },
 	moduleLabel: {
