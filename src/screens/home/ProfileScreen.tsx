@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import {
-  Alert,
   View,
   Text,
   TouchableOpacity,
@@ -8,7 +7,6 @@ import {
   ScrollView,
   ActivityIndicator,
   StatusBar,
-  Linking,
   BackHandler,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -18,6 +16,7 @@ import { useAuth } from "../../contex/AuthContext";
 import { getUserByPhone } from "../../api/users/Request";
 import { useGetCompany } from "../../api/users/Hooks";
 import { User } from "../../api/users/Dto";
+import FeedbackCard from "../../components/feedback/FeedbackCard";
 
 function toE164(rawPhone: string): string {
   const digits = rawPhone.replace(/[^\d]/g, "");
@@ -29,7 +28,7 @@ function toE164(rawPhone: string): string {
 }
 
 export default function ProfileScreen() {
-  const { logout, phoneNumber, cachedUser } = useAuth();
+  const { phoneNumber, cachedUser } = useAuth();
   const navigation = useNavigation<any>();
 
   useEffect(() => {
@@ -41,32 +40,7 @@ export default function ProfileScreen() {
     return () => subscription.remove();
   }, [navigation]);
 
-  const handleContactUs = async () => {
-    const url = "https://wa.me/919211540400";
-    try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert("Error", "WhatsApp is not installed or the link cannot be opened.");
-      }
-    } catch (error) {
-      console.error("[ProfileScreen] Failed to open WhatsApp link:", error);
-      Alert.alert("Error", "Something went wrong while opening the link.");
-    }
-  };
 
-  const confirmLogout = () => {
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to sign out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Sign Out", style: "destructive", onPress: () => logout() },
-      ],
-      { cancelable: true },
-    );
-  };
   const [user, setUser] = useState<User | null>(
     cachedUser
       ? {
@@ -237,6 +211,12 @@ export default function ProfileScreen() {
               isStatus
             />
           </View>
+        </View>
+
+        {/* RATE YOUR EXPERIENCE SECTION */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Rate Your Experience</Text>
+          <FeedbackCard />
         </View>
 
         {/* ADMIN NOTICE */}
@@ -413,25 +393,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Logout
-  logoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginHorizontal: 20,
-    marginTop: 24,
-    paddingVertical: 16,
-    borderRadius: 16,
-    backgroundColor: "#FFF1F2",
-    borderWidth: 1,
-    borderColor: "#FECACA",
-  },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#EF4444",
-    marginLeft: 8,
-  },
   header: {
     height: 52,
     flexDirection: "row",

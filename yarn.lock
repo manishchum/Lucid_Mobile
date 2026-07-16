@@ -4329,6 +4329,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"expo-store-review@npm:~9.0.9":
+  version: 9.0.9
+  resolution: "expo-store-review@npm:9.0.9"
+  peerDependencies:
+    expo: "*"
+    react-native: "*"
+  checksum: 10c0/47ea77b29cc2f719f1d0480a2063786513c58d4c5b4b24530c3f17ac7c2cd9293517e1b29e7bab511696ab948e8283bc0a5eba258e6f1af41c355f651e82a2c8
+  languageName: node
+  linkType: hard
+
 "expo-updates-interface@npm:~2.0.0":
   version: 2.0.0
   resolution: "expo-updates-interface@npm:2.0.0"
@@ -5395,6 +5405,7 @@ __metadata:
     expo-sharing: "npm:~14.0.8"
     expo-speech-recognition: "npm:^56.0.1"
     expo-status-bar: "npm:~3.0.9"
+    expo-store-review: "npm:~9.0.9"
     expo-video: "npm:~3.0.16"
     react: "npm:19.1.0"
     react-native: "npm:0.81.5"

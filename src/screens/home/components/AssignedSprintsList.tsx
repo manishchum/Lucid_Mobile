@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal, Platform } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal, Platform, ScrollView } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -17,6 +17,7 @@ export interface PlanCard {
   status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
   processedModuleIds?: string[];
   completedModulesCount?: number;
+  completedAt?: string | null;
 }
 
 interface AssignedSprintsListProps {
@@ -35,6 +36,40 @@ export const getSprintProgress = (plan: PlanCard): number => {
   return Math.round((completed / plan.totalModules) * 100);
 };
 
+const DropdownSectionHeader = ({
+  title,
+  count,
+  isExpanded,
+  onToggle,
+}: {
+  title: string;
+  count: number;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) => {
+  return (
+    <TouchableOpacity
+      style={styles.dropdownHeaderBtn}
+      onPress={onToggle}
+      activeOpacity={0.7}
+    >
+      <View style={styles.dropdownHeaderLeft}>
+        <Text style={styles.dropdownHeaderTitle}>{title}</Text>
+        {count > 0 && (
+          <View style={styles.dropdownHeaderBadge}>
+            <Text style={styles.dropdownHeaderBadgeText}>{count}</Text>
+          </View>
+        )}
+      </View>
+      <MaterialCommunityIcons
+        name={isExpanded ? "chevron-up" : "chevron-down"}
+        size={20}
+        color="#64748B"
+      />
+    </TouchableOpacity>
+  );
+};
+
 export default function AssignedSprintsList({
   planCards,
   navigation,
@@ -43,14 +78,18 @@ export default function AssignedSprintsList({
 }: AssignedSprintsListProps) {
   const { setActiveSprint, setActiveModule } = useActiveSprint();
   const [activeCertPlan, setActiveCertPlan] = useState<PlanCard | null>(null);
+  const [inProgressExpanded, setInProgressExpanded] = useState(true);
+  const [recommendationsExpanded, setRecommendationsExpanded] = useState(true);
+  const [completedExpanded, setCompletedExpanded] = useState(false);
 
   const handleCertificateDownload = async (plan: PlanCard) => {
     try {
       const recipient = userName || "Lucid Learner";
       const sprintTitle = plan.title || "Lucid Sprint";
       
-      // Format current date nicely
-      const dateString = new Date().toLocaleDateString("en-US", {
+      // Format completed date nicely, fallback to current date if missing
+      const dateToFormat = plan.completedAt ? new Date(plan.completedAt) : new Date();
+      const dateString = dateToFormat.toLocaleDateString("en-IN", {
         month: "long",
         day: "numeric",
         year: "numeric"
@@ -234,7 +273,6 @@ export default function AssignedSprintsList({
         height: 560
       });
 
-      // Share/Download the PDF using native share sheet
       const slugifiedSprint = sprintTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-");
       const filename = `lucid-certificate-${slugifiedSprint}.pdf`;
       
@@ -245,6 +283,32 @@ export default function AssignedSprintsList({
         to: newUri
       });
 
+      // Android: Save file directly to chosen directory using StorageAccessFramework
+      if (Platform.OS === "android") {
+        try {
+          const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+          if (permissions.granted) {
+            const directoryUri = permissions.directoryUri;
+            const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+              directoryUri,
+              filename,
+              "application/pdf"
+            );
+            const base64 = await FileSystem.readAsStringAsync(newUri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            await FileSystem.writeAsStringAsync(fileUri, base64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            Alert.alert("Success", "Certificate downloaded successfully.");
+            return;
+          }
+        } catch (androidErr) {
+          console.warn("[Certificate] SAF download failed, falling back to share sheet:", androidErr);
+        }
+      }
+
+      // iOS / Fallback: Use Sharing.shareAsync to allow the user to save/share the certificate
       await Sharing.shareAsync(newUri, {
         mimeType: "application/pdf",
         dialogTitle: `Download ${sprintTitle} Certificate`,
@@ -257,11 +321,15 @@ export default function AssignedSprintsList({
     }
   };
 
+  const inProgressSprints = planCards.filter((p) => p.status === "IN_PROGRESS");
+  const notStartedSprints = planCards.filter((p) => p.status === "NOT_STARTED");
+  const completedSprints = planCards.filter((p) => p.status === "COMPLETED");
+
   if (planCards.length === 0) {
     return (
       <View style={styles.emptyState}>
         <MaterialCommunityIcons
-          name="book-open-outline"
+          name="book-multiple"
           size={40}
           color="#CBD5E1"
         />
@@ -274,124 +342,210 @@ export default function AssignedSprintsList({
 
   return (
     <>
-      {planCards.map((plan) => {
-        const isCompleted = plan.status === "COMPLETED";
-        const isInProgress = plan.status === "IN_PROGRESS";
-        const progressPercentage = getSprintProgress(plan);
-        const completedCount = Math.min(plan.completedModulesCount ?? 0, plan.totalModules);
-        const totalModules = plan.totalModules;
+      {/* ── 1. ACTIVE SPRINTS (IN PROGRESS DROPDOWN) ───────────────────── */}
+      {inProgressSprints.length > 0 && (
+        <View style={styles.sectionContainer}>
+          <DropdownSectionHeader
+            title="In Progress"
+            count={inProgressSprints.length}
+            isExpanded={inProgressExpanded}
+            onToggle={() => setInProgressExpanded(!inProgressExpanded)}
+          />
+          {inProgressExpanded && (
+            <View style={styles.dropdownContentContainer}>
+              {inProgressSprints.map((plan) => {
+                const progressPercentage = getSprintProgress(plan);
+                const completedCount = Math.min(plan.completedModulesCount ?? 0, plan.totalModules);
+                const totalModules = plan.totalModules;
 
-        const handleCardPress = () => {
-          setActiveSprint({
-            moduleId: plan.moduleId,
-            planId: plan.planKey,
-            planTitle: plan.title,
-            modules: plan.modules,
-            tips: plan.tips,
-            processedModuleIds: plan.processedModuleIds ?? [],
-          });
-          setActiveModule(null); // Unmount old module
-          navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
-        };
+                const handleCardPress = () => {
+                  setActiveSprint({
+                    moduleId: plan.moduleId,
+                    planId: plan.planKey,
+                    planTitle: plan.title,
+                    modules: plan.modules,
+                    tips: plan.tips,
+                    processedModuleIds: plan.processedModuleIds ?? [],
+                  });
+                  setActiveModule(null);
+                  navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
+                };
 
-        return (
-          <TouchableOpacity
-            key={plan.planKey}
-            style={styles.planCard}
-            onPress={handleCardPress}
-            activeOpacity={0.8}
-          >
-            {/* Top row: Status badge */}
-            <View style={styles.planHeaderRow}>
-              <View
-                style={[
-                  styles.statusBadge,
-                  isCompleted
-                    ? styles.statusBadgeCompleted
-                    : isInProgress
-                      ? styles.statusBadgeInProgress
-                      : styles.statusBadgeNotStarted,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.statusBadgeText,
-                    isCompleted
-                      ? styles.statusTextCompleted
-                      : isInProgress
-                        ? styles.statusTextInProgress
-                        : styles.statusTextNotStarted,
-                  ]}
-                >
-                  {isCompleted
-                    ? "Completed"
-                    : isInProgress
-                      ? "In Progress"
-                      : "Not Started"}
-                </Text>
-              </View>
+                return (
+                  <TouchableOpacity
+                    key={plan.planKey}
+                    style={styles.unifiedCard}
+                    onPress={handleCardPress}
+                    activeOpacity={0.8}
+                  >
+                    {/* Slot A: Left Icon */}
+                    <View style={styles.slotLeft}>
+                      <View style={[styles.planIconCircle, styles.iconCircleInProgress]}>
+                        <MaterialCommunityIcons name="clock-time-eight-outline" size={20} color="#F59E0B" />
+                      </View>
+                    </View>
+
+                    {/* Slot B: Center Title & Progress Bar */}
+                    <View style={styles.slotCenter}>
+                      <Text numberOfLines={2} style={styles.planTitleText}>
+                        {plan.title}
+                      </Text>
+                      <View style={styles.listProgressContainer}>
+                        <View style={styles.progressBarTrack}>
+                          <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
+                        </View>
+                        <Text style={styles.progressDetailText}>
+                          {completedCount}/{totalModules} modules
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Slot C: Right Status dot & Chevron */}
+                    <View style={styles.slotRight}>
+                      <View style={[styles.statusDot, styles.dotInProgress]} />
+                      <MaterialCommunityIcons name="chevron-right" size={18} color="#CBD5E1" />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+          )}
+        </View>
+      )}
 
-            {/* Content layout matching the uploaded image */}
-            <View style={styles.planContentRow}>
-              {/* Soft blue circle with icon */}
-              <View style={styles.planIconCircle}>
-                <MaterialCommunityIcons
-                  name="layers"
-                  size={22}
-                  color="#2563EB"
-                />
-              </View>
+      {/* ── 2. NEW RECOMMENDATIONS (NOT STARTED DROPDOWN) ──────────────── */}
+      {notStartedSprints.length > 0 && (
+        <View style={styles.sectionContainer}>
+          <DropdownSectionHeader
+            title="New Recommendations"
+            count={notStartedSprints.length}
+            isExpanded={recommendationsExpanded}
+            onToggle={() => setRecommendationsExpanded(!recommendationsExpanded)}
+          />
+          {recommendationsExpanded && (
+            <View style={styles.dropdownContentContainer}>
+              {notStartedSprints.map((plan) => {
+                const handleCardPress = () => {
+                  setActiveSprint({
+                    moduleId: plan.moduleId,
+                    planId: plan.planKey,
+                    planTitle: plan.title,
+                    modules: plan.modules,
+                    tips: plan.tips,
+                    processedModuleIds: plan.processedModuleIds ?? [],
+                  });
+                  setActiveModule(null);
+                  navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
+                };
 
-              {/* Title & Progress details */}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.planTitleText}>{plan.title}</Text>
-                
-                {/* Horizontal Progress Bar */}
-                <View style={styles.progressBarTrack}>
-                  <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
-                </View>
+                return (
+                  <TouchableOpacity
+                    key={plan.planKey}
+                    style={styles.unifiedCard}
+                    onPress={handleCardPress}
+                    activeOpacity={0.8}
+                  >
+                    {/* Slot A: Left Icon */}
+                    <View style={styles.slotLeft}>
+                      <View style={[styles.planIconCircle, styles.iconCircleRecommendations]}>
+                        <MaterialCommunityIcons name="book-multiple" size={20} color="#4F46E5" />
+                      </View>
+                    </View>
 
-                {/* Progress helper text */}
-                <Text style={styles.progressDetailText}>
-                  {completedCount}/{totalModules} modules completed
-                </Text>
-              </View>
+                    {/* Slot B: Center Title & Subtext */}
+                    <View style={styles.slotCenter}>
+                      <Text numberOfLines={2} style={styles.planTitleText}>
+                        {plan.title}
+                      </Text>
+                      <Text style={styles.progressDetailText}>
+                        {plan.totalModules} Modules
+                      </Text>
+                    </View>
 
-              {/* Chevron right */}
-              <MaterialCommunityIcons
-                name="chevron-right"
-                size={22}
-                color="#CBD5E1"
-              />
+                    {/* Slot C: Right Status dot & Chevron */}
+                    <View style={styles.slotRight}>
+                      <View style={[styles.statusDot, styles.dotNotStarted]} />
+                      <MaterialCommunityIcons name="chevron-right" size={18} color="#CBD5E1" />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+          )}
+        </View>
+      )}
 
-            {/* If completed, we show a certificate button */}
-            {isCompleted && (
-              <View style={styles.certificateRow}>
-                <TouchableOpacity
-                  style={styles.certificateLinkBtn}
-                  activeOpacity={0.7}
-                  onPress={(e) => {
-                    e.stopPropagation(); // Stop card click from triggering navigation
-                    setActiveCertPlan(plan);
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name="certificate-outline"
-                    size={16}
-                    color="#D97706"
-                  />
-                  <Text style={styles.certificateLinkText}>
-                    Download Certificate
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </TouchableOpacity>
-        );
-      })}
+      {/* ── 3. COMPLETED SPRINTS (COMPLETED DROPDOWN) ──────────────────── */}
+      {completedSprints.length > 0 && (
+        <View style={styles.sectionContainer}>
+          <DropdownSectionHeader
+            title="Completed Sprints"
+            count={completedSprints.length}
+            isExpanded={completedExpanded}
+            onToggle={() => setCompletedExpanded(!completedExpanded)}
+          />
+          {completedExpanded && (
+            <View style={styles.dropdownContentContainer}>
+              {completedSprints.map((plan) => {
+                const handleCardPress = () => {
+                  setActiveSprint({
+                    moduleId: plan.moduleId,
+                    planId: plan.planKey,
+                    planTitle: plan.title,
+                    modules: plan.modules,
+                    tips: plan.tips,
+                    processedModuleIds: plan.processedModuleIds ?? [],
+                  });
+                  setActiveModule(null);
+                  navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
+                };
 
+                return (
+                  <TouchableOpacity
+                    key={plan.planKey}
+                    style={styles.unifiedCard}
+                    onPress={handleCardPress}
+                    activeOpacity={0.8}
+                  >
+                    {/* Slot A: Left Icon */}
+                    <View style={styles.slotLeft}>
+                      <View style={[styles.planIconCircle, styles.iconCircleCompleted]}>
+                        <MaterialCommunityIcons name="check-decagram" size={20} color="#10B981" />
+                      </View>
+                    </View>
+
+                    {/* Slot B: Center Title & Subtext */}
+                    <View style={styles.slotCenter}>
+                      <Text numberOfLines={2} style={styles.planTitleText}>
+                        {plan.title}
+                      </Text>
+                      <Text style={styles.progressDetailText}>
+                        Completed
+                      </Text>
+                    </View>
+
+                    {/* Slot C: Right Status dot & Certificate Download button */}
+                    <View style={styles.slotRight}>
+                      <View style={[styles.statusDot, styles.dotCompleted]} />
+                      <TouchableOpacity
+                        style={styles.certificateIconBtn}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          setActiveCertPlan(plan);
+                        }}
+                      >
+                        <MaterialCommunityIcons name="certificate" size={20} color="#D97706" />
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      )}
       {/* Certificate Preview Modal */}
       {activeCertPlan && (
         <Modal
@@ -414,7 +568,7 @@ export default function AssignedSprintsList({
 
               {/* Certificate Card */}
               <View style={styles.certCard}>
-                <View style={styles.certInnerBorder}>
+                <View>
                   <View style={styles.certHeaderRow}>
                     <Text style={styles.certLogoText}>Lucid</Text>
                     <MaterialCommunityIcons name="seal-variant" size={24} color="#6366f1" />
@@ -433,11 +587,14 @@ export default function AssignedSprintsList({
                     <View>
                       <Text style={styles.certFooterLabel}>Date</Text>
                       <Text style={styles.certFooterValue}>
-                        {new Date().toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric"
-                        })}
+                        {(() => {
+                          const dateToFormat = activeCertPlan.completedAt ? new Date(activeCertPlan.completedAt) : new Date();
+                          return dateToFormat.toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric"
+                          });
+                        })()}
                       </Text>
                     </View>
                     <View style={{ alignItems: "flex-end" }}>
@@ -479,94 +636,163 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  planCard: {
-    backgroundColor: "#fff",
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 12,
-    elevation: 3,
+  // Redesign: Sections
+  sectionContainer: {
+    marginBottom: 16,
   },
-  planHeaderRow: {
+
+  // Collapsible Dropdown Headers
+  dropdownHeaderBtn: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    paddingVertical: 8,
+    // marginBottom: 8,
   },
-  planContentRow: {
+  dropdownHeaderLeft: {
     flexDirection: "row",
-    gap: 14,
     alignItems: "center",
   },
-  planIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+  dropdownHeaderTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  dropdownHeaderBadge: {
     backgroundColor: "#EFF6FF",
-    justifyContent: "center",
-    alignItems: "center",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 8,
     borderWidth: 1,
     borderColor: "#DBEAFE",
-    flexShrink: 0,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  planTitleText: { fontSize: 16, fontWeight: "700", color: "#1E293B" },
+  dropdownHeaderBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#2563EB",
+    lineHeight: 14,
+  },
+  dropdownContentContainer: {
+    marginTop: 4,
+  },
+
+  // List card progress bar track & fill
+  listProgressContainer: {
+    marginTop: 4,
+    width: "100%",
+  },
   progressBarTrack: {
-    height: 6,
+    height: 4,
     backgroundColor: "#F1F5F9",
-    borderRadius: 3,
-    marginTop: 8,
-    marginBottom: 6,
+    borderRadius: 2,
     width: "100%",
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: "#2563EB",
-    borderRadius: 3,
+    backgroundColor: "#F59E0B",
+    borderRadius: 2,
+  },
+
+  // Unified Card Container (Fixed Slot Architecture for List Items)
+  unifiedCard: {
+    height: 96,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    // elevation: 1,
+    position: "relative",
+  },
+
+  // Slot A: Left
+  slotLeft: {
+    flexShrink: 0,
+    marginRight: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  planIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  iconCircleInProgress: {
+    backgroundColor: "#FFF7ED",
+    borderColor: "#FFEDD5",
+  },
+  iconCircleRecommendations: {
+    backgroundColor: "#EEF2FF",
+    borderColor: "#E0E7FF",
+  },
+  iconCircleCompleted: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#D1FAE5",
+  },
+
+  // Slot B: Center Text
+  slotCenter: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  planTitleText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1E293B",
+    lineHeight: 18,
+    height: 36, // Fixed height for exactly 2 lines
   },
   progressDetailText: {
     fontSize: 12,
     color: "#64748B",
     fontWeight: "500",
+    marginTop: 3,
   },
-  certificateRow: {
-    marginTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
-    paddingTop: 10,
-    alignItems: "flex-start",
+
+  // Slot C: Right
+  slotRight: {
+    flexShrink: 0,
+    width: 44,
+    height: "100%",
+    paddingVertical: 12,
+    alignItems: "flex-end",
+    justifyContent: "space-between",
   },
-  certificateLinkBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#FEF3C7",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-  },
-  certificateLinkText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#D97706",
-  },
-  statusBadge: {
-    alignSelf: "flex-start",
+  certificateIconBtn: {
+    width: 36,
+    height: 36,
     borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
+    backgroundColor: "#FEF3C7",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 6,
   },
-  statusBadgeNotStarted: { backgroundColor: "#F1F5F9" },
-  statusBadgeInProgress: { backgroundColor: "#EFF6FF" },
-  statusBadgeCompleted: { backgroundColor: "#DCFCE7" },
-  statusBadgeText: { fontSize: 11, fontWeight: "700" },
-  statusTextNotStarted: { color: "#64748B" },
-  statusTextInProgress: { color: "#2563EB" },
-  statusTextCompleted: { color: "#16A34A" },
+
+  // Status Badge / Dot
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  dotNotStarted: { backgroundColor: "#94A3B8" },
+  dotInProgress: { backgroundColor: "#F59E0B" },
+  dotCompleted: { backgroundColor: "#10B981" },
+
   buttonRow: {
     flexDirection: "row",
     gap: 10,
@@ -616,15 +842,15 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 6,
-    elevation: 3,
+    // elevation: 1,
   },
-  certInnerBorder: {
-    borderWidth: 1.5,
-    borderColor: "#D8E5F5",
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-  },
+  // certInnerBorder: {
+  //   borderWidth: 1.5,
+  //   borderColor: "#D8E5F5",
+  //   borderRadius: 12,
+  //   padding: 16,
+  //   alignItems: "center",
+  // },
   certHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -715,7 +941,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
-    elevation: 6,
+    // elevation: 6,
   },
   downloadBtnText: {
     color: "#fff",

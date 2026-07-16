@@ -4,23 +4,40 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDrawer } from "../../contex/DrawerContext";
 import { useNotifications } from "../../contex/NotificationContext";
+import { useAuth } from "../../contex/AuthContext";
+import { useGetCompany } from "../../api/users";
 
 export default function AppHeader() {
   const insets = useSafeAreaInsets();
   const { toggleDrawer, setIsLeaderboardOpen, setIsNotificationsOpen } = useDrawer();
   const { unreadCount } = useNotifications();
+  const { cachedUser } = useAuth();
+
+  const userId = cachedUser?.userId ?? null;
+  const companyId = cachedUser?.companyId ?? null;
+  const { company } = useGetCompany(companyId, userId);
 
   return (
     <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top, 12) }]}>
       <View style={styles.header}>
         {/* Left Side: Logo & App Name */}
         <View style={styles.logoContainer}>
-          <Image
-            source={require("../../../assets/logo.png")}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
-          <Text style={styles.logoText}>LucidX</Text>
+          {company?.company_logo ? (
+            <Image
+              source={{ uri: company.company_logo }}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          ) : (
+            <Image
+              source={require("../../../assets/logo.png")}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          )}
+          <Text style={styles.logoText} numberOfLines={1}>
+            {company?.name || "Lucid"}
+          </Text>
         </View>
 
         {/* Right Side: Leaderboard, Notifications, & Hamburger Menu */}
@@ -70,7 +87,7 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 2 },
       },
       android: {
-        elevation: 2,
+        // elevation: 1,
       },
     }),
   },
@@ -85,16 +102,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    flex: 1,
+    marginRight: 16,
   },
   logoImage: {
     width: 30,
     height: 30,
+    borderRadius: 6,
   },
   logoText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "900",
-    color: "#6366F1",
+    color: "#1E293B",
     letterSpacing: 0.5,
+    flexShrink: 1,
   },
   iconBtn: {
     width: 40,

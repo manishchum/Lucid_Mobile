@@ -2,7 +2,7 @@ import { StyleSheet } from 'react-native';
 
 const createStyles = () => {
   return StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
+    safeArea: { flex: 1, backgroundColor: '#FFF' },
     loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' },
 
     // ── Header ────────────────────────────────────────────────────────────
@@ -49,48 +49,51 @@ const createStyles = () => {
     sectionWrapper: { marginTop: 20, paddingHorizontal: 20 },
     sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1E293B', marginBottom: 14 },
 
-    // ── Your Progress Card ────────────────────────────────────────────────
-    progressCard: {
+    // ── Consolidated Hero ──────────────────────────────────────────────────
+    welcomeContainer: {
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: 12,
       backgroundColor: '#fff',
-      borderRadius: 16,
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: '#F1F5F9',
-      elevation: 2,
-      shadowColor: '#64748B',
-      shadowOpacity: 0.05,
-      shadowRadius: 6,
-      shadowOffset: { width: 0, height: 2 },
     },
-    progressLeft: {
+    welcomeHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    welcomeTextColumn: {
       flex: 1,
-      flexDirection: 'row',
+      justifyContent: 'center',
+    },
+    welcomeSub: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: '#64748B',
+      marginBottom: 4,
+    },
+    welcomeName: {
+      fontSize: 32,
+      fontWeight: '900',
+      color: '#0F172A',
+      letterSpacing: -1,
+      marginBottom: 6,
+    },
+    welcomeTagline: {
+      fontSize: 13,
+      fontWeight: '500',
+      color: '#94A3B8',
+    },
+    ringWrapper: {
+      marginLeft: 16,
+      justifyContent: 'center',
       alignItems: 'center',
-      gap: 12,
-      paddingRight: 12,
     },
-    progressIconBox: {
-      width: 40, height: 40, borderRadius: 10,
-      backgroundColor: '#EFF6FF',
-      justifyContent: 'center', alignItems: 'center',
-      flexShrink: 0,
-    },
-    progressTextBlock: { flex: 1 },
-    progressCardTitle: { fontSize: 15, fontWeight: '800', color: '#1E293B' },
-    progressCardSubtitle: { fontSize: 12, fontWeight: '600', color: '#64748B', marginTop: 2 },
-    progressRight: { alignItems: 'center', justifyContent: 'center' },
-    progressCircleContainer: { justifyContent: 'center', alignItems: 'center' },
-    progressCircleInner: { position: 'absolute', alignItems: 'center' },
-    progressCirclePercent: { fontSize: 11, fontWeight: '900', color: '#2563EB' },
 
     // ── Stats Grid ────────────────────────────────────────────────────────
     statsGrid: { flexDirection: 'row', gap: 12 },
     statCard: {
       flex: 1, backgroundColor: '#fff', borderRadius: 20, padding: 16,
-      alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9',
+      alignItems: 'center', borderWidth: 1, borderColor: "#e2e8f0",
     },
     statIconBox: {
       width: 40, height: 40, borderRadius: 12,
