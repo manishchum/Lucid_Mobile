@@ -276,7 +276,7 @@ const Divider = () => <View style={styles.divider} />;
 
 /** STYLES **/
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#FFF" },
   loader: {
     flex: 1,
     justifyContent: "center",

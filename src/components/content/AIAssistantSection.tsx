@@ -74,6 +74,7 @@ const styles = StyleSheet.create({
     borderRadius: 20, // Matches the rounded card style in the mockup
     borderColor: '#F1F5F9',
     overflow: 'hidden',
+    borderWidth: 1,
   },
   header: {
     flexDirection: 'row',

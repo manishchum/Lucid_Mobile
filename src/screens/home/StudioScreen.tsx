@@ -402,12 +402,12 @@ export default function StudioScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  main: { flex: 1, backgroundColor: "#F8FAFC" },
+  main: { flex: 1, backgroundColor: "#FFF" },
 
   // ── Empty state ──
   emptyContainer: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFF",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 36,
