@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import { getUserByPhone } from "../../api/users/Request";
 import { useGetCompany } from "../../api/users/Hooks";
 import { User } from "../../api/users/Dto";
 import FeedbackCard from "../../components/feedback/FeedbackCard";
+import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
 function toE164(rawPhone: string): string {
   const digits = rawPhone.replace(/[^\d]/g, "");
@@ -71,33 +72,50 @@ export default function ProfileScreen() {
       : null,
   );
   const [loading, setLoading] = useState(!cachedUser);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        if (phoneNumber) {
-          const normalizedPhone = toE164(phoneNumber);
-          const response = await getUserByPhone(normalizedPhone);
-          if (response?.user) {
-            setUser(response.user);
-          } else {
-            console.warn("[ProfileScreen] No user found for", normalizedPhone);
-          }
+  const fetchUserData = useCallback(async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
+    try {
+      if (phoneNumber) {
+        const normalizedPhone = toE164(phoneNumber);
+        const response = await getUserByPhone(normalizedPhone);
+        if (response?.user) {
+          setUser(response.user);
+        } else {
+          console.warn("[ProfileScreen] No user found for", normalizedPhone);
         }
-      } catch (error) {
-        console.error("[ProfileScreen] Error fetching user:", error);
-      } finally {
-        setLoading(false);
       }
-    };
-    fetchUserData();
+    } catch (error) {
+      console.error("[ProfileScreen] Error fetching user:", error);
+    } finally {
+      setLoading(false);
+    }
   }, [phoneNumber]);
 
+  useEffect(() => {
+    fetchUserData(true);
+  }, [fetchUserData]);
+
   // Fetch company name from company_id once the user record is loaded
-  const { company, isLoading: companyLoading } = useGetCompany(
+  const { company, isLoading: companyLoading, refetch: refetchCompany } = useGetCompany(
     user?.company_id ?? null,
     cachedUser?.userId ?? null,
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        fetchUserData(false),
+        refetchCompany(),
+      ]);
+    } catch (err) {
+      console.error("[ProfileScreen] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchUserData, refetchCompany]);
 
   if (loading) {
     return (
@@ -145,6 +163,9 @@ export default function ProfileScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          RefreshSpinner(refreshing, onRefresh)
+        }
       >
         {/* PROFILE HEADER */}
         <View style={styles.profileHeader}>

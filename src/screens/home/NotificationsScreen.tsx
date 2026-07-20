@@ -8,12 +8,12 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
-  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNotifications, Notification } from "../../contex/NotificationContext";
 import { STACK_ROUTES } from "../../navigations/Routes";
+import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
 export default function NotificationsScreen({ navigation }: { navigation: any }) {
   const { notifications, isLoading, fetchNotifications, markAsRead, markAllAsRead } = useNotifications();
@@ -124,9 +124,7 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContainer}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#6366F1"]} />
-          }
+          refreshControl={RefreshSpinner(refreshing, onRefresh)}
         />
       )}
     </SafeAreaView>

@@ -20,6 +20,7 @@ import { useCareerJourneys, CareerJourney, SkillNode } from "../../api/career-jo
 import { useGetDashboardSummary } from "../../api/users/Hooks";
 import { STACK_ROUTES, APP_ROUTES } from "../../navigations/Routes";
 import { useActiveSprint } from "../../contex/ActiveSprintContext";
+import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
 const { width } = Dimensions.get("window");
 
@@ -34,12 +35,27 @@ export default function SprintverseScreen() {
 
   const [selectedJourney, setSelectedJourney] = useState<CareerJourney | null>(null);
   const [activeLevelTab, setActiveLevelTab] = useState<"beginner" | "intermediate" | "advanced">("beginner");
+  const [refreshing, setRefreshing] = useState(false);
 
   // Load published career journeys
   const { data: journeys = [], isLoading: loadingJourneys, error: journeysError, refetch: refetchJourneys } = useCareerJourneys(companyId);
 
   // Load user dashboard plan cards to match modules and enable clicking to start them
   const { resolvedPlanCards = [], refetch: refetchDashboard } = useGetDashboardSummary(userId, companyId);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refetchJourneys(false),
+        refetchDashboard(false),
+      ]);
+    } catch (err) {
+      console.error("[SprintverseScreen] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchJourneys, refetchDashboard]);
 
   // Focus effect for pulling fresh data + hardware back button handling
   useFocusEffect(
@@ -272,6 +288,9 @@ export default function SprintverseScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              RefreshSpinner(refreshing, onRefresh)
+            }
           />
         </View>
       ) : (
@@ -325,6 +344,9 @@ export default function SprintverseScreen() {
             style={styles.skillsScrollView}
             contentContainerStyle={styles.skillsScrollContent}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              RefreshSpinner(refreshing, onRefresh)
+            }
           >
             {getSkillsByLevel(selectedJourney, activeLevelTab).length > 0 ? (
               getSkillsByLevel(selectedJourney, activeLevelTab).map((skill, index) =>

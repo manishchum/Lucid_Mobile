@@ -23,6 +23,7 @@ import NoInternetModal from "../../components/networkModal/NetworkModal";
 import { useModuleProgress, useGetTrainingPlan } from "../../api/users/Hooks";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 import { useActiveSprint } from "../../contex/ActiveSprintContext";
+import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
 if (
 	Platform.OS === "android" &&
@@ -52,10 +53,11 @@ export default function SprintScreen({
 
 	const [tipsExpanded, setTipsExpanded] = useState(false);
 	const [showNoInternet, setShowNoInternet] = useState(false);
+	const [refreshing, setRefreshing] = useState(false);
 
 	const isOnline = useNetworkStatus();
 
-  const { plan: trainingPlan } = useGetTrainingPlan(
+  const { plan: trainingPlan, refetch: refetchTrainingPlan } = useGetTrainingPlan(
     cachedUser?.userId ?? null,
     moduleId || null,
   );
@@ -186,6 +188,20 @@ export default function SprintScreen({
 			// eslint-disable-next-line react-hooks/exhaustive-deps
 		}, [cachedUser?.userId]),
 	);
+
+	const onRefresh = useCallback(async () => {
+		setRefreshing(true);
+		try {
+			await Promise.all([
+				refetchTrainingPlan(),
+				refetchModuleProgress(),
+			]);
+		} catch (err) {
+			console.error("[SprintScreen] Refresh error:", err);
+		} finally {
+			setRefreshing(false);
+		}
+	}, [refetchTrainingPlan, refetchModuleProgress]);
 
 	// ── Verified completion sets
 	const { completedProcessedModuleIds, quizPassedProcessedModuleIds } =
@@ -367,7 +383,10 @@ export default function SprintScreen({
 			<StatusBar barStyle="dark-content" />
 			<ScrollView
 				showsVerticalScrollIndicator={false}
-				contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+				contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+				refreshControl={
+					RefreshSpinner(refreshing, onRefresh)
+				}>
 				{/* ── Header ──────────────────────────────────────────────────────── */}
 				<View style={[styles.header, { paddingBottom: 0 }]}>
 					<TouchableOpacity

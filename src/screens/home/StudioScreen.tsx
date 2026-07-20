@@ -20,6 +20,7 @@ import { APP_ROUTES, STACK_ROUTES } from "../../navigations/Routes";
 import CoreContentSection from "./sections/CoreContentSection";
 import PodcastSection from "./sections/PodcastSection";
 import FlashcardsSection from "../../components/content/FlashcardsSection";
+import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
 // ─── Phase 2: Mind Map ────────────────────────────────────────────────────────
 // MindmapSection will be implemented in Phase 2 using a proper graph/SVG renderer.
@@ -111,13 +112,27 @@ export default function StudioScreen({ navigation }: any) {
     }
   }, [processedModuleId, moduleTitle, sprintTitle, userId]);
 
+  const [refreshing, setRefreshing] = useState(false);
+
   // Fetch processed module by ID — endpoint: GET /processed-modules/{processedModuleId}
   // This is the single source of truth for all Studio sections below.
   const {
     module: processedModule,
     isLoading,
     error,
+    refetch,
   } = useGetProcessedModuleById(processedModuleId || null, userId);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } catch (err) {
+      console.error("[StudioScreen] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   const { isTranslating, translatedSections, translatedFlashcards } = useModuleTranslation(
     processedModuleId || null,
@@ -216,6 +231,9 @@ export default function StudioScreen({ navigation }: any) {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+        refreshControl={
+          RefreshSpinner(refreshing, onRefresh)
+        }
       >
         {/* ── Hero ── */}
         <View style={styles.hero}>

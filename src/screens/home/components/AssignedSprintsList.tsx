@@ -479,7 +479,7 @@ export default function AssignedSprintsList({
       {completedSprints.length > 0 && (
         <View style={styles.sectionContainer}>
           <DropdownSectionHeader
-            title="Completed Sprints"
+            title="Completed"
             count={completedSprints.length}
             isExpanded={completedExpanded}
             onToggle={() => setCompletedExpanded(!completedExpanded)}
@@ -662,11 +662,11 @@ const styles = StyleSheet.create({
   },
   dropdownHeaderBadge: {
     backgroundColor: "#EFF6FF",
-    borderRadius: 12,
+    borderRadius: 20,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     marginLeft: 8,
-    borderWidth: 1,
+    // borderWidth: 1,
     borderColor: "#DBEAFE",
     justifyContent: "center",
     alignItems: "center",
