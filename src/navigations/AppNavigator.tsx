@@ -40,7 +40,7 @@ function BottomTabNavigator() {
 
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      screenOptions={({ route }: any) => ({
         headerShown: true,
         header: () => <AppHeader />,
         tabBarActiveTintColor: "#6366f1",
@@ -56,7 +56,7 @@ function BottomTabNavigator() {
           fontSize: 12,
           marginTop: 4,
         },
-        tabBarIcon: ({ color, size }) => {
+        tabBarIcon: ({ color, size }: any) => {
           let iconName: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
 
           switch (route.name) {

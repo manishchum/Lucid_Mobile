@@ -75,8 +75,10 @@ function toE164(rawPhone: string): string {
 const DISABLE_APP_VERIFICATION_FOR_TESTING = __DEV__;
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+export const AuthProvider = ({
   children,
+}: {
+  children: React.ReactNode;
 }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);

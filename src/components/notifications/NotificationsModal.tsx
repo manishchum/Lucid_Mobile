@@ -133,7 +133,7 @@ export default function NotificationsModal({ isOpen, onClose }: NotificationsMod
           ) : (
             <FlatList
               data={notifications}
-              keyExtractor={(item) => item.id}
+              keyExtractor={(item: Notification) => item.id}
               renderItem={renderItem}
               contentContainerStyle={styles.listContainer}
               refreshControl={
