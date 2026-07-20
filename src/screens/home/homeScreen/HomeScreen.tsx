@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
-  RefreshControl,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -20,6 +19,7 @@ import createStyles from "./style";
 import { useScreenProtection } from "../../../hooks/security/useScreenProtection";
 import ScreenRecordingGuard from "../../../components/security/ScreenRecordingGuard";
 import AssignedSection from "../components/AssignedSection";
+import RefreshSpinner from "../../../components/pullToRefresh/RefreshSpinner";
 
 const ProgressRing = ({ percentage }: { percentage: number }) => {
   const size = 72;
@@ -180,7 +180,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            RefreshSpinner(refreshing, onRefresh)
           }
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"

@@ -73,7 +73,7 @@ export const useContentCategories = (companyId?: string | null) => {
     return eventBus.on("refresh_categories", handleRefresh);
   }, [fetchCategories]);
 
-  return { data, isLoading, error, refetch: (showSpinner = true) => fetchCategories(showSpinner) };
+  return { data, isLoading, error, refetch: fetchCategories };
 };
 
 export const useContentItems = (categoryId?: string, companyId?: string | null) => {
@@ -145,5 +145,5 @@ export const useContentItems = (categoryId?: string, companyId?: string | null) 
     return eventBus.on("refresh_items", handleRefresh);
   }, [fetchItems]);
 
-  return { data, isLoading, error, refetch: (showSpinner = true) => fetchItems(showSpinner) };
+  return { data, isLoading, error, refetch: fetchItems };
 };

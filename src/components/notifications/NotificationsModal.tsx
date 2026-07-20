@@ -7,10 +7,10 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
-  RefreshControl,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNotifications, Notification } from "../../contex/NotificationContext";
+import RefreshSpinner from "../pullToRefresh/RefreshSpinner";
 
 interface NotificationsModalProps {
   isOpen: boolean;
@@ -137,7 +137,7 @@ export default function NotificationsModal({ isOpen, onClose }: NotificationsMod
               renderItem={renderItem}
               contentContainerStyle={styles.listContainer}
               refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#6366F1"]} />
+                RefreshSpinner(refreshing, onRefresh)
               }
             />
           )}

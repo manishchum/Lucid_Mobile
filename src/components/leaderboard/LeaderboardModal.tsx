@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LeaderboardHighlightData, LeaderboardUser } from "../../api/users";
+import RefreshSpinner from "../pullToRefresh/RefreshSpinner";
 
 interface LeaderboardModalProps {
   isOpen: boolean;
@@ -32,6 +33,19 @@ export default function LeaderboardModal({
   currentProgressPercentage,
   onRefresh,
 }: LeaderboardModalProps) {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefreshInternal = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } catch (err) {
+      console.error("[LeaderboardModal] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [onRefresh]);
+
   const getInitials = (name: string): string => {
     if (!name) return "";
     const parts = name.trim().split(" ");
@@ -142,11 +156,13 @@ export default function LeaderboardModal({
                 </View>
               </View>
 
-              {/* Scrollable list of ranks */}
               <ScrollView
                 style={styles.leaderboardList}
                 contentContainerStyle={{ paddingBottom: 10 }}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                  RefreshSpinner(refreshing, onRefreshInternal)
+                }
               >
                 {topPerformers.map((entry: LeaderboardUser) => {
                   const isMe =

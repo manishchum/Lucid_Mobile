@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import { useAuth } from "../../contex/AuthContext";
 import { useContentCategories, useContentItems } from "../../api/content-library/Hooks";
 import { ContentCategory, ContentItem } from "../../api/content-library/Dto";
 import { STACK_ROUTES } from "../../navigations/Routes";
+import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
 export default function ContentLibraryScreen() {
   const insets = useSafeAreaInsets();
@@ -29,6 +30,7 @@ export default function ContentLibraryScreen() {
   const [sortBy, setSortBy] = useState<"Newest" | "A-Z" | "Z-A">("Newest");
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const [isGridView, setIsGridView] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -48,6 +50,20 @@ export default function ContentLibraryScreen() {
   const { data: categories = [], isLoading: loadingCats, refetch: refetchCats } = useContentCategories(companyId);
   // Fetch ALL items to count them by category
   const { data: allItems = [], isLoading: loadingItems, refetch: refetchItems } = useContentItems(undefined, companyId);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refetchCats(false),
+        refetchItems(false),
+      ]);
+    } catch (err) {
+      console.error("[ContentLibraryScreen] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchCats, refetchItems]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -146,6 +162,9 @@ export default function ContentLibraryScreen() {
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={isGridView ? styles.gridContent : styles.listContent}
+          refreshControl={
+            RefreshSpinner(refreshing, onRefresh)
+          }
           renderItem={({ item }) => {
             const itemCount = getItemsForCategory(item.id).length;
             if (isGridView) {
@@ -258,6 +277,9 @@ export default function ContentLibraryScreen() {
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={isGridView ? styles.gridContent : styles.listContent}
+          refreshControl={
+            RefreshSpinner(refreshing, onRefresh)
+          }
           renderItem={({ item }) => {
             const iconProps = getFileIconProps(item.file_type);
             if (isGridView) {
