@@ -159,13 +159,13 @@ export default function ContentLibraryScreen() {
           key={isGridView ? "grid" : "list"}
           numColumns={isGridView ? 2 : 1}
           data={filteredCategories}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item: ContentCategory) => item.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={isGridView ? styles.gridContent : styles.listContent}
           refreshControl={
             RefreshSpinner(refreshing, onRefresh)
           }
-          renderItem={({ item }) => {
+          renderItem={({ item }: { item: ContentCategory }) => {
             const itemCount = getItemsForCategory(item.id).length;
             if (isGridView) {
               return (
@@ -274,13 +274,13 @@ export default function ContentLibraryScreen() {
           key={isGridView ? "grid" : "list"}
           numColumns={isGridView ? 2 : 1}
           data={items}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item: ContentItem) => item.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={isGridView ? styles.gridContent : styles.listContent}
           refreshControl={
             RefreshSpinner(refreshing, onRefresh)
           }
-          renderItem={({ item }) => {
+          renderItem={({ item }: { item: ContentItem }) => {
             const iconProps = getFileIconProps(item.file_type);
             if (isGridView) {
               return (

@@ -59,8 +59,10 @@ const EXPO_API_URL =
 const API_BASE_URL = `${EXPO_API_URL}/api`;
 const WS_BASE_URL = EXPO_API_URL.replace(/^http/, "ws") + "/api";
 
-export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
+export const NotificationProvider = ({
   children,
+}: {
+  children: React.ReactNode;
 }) => {
   const { isLoggedIn, cachedUser } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -200,7 +202,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
 
     try {
-      const unsubscribe = messaging().onMessage(async (remoteMessage) => {
+      const unsubscribe = messaging().onMessage(async (remoteMessage: any) => {
         console.log("[FCM] Foreground message received:", remoteMessage);
         // Trigger a fetch to refresh notification log
         fetchNotifications();
@@ -248,7 +250,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     try {
       // 1. Handle when app is in background state and notification is clicked
-      const unsubscribeOnNotificationOpened = messaging().onNotificationOpenedApp((remoteMessage) => {
+      const unsubscribeOnNotificationOpened = messaging().onNotificationOpenedApp((remoteMessage: any) => {
         console.log("[FCM] Notification caused app to open from background state:", remoteMessage);
         const val = remoteMessage.data?.id || remoteMessage.data?.learning_plan_id || remoteMessage.data?.module_id;
         const titleVal = remoteMessage.data?.assignment_title;
@@ -262,7 +264,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
       // 2. Handle when app is in closed (quit) state and notification is clicked
       messaging()
         .getInitialNotification()
-        .then((remoteMessage) => {
+        .then((remoteMessage: any) => {
           if (remoteMessage) {
             console.log("[FCM] Notification caused app to open from quit state:", remoteMessage);
             const val = remoteMessage.data?.id || remoteMessage.data?.learning_plan_id || remoteMessage.data?.module_id;
@@ -278,7 +280,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           }
         })
-        .catch((error) => {
+        .catch((error: any) => {
           console.error("[FCM] getInitialNotification error:", error);
         });
 
@@ -484,7 +486,7 @@ interface ToastProps {
   onPress?: () => void;
 }
 
-const Toast: React.FC<ToastProps> = ({ title, message, onDismiss, onPress }) => {
+const Toast = ({ title, message, onDismiss, onPress }: ToastProps) => {
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(-150)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;

@@ -84,8 +84,10 @@ const TenantContext = createContext<TenantContextType>({
 
 export const useTenant = () => useContext(TenantContext);
 
-export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({
+export const TenantProvider = ({
   children,
+}: {
+  children: React.ReactNode;
 }) => {
   const { cachedUser } = useAuth();
   const [company, setCompany] = useState<CompanyInfo | null>(null);

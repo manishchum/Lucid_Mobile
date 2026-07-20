@@ -285,7 +285,7 @@ export default function SprintverseScreen() {
           <FlatList
             data={journeys}
             renderItem={renderJourneyCard}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item: CareerJourney) => item.id}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             refreshControl={

@@ -1515,7 +1515,7 @@ export const useModuleProgress = (
         
         // Write to cache immediately so any future mount reads the fresh status
         const cacheKey = `@module_progress_${userId}`;
-        AsyncStorage.setItem(cacheKey, JSON.stringify(updatedProgress)).catch((err) => {
+        AsyncStorage.setItem(cacheKey, JSON.stringify(updatedProgress)).catch((err: any) => {
           console.warn("[Hook] Failed to write updated progress to cache:", err);
         });
 
