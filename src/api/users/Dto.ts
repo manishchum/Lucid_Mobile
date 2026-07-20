@@ -235,7 +235,44 @@ export interface DashboardSummaryResponse {
 }
 
 // Task Manager DTOs
-export type SubmissionFormat = "audio" | "image" | "video" | "text";
+export type SubmissionFormat =
+  | "audio"
+  | "image"
+  | "video"
+  | "text"
+  | "multiple_choice"
+  | "bundle";
+
+export interface TaskQuestion {
+  id: string;
+  type: "single" | "multiple";
+  options: string[];
+  question: string;
+  correctAnswer?: string;
+  writtenAnswer?: string;
+  correctAnswers?: string[];
+}
+
+export interface BundleTask {
+  title: string;
+  description?: string;
+  questions: TaskQuestion[];
+  submission_format: SubmissionFormat | SubmissionFormat[];
+  child_task_id?: string | null;
+  expected_answer?: string | null;
+}
+
+export interface TaskSubmission {
+  text_response?: string | null;
+  image_url?: string | null;
+  video_url?: string | null;
+  audio_url?: string | null;
+  answers?: TaskAnswer[] | null;
+  score?: number | null;
+  max_score?: number | null;
+  submitted_at?: string | null;
+  [key: string]: any;
+}
 
 export interface Task {
   task_id: string;
@@ -243,8 +280,10 @@ export interface Task {
   company_id: string;
   title: string;
   description?: string | null;
+  expected_answer?: string | null;
   submission_format: SubmissionFormat[];
-  questions: any[];
+  questions: TaskQuestion[];
+  bundle_tasks: BundleTask[];
   status: string;
   due_date: string | null;
   recurrence: string;
@@ -253,6 +292,8 @@ export interface Task {
   total_target_count: number;
   completion_count: number;
   created_at: string;
+  submitted: boolean;
+  submission: TaskSubmission | null;
   priority?: string | null;
   assigned_to?: string | null;
   updated_at?: string;
@@ -264,29 +305,60 @@ export interface TasksResponse {
   tasks: Task[];
 }
 
-export type TaskSubmissionType = "image" | "text" | "options";
+/** Internal submission the app can collect for a single format slot */
+export type TaskSubmissionType =
+  | "image"
+  | "text"
+  | "video"
+  | "audio"
+  | "options";
 
-export type TaskSubmissionWireType = "image" | "text" | "multiple_choice";
+export type TaskSubmissionWireType =
+  | "image"
+  | "text"
+  | "video"
+  | "audio"
+  | "multiple_choice";
 
 export interface TaskAnswer {
   question_id: string;
   question: string;
   correct_answer?: string;
-  selected_option: string;
+  selected_option?: string;
+  selected_options?: string[];
+}
+
+export interface FormatAnswer {
+  format: SubmissionFormat;
+  text_answer?: string;
+  image_url?: string;
+  video_url?: string;
+  audio_url?: string;
+  answers?: TaskAnswer[];
+}
+
+export interface BundleSubmissionEntry {
+  title: string;
+  answers: FormatAnswer[];
 }
 
 export interface TaskSubmissionPayload {
   assignment_id: string;
   task_id: string;
   user_id: string;
-  submission_type: TaskSubmissionType;
   max_score: number;
   score: number;
+  is_bundle?: boolean;
+  answers?: FormatAnswer[];
+  bundle_answers?: BundleSubmissionEntry[];
+
+  submission_type?: TaskSubmissionType;
   image_url?: string;
   text_answer?: string;
+  video_url?: string;
+  audio_url?: string;
   /** @deprecated use `answers` — kept for backwards compatibility */
   selected_options?: string[];
-  answers?: TaskAnswer[];
 }
 
 export interface TaskSubmissionResponse {

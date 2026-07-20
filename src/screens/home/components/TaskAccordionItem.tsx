@@ -8,7 +8,6 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
-  TextInput,
   Alert,
   ActivityIndicator,
 } from "react-native";
@@ -16,10 +15,19 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Task,
   SubmissionFormat,
-  TaskSubmissionType,
-  submitTaskAnswer,
+  TaskQuestion,
+  BundleTask,
+  FormatAnswer,
+  BundleSubmissionEntry,
+  submitFormatAnswer,
 } from "../../../api/users";
-import CameraCapture from "../../../components/camera/CamerCapture";
+import TaskSubmissionBlock, {
+  FormatAnswerLocal,
+  emptyAnswer,
+  isFormatAnswered,
+  getFormatMeta,
+  toFormatList,
+} from "../../../components/tasks/TaskSubmissionBlock";
 import { useAuth } from "../../../contex/AuthContext";
 
 if (
@@ -31,72 +39,8 @@ if (
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const FORMAT_META: Record<
-  SubmissionFormat,
-  { icon: string; color: string; bg: string; label: string }
-> = {
-  image: {
-    icon: "image-outline",
-    color: "#7C3AED",
-    bg: "#F5F3FF",
-    label: "Image",
-  },
-  audio: {
-    icon: "microphone-outline",
-    color: "#0891B2",
-    bg: "#ECFEFF",
-    label: "Audio",
-  },
-  video: {
-    icon: "video-outline",
-    color: "#DB2777",
-    bg: "#FDF2F8",
-    label: "Video",
-  },
-  text: {
-    icon: "text-box-outline",
-    color: "#059669",
-    bg: "#ECFDF5",
-    label: "Text",
-  },
-};
-
-const OPTIONS_META = {
-  icon: "format-list-bulleted",
-  color: "#D97706",
-  bg: "#FFFBEB",
-  label: "Options",
-};
-
-const getFormatMeta = (fmt?: SubmissionFormat) =>
-  FORMAT_META[fmt ?? "text"] ?? FORMAT_META["text"];
-
-/**
- * Resolves the *effective* submission type the mobile app actually collects.
- * Mobile currently only supports 3 input modes: image / text / options.
- * - If the task has a question with options → "options"
- * - Else if the primary submission_format is "image" → "image"
- * - Else (text, audio, video — audio/video are answered via text for now) → "text"
- */
-const resolveEffectiveType = (
-  task: Task,
-  primaryFormat: SubmissionFormat,
-): TaskSubmissionType => {
-  const firstQuestion = Array.isArray(task.questions)
-    ? task.questions[0]
-    : null;
-  if (
-    firstQuestion &&
-    Array.isArray(firstQuestion.options) &&
-    firstQuestion.options.length > 0
-  ) {
-    return "options";
-  }
-  if (primaryFormat === "image") return "image";
-  return "text";
-};
-
 const isTaskCompleted = (task: Task): boolean => {
+  if (typeof task.submitted === "boolean") return task.submitted;
   const status = (task.status ?? "").toString().toLowerCase();
   return (
     status.includes("complete") ||
@@ -117,102 +61,94 @@ const formatDate = (iso: string | null): string => {
   return `${d}/${m}/${y}`;
 };
 
+const questionsForFormat = (
+  format: SubmissionFormat,
+  questions: TaskQuestion[],
+): TaskQuestion[] => (format === "multiple_choice" ? (questions ?? []) : []);
+
+const buildFormatAnswers = (
+  formats: SubmissionFormat[],
+  questions: TaskQuestion[],
+  answersByFormat: Record<string, FormatAnswerLocal>,
+): FormatAnswer[] =>
+  formats
+    .filter((f) => f !== "bundle")
+    .map((format) => {
+      const val = answersByFormat[format] ?? emptyAnswer();
+      const out: FormatAnswer = { format };
+      if (format === "text") out.text_answer = val.text?.trim();
+      if (format === "image") out.image_url = val.image?.uri;
+      if (format === "video") out.video_url = val.video?.uri;
+      if (format === "audio") out.audio_url = val.audio?.uri;
+      if (format === "multiple_choice") {
+        const qs = questionsForFormat(format, questions);
+        out.answers = qs.map((q) => {
+          const sel = val.optionSelections?.[q.id];
+          const selArray = Array.isArray(sel)
+            ? sel
+            : typeof sel === "string" && sel.length > 0
+              ? [sel]
+              : [];
+
+          const selectedOption = selArray.join(", ");
+          const correctAnswer =
+            q.correctAnswer ?? q.correctAnswers?.[0] ?? q.writtenAnswer ?? "";
+          return {
+            question_id: q.id,
+            question: q.question,
+            correct_answer: correctAnswer,
+            selected_option: selectedOption,
+          };
+        });
+      }
+      return out;
+    });
+
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-/** Text area for non-image submissions */
-const TextSubmissionInput = ({
+const FormatSection = ({
+  format,
+  questions,
   value,
   onChange,
-  placeholder,
+  title,
 }: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-}) => (
-  <View style={verifyStyles.textInputWrapper}>
-    <MaterialCommunityIcons
-      name="pencil-outline"
-      size={16}
-      color="#94A3B8"
-      style={{ marginBottom: 6 }}
-    />
-    <TextInput
-      style={verifyStyles.textInput}
-      multiline
-      numberOfLines={4}
-      value={value}
-      onChangeText={onChange}
-      placeholder={placeholder}
-      placeholderTextColor="#CBD5E1"
-      textAlignVertical="top"
-    />
-    <Text style={verifyStyles.charCount}>{value.length} chars</Text>
-  </View>
-);
-
-/** Single/choice option picker for question-based tasks */
-const OptionsSubmissionInput = ({
-  question,
-  options,
-  selected,
-  onSelect,
-}: {
-  question: string;
-  options: string[];
-  selected: string | null;
-  onSelect: (v: string) => void;
-}) => (
-  <View style={verifyStyles.optionsWrapper}>
-    {!!question && <Text style={verifyStyles.optionsQuestion}>{question}</Text>}
-    {options.map((opt) => {
-      const isSelected = selected === opt;
-      return (
-        <TouchableOpacity
-          key={opt}
-          style={[
-            verifyStyles.optionRow,
-            isSelected && verifyStyles.optionRowSelected,
-          ]}
-          onPress={() => onSelect(opt)}
-          activeOpacity={0.8}
-        >
-          <View
-            style={[
-              verifyStyles.radioOuter,
-              isSelected && verifyStyles.radioOuterSelected,
-            ]}
-          >
-            {isSelected && <View style={verifyStyles.radioInner} />}
-          </View>
-          <Text
-            style={[
-              verifyStyles.optionText,
-              isSelected && verifyStyles.optionTextSelected,
-            ]}
-          >
-            {opt}
-          </Text>
-        </TouchableOpacity>
-      );
-    })}
-  </View>
-);
+  format: SubmissionFormat;
+  questions: TaskQuestion[];
+  value: FormatAnswerLocal;
+  onChange: (next: FormatAnswerLocal) => void;
+  title: string;
+}) => {
+  const meta = getFormatMeta(format);
+  return (
+    <View style={{ marginBottom: 16 }}>
+      <View style={styles.formatSectionHeader}>
+        <MaterialCommunityIcons
+          name={meta.icon as any}
+          size={14}
+          color={meta.color}
+        />
+        <Text style={[styles.formatSectionLabel, { color: meta.color }]}>
+          {meta.label}
+        </Text>
+      </View>
+      <TaskSubmissionBlock
+        format={format}
+        questions={questionsForFormat(format, questions)}
+        value={value}
+        onChange={onChange}
+        textPlaceholder={`Write your response for "${title}"…`}
+      />
+    </View>
+  );
+};
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
 interface TaskAccordionItemProps {
   task: Task;
   userId?: string | null;
-  onSubmit?: (
-    task: Task,
-    payload: {
-      text?: string;
-      imageUri?: string;
-      base64?: string;
-      mimeType?: string;
-      selectedOption?: string;
-    },
-  ) => void;
+  onSubmit?: (task: Task, payload: Record<string, any>) => void;
   /** Called after a successful API submission so the parent can refetch tasks */
   onSubmitted?: (task: Task) => void;
 }
@@ -225,14 +161,25 @@ export default function TaskAccordionItem({
 }: TaskAccordionItemProps) {
   const [expanded, setExpanded] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [textValue, setTextValue] = useState("");
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [imageBase64, setImageBase64] = useState<string | null>(null);
-  const [imageMime, setImageMime] = useState<string>("image/jpeg");
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [justCompleted, setJustCompleted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  const [answers, setAnswers] = useState<Record<string, FormatAnswerLocal>>({});
+  const [bundleAnswers, setBundleAnswers] = useState<
+    Record<number, Record<string, FormatAnswerLocal>>
+  >({});
+  const [expandedBundleIdx, setExpandedBundleIdx] = useState<
+    Record<number, boolean>
+  >({});
+  const toggleBundleIdx = (idx: number) => {
+    LayoutAnimation.configureNext({
+      duration: 220,
+      update: { type: "easeInEaseOut", property: "opacity" },
+    });
+    setExpandedBundleIdx((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
 
   let cachedUserId: string | null = null;
   try {
@@ -247,14 +194,18 @@ export default function TaskAccordionItem({
   )
     ? task.submission_format
     : [];
-  const primaryFormat = submissionFormats[0] ?? "text";
-  const firstQuestion = Array.isArray(task.questions)
-    ? task.questions[0]
-    : null;
-  const effectiveType = resolveEffectiveType(task, primaryFormat);
-  const isImage = effectiveType === "image";
-  const isOptions = effectiveType === "options";
-  const primaryMeta = isOptions ? OPTIONS_META : getFormatMeta(primaryFormat);
+  const questions: TaskQuestion[] = Array.isArray(task.questions)
+    ? task.questions
+    : [];
+  const bundleTasks: BundleTask[] = Array.isArray(task.bundle_tasks)
+    ? task.bundle_tasks
+    : [];
+  const isBundle =
+    submissionFormats.includes("bundle") && bundleTasks.length > 0;
+
+  const primaryMeta = isBundle
+    ? getFormatMeta("bundle")
+    : getFormatMeta(submissionFormats[0] ?? "text");
   const overdue = isTaskOverdue(task.due_date ?? null);
   const completed = isTaskCompleted(task) || justCompleted;
 
@@ -269,21 +220,59 @@ export default function TaskAccordionItem({
       duration: 220,
       useNativeDriver: true,
     }).start();
-    if (expanded) setVerifying(false); // collapse resets verify panel
+    if (expanded) setVerifying(false);
     setExpanded((p) => !p);
   };
 
+  const getAnswer = (format: string) => answers[format] ?? emptyAnswer();
+  const setAnswer = (format: string, next: FormatAnswerLocal) =>
+    setAnswers((prev) => ({ ...prev, [format]: next }));
+
+  const getBundleAnswer = (bIdx: number, format: string) =>
+    bundleAnswers[bIdx]?.[format] ?? emptyAnswer();
+  const setBundleAnswer = (
+    bIdx: number,
+    format: string,
+    next: FormatAnswerLocal,
+  ) =>
+    setBundleAnswers((prev) => ({
+      ...prev,
+      [bIdx]: { ...(prev[bIdx] ?? {}), [format]: next },
+    }));
+
+  const resetAllAnswers = () => {
+    setAnswers({});
+    setBundleAnswers({});
+    setExpandedBundleIdx({});
+  };
+
+  const validate = (): string | null => {
+    if (isBundle) {
+      for (const bt of bundleTasks) {
+        const idx = bundleTasks.indexOf(bt);
+        const fmts = toFormatList(bt.submission_format);
+        for (const fmt of fmts) {
+          const val = getBundleAnswer(idx, fmt);
+          if (!isFormatAnswered(fmt, bt.questions ?? [], val)) {
+            return `Please complete "${bt.title}" (${getFormatMeta(fmt).label}).`;
+          }
+        }
+      }
+      return null;
+    }
+    for (const fmt of submissionFormats) {
+      const val = getAnswer(fmt);
+      if (!isFormatAnswered(fmt, questions, val)) {
+        return `Please complete the ${getFormatMeta(fmt).label} section.`;
+      }
+    }
+    return null;
+  };
+
   const handleSubmit = async () => {
-    if (isImage && !imageBase64) {
-      Alert.alert("Required", "Please take a photo first.");
-      return;
-    }
-    if (isOptions && !selectedOption) {
-      Alert.alert("Required", "Please select an option.");
-      return;
-    }
-    if (!isImage && !isOptions && textValue.trim().length < 5) {
-      Alert.alert("Required", "Please enter at least 5 characters.");
+    const validationError = validate();
+    if (validationError) {
+      Alert.alert("Incomplete", validationError);
       return;
     }
     if (!effectiveUserId) {
@@ -297,74 +286,87 @@ export default function TaskAccordionItem({
       return;
     }
 
-    // Notify parent (kept for backwards-compat / local bookkeeping)
-    onSubmit?.(task, {
-      text: textValue,
-      imageUri: imageUri ?? undefined,
-      base64: imageBase64 ?? undefined,
-      mimeType: imageMime,
-      selectedOption: selectedOption ?? undefined,
-    });
+    const resolvedMaxScore: number = (task as any).max_score ?? 1;
 
-    const questionId: string =
-      firstQuestion?.id ?? firstQuestion?.question_id ?? "";
-    const correctAnswer: string | undefined =
-      firstQuestion?.correctAnswer ||
-      firstQuestion?.correct_answer ||
-      undefined;
+    const payload = isBundle
+      ? {
+          is_bundle: true,
+          bundle_answers: bundleTasks.map((bt, idx) => ({
+            title: bt.title,
+            answers: buildFormatAnswers(
+              toFormatList(bt.submission_format),
+              bt.questions ?? [],
+              bundleAnswers[idx] ?? {},
+            ),
+          })) as BundleSubmissionEntry[],
+        }
+      : {
+          is_bundle: false,
+          answers: buildFormatAnswers(submissionFormats, questions, answers),
+        };
 
-    const resolvedMaxScore: number =
-      (firstQuestion &&
-        (firstQuestion.max_score ?? firstQuestion.points ?? undefined)) ??
-      (task as any).max_score ??
-      1;
-
-    const resolvedScore: number = resolvedMaxScore;
+    onSubmit?.(task, payload);
 
     setSubmitting(true);
+    setSubmitError(null);
     try {
-      await submitTaskAnswer(effectiveUserId, {
-        assignment_id: task.assignment_id,
-        task_id: task.task_id,
-        user_id: effectiveUserId,
-        submission_type: effectiveType,
-        max_score: resolvedMaxScore,
-        score: resolvedScore,
-        image_url: isImage
-          ? `data:${imageMime};base64,${imageBase64}`
-          : undefined,
-        text_answer: !isImage && !isOptions ? textValue.trim() : undefined,
-        answers:
-          isOptions && selectedOption && firstQuestion
-            ? [
-                {
-                  question_id: questionId,
-                  question: firstQuestion.question ?? "",
-                  correct_answer: correctAnswer,
-                  selected_option: selectedOption,
-                },
-              ]
-            : undefined,
-      });
+      if (isBundle) {
+        for (let idx = 0; idx < bundleTasks.length; idx++) {
+          const bt = bundleTasks[idx];
+          const fmts = toFormatList(bt.submission_format);
+          const subTaskId = idx === 0 ? task.task_id : `${task.task_id}-${idx}`;
+          const formatAnswers = buildFormatAnswers(
+            fmts,
+            bt.questions ?? [],
+            bundleAnswers[idx] ?? {},
+          );
+          for (const fa of formatAnswers) {
+            await submitFormatAnswer({
+              taskId: subTaskId,
+              assignmentId: task.assignment_id,
+              userId: effectiveUserId,
+              maxScore: resolvedMaxScore,
+              score: resolvedMaxScore,
+              format: fa.format,
+              formatAnswer: fa,
+            });
+          }
+        }
+      } else {
+        const formatAnswers = buildFormatAnswers(
+          submissionFormats,
+          questions,
+          answers,
+        );
+        for (const fa of formatAnswers) {
+          await submitFormatAnswer({
+            taskId: task.task_id,
+            assignmentId: task.assignment_id,
+            userId: effectiveUserId,
+            maxScore: resolvedMaxScore,
+            score: resolvedMaxScore,
+            format: fa.format,
+            formatAnswer: fa,
+          });
+        }
+      }
 
       setJustCompleted(true);
       setVerifying(false);
-      setTextValue("");
-      setImageUri(null);
-      setImageBase64(null);
-      setSelectedOption(null);
+      resetAllAnswers();
       onSubmitted?.(task);
     } catch (err) {
-      Alert.alert(
-        "Submission failed",
+      const message =
         err instanceof Error
           ? err.message
-          : "Something went wrong. Please try again.",
-      );
+          : "Something went wrong. Please try again.";
+      setSubmitError(message);
+      Alert.alert("Submission failed", message);
     } finally {
       setSubmitting(false);
     }
   };
+  const validationMessage = verifying ? validate() : null;
 
   const rotateInterpolate = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -422,21 +424,45 @@ export default function TaskAccordionItem({
                   >
                     Due {formatDate(task.due_date ?? null)}
                   </Text>
-                  <View
-                    style={[
-                      styles.formatBadge,
-                      { backgroundColor: primaryMeta.bg },
-                    ]}
-                  >
-                    <Text
+                  {isBundle ? (
+                    <View
                       style={[
-                        styles.formatBadgeText,
-                        { color: primaryMeta.color },
+                        styles.formatBadge,
+                        { backgroundColor: primaryMeta.bg },
                       ]}
                     >
-                      {primaryMeta.label}
-                    </Text>
-                  </View>
+                      <Text
+                        style={[
+                          styles.formatBadgeText,
+                          { color: primaryMeta.color },
+                        ]}
+                      >
+                        {bundleTasks.length} tasks
+                      </Text>
+                    </View>
+                  ) : (
+                    submissionFormats.map((fmt) => {
+                      const meta = getFormatMeta(fmt);
+                      return (
+                        <View
+                          key={fmt}
+                          style={[
+                            styles.formatBadge,
+                            { backgroundColor: meta.bg },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.formatBadgeText,
+                              { color: meta.color },
+                            ]}
+                          >
+                            {meta.label}
+                          </Text>
+                        </View>
+                      );
+                    })
+                  )}
                 </>
               )}
             </View>
@@ -483,6 +509,18 @@ export default function TaskAccordionItem({
                 Due {formatDate(task.due_date ?? null)}
               </Text>
             </View>
+            {!!task.recurrence && task.recurrence !== "none" && (
+              <View style={styles.metaChip}>
+                <MaterialCommunityIcons
+                  name="repeat"
+                  size={13}
+                  color="#64748B"
+                />
+                <Text style={styles.metaChipText}>
+                  {task.recurrence.replace(/_/g, " ")}
+                </Text>
+              </View>
+            )}
             {overdue && (
               <View style={[styles.statusPill, { backgroundColor: "#FEF2F2" }]}>
                 <Text style={[styles.statusPillText, { color: "#EF4444" }]}>
@@ -502,24 +540,43 @@ export default function TaskAccordionItem({
           {/* Submission format badges */}
           <Text style={styles.sectionLabel}>SUBMISSION FORMAT</Text>
           <View style={styles.formatsRow}>
-            {submissionFormats.map((fmt) => {
-              const meta = getFormatMeta(fmt);
-              return (
-                <View
-                  key={fmt}
-                  style={[styles.formatChip, { backgroundColor: meta.bg }]}
+            {isBundle ? (
+              <View
+                style={[styles.formatChip, { backgroundColor: primaryMeta.bg }]}
+              >
+                <MaterialCommunityIcons
+                  name={primaryMeta.icon as any}
+                  size={13}
+                  color={primaryMeta.color}
+                />
+                <Text
+                  style={[styles.formatChipText, { color: primaryMeta.color }]}
                 >
-                  <MaterialCommunityIcons
-                    name={meta.icon as any}
-                    size={13}
-                    color={meta.color}
-                  />
-                  <Text style={[styles.formatChipText, { color: meta.color }]}>
-                    {meta.label}
-                  </Text>
-                </View>
-              );
-            })}
+                  {bundleTasks.length} bundled tasks
+                </Text>
+              </View>
+            ) : (
+              submissionFormats.map((fmt) => {
+                const meta = getFormatMeta(fmt);
+                return (
+                  <View
+                    key={fmt}
+                    style={[styles.formatChip, { backgroundColor: meta.bg }]}
+                  >
+                    <MaterialCommunityIcons
+                      name={meta.icon as any}
+                      size={13}
+                      color={meta.color}
+                    />
+                    <Text
+                      style={[styles.formatChipText, { color: meta.color }]}
+                    >
+                      {meta.label}
+                    </Text>
+                  </View>
+                );
+              })
+            )}
           </View>
 
           {/* Progress bar */}
@@ -558,58 +615,148 @@ export default function TaskAccordionItem({
               <View style={{ flex: 1 }}>
                 <Text style={styles.completedPanelTitle}>Completed</Text>
                 <Text style={styles.completedPanelSubtitle}>
-                  Task submitted successfully
+                  {task.submission?.submitted_at
+                    ? `Submitted ${formatDate(
+                        task.submission.submitted_at.slice(0, 10),
+                      )}`
+                    : "Task submitted successfully"}
                 </Text>
               </View>
             </View>
           ) : verifying ? (
             <View style={styles.verifyPanel}>
               <Text style={styles.verifyTitle}>
-                {isImage
-                  ? "Submit a Photo"
-                  : isOptions
-                    ? (firstQuestion?.question ?? "Answer the Question")
-                    : "Type Your Response"}
+                {isBundle ? "Complete All Sub-Tasks" : "Submit Your Response"}
               </Text>
               <Text style={styles.verifySubtitle}>
-                {isImage
-                  ? "Use your camera to take a live photo"
-                  : isOptions
-                    ? "Select the option that applies"
-                    : "Describe your response in writing"}
+                {isBundle
+                  ? "Each task below must be completed before submitting."
+                  : "Fill in every section below, then submit for verification."}
               </Text>
 
-              {isImage ? (
-                <CameraCapture
-                  onCapture={(b64, uri) => {
-                    setImageBase64(b64);
-                    setImageUri(uri);
-                  }}
-                />
-              ) : isOptions ? (
-                <OptionsSubmissionInput
-                  question=""
-                  options={(firstQuestion?.options as string[]) ?? []}
-                  selected={selectedOption}
-                  onSelect={setSelectedOption}
-                />
-              ) : (
-                <TextSubmissionInput
-                  value={textValue}
-                  onChange={setTextValue}
-                  placeholder={`Write your response for "${task.title}"…`}
-                />
-              )}
+              {isBundle
+                ? bundleTasks.map((bt, idx) => {
+                    const fmts = toFormatList(bt.submission_format);
+                    const isOpen = !!expandedBundleIdx[idx];
+                    const allAnswered =
+                      fmts.length > 0 &&
+                      fmts.every((fmt) =>
+                        isFormatAnswered(
+                          fmt,
+                          bt.questions ?? [],
+                          getBundleAnswer(idx, fmt),
+                        ),
+                      );
+                    return (
+                      <View
+                        key={`${bt.title}-${idx}`}
+                        style={styles.bundleCard}
+                      >
+                        <TouchableOpacity
+                          style={styles.bundleCardHeader}
+                          onPress={() => toggleBundleIdx(idx)}
+                          activeOpacity={0.75}
+                        >
+                          <View style={styles.bundleIndexBadge}>
+                            <Text style={styles.bundleIndexBadgeText}>
+                              {idx + 1}
+                            </Text>
+                          </View>
+
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={styles.bundleCardTitle}
+                              numberOfLines={isOpen ? undefined : 2}
+                            >
+                              {bt.title}
+                            </Text>
+                            <View style={styles.bundleFormatIconsRow}>
+                              {fmts.map((fmt) => {
+                                const meta = getFormatMeta(fmt);
+                                return (
+                                  <View
+                                    key={fmt}
+                                    style={[
+                                      styles.bundleFormatIconChip,
+                                      { backgroundColor: meta.bg },
+                                    ]}
+                                  >
+                                    <MaterialCommunityIcons
+                                      name={meta.icon as any}
+                                      size={11}
+                                      color={meta.color}
+                                    />
+                                    <Text
+                                      style={[
+                                        styles.bundleFormatIconChipText,
+                                        { color: meta.color },
+                                      ]}
+                                    >
+                                      {meta.label}
+                                    </Text>
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          </View>
+
+                          {allAnswered && (
+                            <MaterialCommunityIcons
+                              name="check-circle"
+                              size={16}
+                              color="#059669"
+                              style={{ marginRight: 4 }}
+                            />
+                          )}
+                          <MaterialCommunityIcons
+                            name={isOpen ? "chevron-up" : "chevron-down"}
+                            size={20}
+                            color="#94A3B8"
+                          />
+                        </TouchableOpacity>
+
+                        {isOpen && (
+                          <View style={styles.bundleCardBody}>
+                            {!!bt.description && (
+                              <Text style={styles.bundleCardDescription}>
+                                {bt.description}
+                              </Text>
+                            )}
+                            {fmts.map((fmt) => (
+                              <FormatSection
+                                key={fmt}
+                                format={fmt}
+                                questions={bt.questions ?? []}
+                                value={getBundleAnswer(idx, fmt)}
+                                onChange={(next) =>
+                                  setBundleAnswer(idx, fmt, next)
+                                }
+                                title={bt.title}
+                              />
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })
+                : submissionFormats.map((fmt) => (
+                    <FormatSection
+                      key={fmt}
+                      format={fmt}
+                      questions={questions}
+                      value={getAnswer(fmt)}
+                      onChange={(next) => setAnswer(fmt, next)}
+                      title={task.title}
+                    />
+                  ))}
 
               <View style={styles.verifyActions}>
                 <TouchableOpacity
                   style={styles.cancelBtn}
                   onPress={() => {
                     setVerifying(false);
-                    setTextValue("");
-                    setImageUri(null);
-                    setImageBase64(null);
-                    setSelectedOption(null);
+                    setSubmitError(null);
+                    resetAllAnswers();
                   }}
                   activeOpacity={0.8}
                   disabled={submitting}
@@ -617,10 +764,13 @@ export default function TaskAccordionItem({
                   <Text style={styles.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
+                  style={[
+                    styles.submitBtn,
+                    (submitting || !!validationMessage) && { opacity: 0.5 },
+                  ]}
                   onPress={handleSubmit}
                   activeOpacity={0.85}
-                  disabled={submitting}
+                  disabled={submitting || !!validationMessage}
                 >
                   {submitting ? (
                     <ActivityIndicator size="small" color="#fff" />
@@ -636,11 +786,21 @@ export default function TaskAccordionItem({
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              {!!validationMessage && (
+                <Text style={styles.inlineErrorText}>{validationMessage}</Text>
+              )}
+              {!validationMessage && !!submitError && (
+                <Text style={styles.inlineErrorText}>{submitError}</Text>
+              )}
             </View>
           ) : (
             <TouchableOpacity
               style={styles.beginBtn}
-              onPress={() => setVerifying(true)}
+              onPress={() => {
+                setSubmitError(null);
+                setVerifying(true);
+              }}
               activeOpacity={0.85}
             >
               <MaterialCommunityIcons name="play" size={15} color="#fff" />
@@ -845,6 +1005,77 @@ const styles = StyleSheet.create({
   },
   verifySubtitle: { fontSize: 12, color: "#64748B", marginBottom: 12 },
 
+  formatSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 7,
+  },
+  formatSectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+
+  bundleCard: {
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E0E7FF",
+    marginBottom: 12,
+    overflow: "hidden",
+  },
+  bundleCardHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: 12,
+  },
+  bundleIndexBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    backgroundColor: "#EEF2FF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 1,
+  },
+  bundleIndexBadgeText: { fontSize: 11, fontWeight: "800", color: "#4338CA" },
+  bundleCardTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#312E81",
+    lineHeight: 18,
+  },
+  bundleFormatIconsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 6,
+  },
+  bundleFormatIconChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  bundleFormatIconChipText: { fontSize: 10, fontWeight: "700" },
+  bundleCardBody: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  bundleCardDescription: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 10,
+    marginBottom: 4,
+  },
+
   verifyActions: { flexDirection: "row", gap: 10, marginTop: 12 },
   cancelBtn: {
     flex: 1,
@@ -867,68 +1098,11 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   submitBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
-});
-
-const verifyStyles = StyleSheet.create({
-  textInputWrapper: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 12,
-  },
-  textInput: {
-    fontSize: 13,
-    color: "#1E293B",
-    minHeight: 90,
-    lineHeight: 19,
-  },
-  charCount: {
-    textAlign: "right",
-    fontSize: 10,
-    color: "#CBD5E1",
-    marginTop: 4,
+  inlineErrorText: {
+    fontSize: 12,
     fontWeight: "600",
+    color: "#EF4444",
+    marginTop: 10,
+    textAlign: "center",
   },
-
-  optionsWrapper: { gap: 8 },
-  optionsQuestion: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#1E293B",
-    marginBottom: 4,
-  },
-  optionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  optionRowSelected: {
-    borderColor: "#2563EB",
-    backgroundColor: "#EFF6FF",
-  },
-  radioOuter: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: "#CBD5E1",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  radioOuterSelected: { borderColor: "#2563EB" },
-  radioInner: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    backgroundColor: "#2563EB",
-  },
-  optionText: { fontSize: 13, fontWeight: "600", color: "#475569" },
-  optionTextSelected: { color: "#1E3A8A", fontWeight: "700" },
 });

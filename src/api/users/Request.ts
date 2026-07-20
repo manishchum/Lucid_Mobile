@@ -930,6 +930,94 @@ export const submitQuizForGrading = async (
   }
 };
 
+export interface FormatSubmissionInput {
+  taskId: string;
+  assignmentId: string;
+  userId: string;
+  maxScore: number;
+  score: number;
+  format: SubmissionFormat;
+  formatAnswer: FormatAnswer;
+}
+
+const TEXT_ANALYSIS_FORMATS: SubmissionFormat[] = ["text", "multiple_choice"];
+
+export const submitFormatAnswer = async (
+  input: FormatSubmissionInput,
+): Promise<TaskSubmissionResponse> => {
+  const {
+    taskId,
+    assignmentId,
+    userId,
+    maxScore,
+    score,
+    format,
+    formatAnswer,
+  } = input;
+
+  const usesTextAnalysis = TEXT_ANALYSIS_FORMATS.includes(format);
+  const url = usesTextAnalysis
+    ? `${API_BASE_URL}/text-analysis/submit`
+    : `${API_BASE_URL}/task-manager/tasks/submit`;
+
+  const body: Record<string, any> = {
+    task_id: taskId,
+    assignment_id: assignmentId,
+    user_id: userId,
+    max_score: maxScore,
+    score: score,
+    submission_type: format,
+  };
+
+  if (format === "text") {
+    body.text_response = formatAnswer.text_answer ?? "";
+  } else if (format === "multiple_choice") {
+    body.answers = formatAnswer.answers ?? [];
+  } else if (format === "image") {
+    body.image_url = formatAnswer.image_url ?? "";
+  } else if (format === "video") {
+    body.video_url = formatAnswer.video_url ?? "";
+  } else if (format === "audio") {
+    body.audio_url = formatAnswer.audio_url ?? "";
+  }
+
+  try {
+    const headers = await getHeaders(userId);
+    console.log("[Request] submitFormatAnswer →", url, {
+      task_id: taskId,
+      format,
+    });
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(
+        `[Request] submitFormathhAnswer(${format}) ${response.status}:`,
+        errText,
+      );
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const json = (await response.json()) as TaskSubmissionResponse;
+    console.log(
+      `[Request] submitFormatAnswer(${format}) ✅`,
+      json?.submission_id,
+    );
+    return json;
+  } catch (error) {
+    console.error(
+      `[Request] Error submitting ${format} answer for task ${taskId}:`,
+      error,
+    );
+    throw error;
+  }
+};
+
 export const submitTaskAnswer = async (
   userId: string,
   payload: TaskSubmissionPayload,
@@ -1024,7 +1112,10 @@ export const getLeaderboardHighlight = async (
     });
     if (!response.ok) {
       const body = await response.text();
-      console.error(`[Request] getLeaderboardHighlight ${response.status}:`, body);
+      console.error(
+        `[Request] getLeaderboardHighlight ${response.status}:`,
+        body,
+      );
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     const json = await response.json();
