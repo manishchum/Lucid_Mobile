@@ -358,14 +358,16 @@ export default function SprintScreen({
 	if (!moduleId) {
 		return (
 			<View style={styles.centered}>
+				<View style={styles.emptyIconWrap}>
 				<MaterialCommunityIcons
 					name="lightning-bolt-outline"
 					size={56}
-					color="#CBD5E1"
-				/>
+					color="#A5B4FC"
+					/>
+				</View>
 				<Text style={styles.emptyTitle}>No Sprint Started</Text>
 				<Text style={styles.emptySubtitle}>
-					Go to the Home tab and tap "Start Sprint" on a learning plan to begin.
+					Go to the Home tab and tap <Text style={styles.emptyHighlight}>Start Sprint</Text> on a learning plan to begin.
 				</Text>
 				<TouchableOpacity
 					style={styles.emptyBtn}
@@ -667,27 +669,36 @@ export default function SprintScreen({
 }
 
 const styles = StyleSheet.create({
-	container: { flex: 1, backgroundColor: "#F9FAFB" },
+	container: { flex: 1, backgroundColor: "#FFF" },
 	centered: {
 		flex: 1,
 		justifyContent: "center",
 		alignItems: "center",
-		paddingHorizontal: 32,
-		paddingTop: 20,
-		gap: 12,
+		paddingHorizontal: 36,
+		backgroundColor: "#FFF",
 	},
+	emptyIconWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 24,
+    backgroundColor: "#EEF2FF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
+  },
 	emptyTitle: {
-		fontSize: 20,
-		fontWeight: "700",
-		color: "#374151",
-		textAlign: "center",
+		fontSize: 26,
+		fontWeight: "800",
+		color: "#1E293B",
+		marginBottom: 12,
 	},
 	emptySubtitle: {
 		fontSize: 14,
 		color: "#6B7280",
 		textAlign: "center",
-		lineHeight: 22,
+		lineHeight: 24,
 	},
+	emptyHighlight: { color: "#4F46E5", fontWeight: "700" },
 
 	header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 4 },
 	backBtnRow: {

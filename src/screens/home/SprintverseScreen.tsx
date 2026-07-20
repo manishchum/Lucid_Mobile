@@ -381,7 +381,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc", // Whole app matching clean light background
+    backgroundColor: "#FFF", // Whole app matching clean light background
   },
   loaderContainer: {
     flex: 1,
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: 1,
   },
   cardHeader: {
     flexDirection: "row",
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 12,
     backgroundColor: "#eff6ff",
-    borderWidth: 1,
+    // borderWidth: 1,
     borderColor: "#dbeafe",
     justifyContent: "center",
     alignItems: "center",
@@ -492,7 +492,7 @@ const styles = StyleSheet.create({
   },
   badgeContainer: {
     backgroundColor: "#eff6ff",
-    borderWidth: 1,
+    // borderWidth: 1,
     borderColor: "#dbeafe",
     borderRadius: 20,
     paddingVertical: 4,
