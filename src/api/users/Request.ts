@@ -195,6 +195,29 @@ export const getUserByPhone = async (phone: string): Promise<UserResponse> => {
   }
 };
 
+// 1c. Record user login metadata
+export const recordUserLogin = async (userId: string): Promise<any> => {
+  try {
+    const headers = await getHeaders(userId);
+    const url = `${API_BASE_URL}/users/record-login`;
+    console.log("[Request] recordUserLogin →", url);
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ user_id: userId }),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      console.error(`[Request] recordUserLogin ${response.status}:`, body);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("[Request] Error recording user login:", error);
+    throw error;
+  }
+};
+
 export const getModuleProgress = async (
   userId: string,
 ): Promise<ModuleProgress> => {

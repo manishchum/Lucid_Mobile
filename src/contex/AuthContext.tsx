@@ -5,7 +5,7 @@ import {
   onAuthStateChanged,
   signInWithPhoneNumber,
 } from "@react-native-firebase/auth";
-import { getUserByPhone } from "../api";
+import { getUserByPhone, recordUserLogin } from "../api";
 
 export interface CachedUser {
   userId: string;
@@ -208,6 +208,9 @@ export const AuthProvider = ({
       }
 
       console.log("[Auth] checkUserExists ✅ cached user:", user.userId);
+      recordUserLogin(user.userId).catch((e) =>
+        console.warn("[Auth] recordUserLogin warning:", e),
+      );
       return user;
     } catch (error) {
       console.error("[Auth] checkUserExists error:", error);
