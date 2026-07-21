@@ -27,6 +27,10 @@ type CompanyInfo = {
   name?: string;
   subscription_tier?: string | null;
   subscription_addons?: string[] | null;
+  enabled_languages?: string[] | null;
+  translation_languages?: string[] | null;
+  languages?: string[] | null;
+  rawCompany?: any;
 };
 
 interface TenantContextType {
@@ -102,12 +106,23 @@ export const TenantProvider = ({
     }
 
     setCompany({
+      ...companyLike,
       company_id: companyLike.company_id,
       name: companyLike.name,
       subscription_tier: companyLike.subscription_tier ?? null,
       subscription_addons: Array.isArray(companyLike.subscription_addons)
         ? companyLike.subscription_addons
         : null,
+      enabled_languages: Array.isArray(companyLike.enabled_languages)
+        ? companyLike.enabled_languages
+        : null,
+      translation_languages: Array.isArray(companyLike.translation_languages)
+        ? companyLike.translation_languages
+        : null,
+      languages: Array.isArray(companyLike.languages)
+        ? companyLike.languages
+        : null,
+      rawCompany: companyLike,
     });
 
     setAddonsKnown(Array.isArray(companyLike.subscription_addons));

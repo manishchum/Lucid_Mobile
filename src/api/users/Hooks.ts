@@ -599,6 +599,7 @@ export const useGetTrainingPlan = (
   };
 
   useEffect(() => {
+    setPlan(null);
     fetchPlan();
   }, [dbUserId, moduleId]);
 
@@ -1418,10 +1419,48 @@ export const useModuleProgress = (
       try {
         const response: ModuleProgress = await getModuleProgress(userId);
         const data = response.progress ?? [];
-        setProgress(data);
 
-        const cacheKey = `@module_progress_${userId}`;
-        await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
+        setProgress((prevProgress) => {
+          const localMap = new Map<string, ModuleProgressEntry>();
+          prevProgress.forEach((p) => {
+            if (p.processed_module_id) {
+              localMap.set(p.processed_module_id, p);
+            }
+          });
+
+          const mergedData = data.map((networkEntry) => {
+            const pid = networkEntry.processed_module_id;
+            const localEntry = pid ? localMap.get(pid) : undefined;
+            if (
+              localEntry &&
+              localEntry.quiz_score !== null &&
+              localEntry.quiz_score !== undefined &&
+              (networkEntry.quiz_score === null || networkEntry.quiz_score === undefined)
+            ) {
+              return {
+                ...networkEntry,
+                quiz_score: localEntry.quiz_score,
+                pass_status: localEntry.pass_status ?? networkEntry.pass_status,
+              };
+            }
+            return networkEntry;
+          });
+
+          const networkPids = new Set(data.map((d) => d.processed_module_id));
+          prevProgress.forEach((p) => {
+            if (p.processed_module_id && !networkPids.has(p.processed_module_id)) {
+              mergedData.push(p);
+            }
+          });
+
+          const cacheKey = `@module_progress_${userId}`;
+          AsyncStorage.setItem(cacheKey, JSON.stringify(mergedData)).catch((err) =>
+            console.warn("[Hook] Error saving merged progress to cache:", err),
+          );
+
+          return mergedData;
+        });
+
         return data;
       } catch (err) {
         const error =

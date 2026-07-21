@@ -20,7 +20,7 @@ interface Flashcard {
   points: string[];
 }
 
-type SupportedLang = "en" | "hi" | "bn" | "ta" | "te" | "mr" | "gu" | "kn";
+type SupportedLang = string;
 
 interface Props {
   isExpanded: boolean;

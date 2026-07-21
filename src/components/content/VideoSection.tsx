@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from "react";
+import React, { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTenant } from "../../contex/TenantContext";
 
 // ─── Language Types ────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ const ALL_VIDEO_LANGUAGES: VideoLanguageOption[] = [
 interface VideoSectionProps {
   isExpanded: boolean;
   onToggle: () => void;
+  lang?: string;
   // English (default)
   videoUrl?: string | null;
   // Regional — shown automatically when backend provides the URL
@@ -52,153 +54,12 @@ interface VideoSectionProps {
   videoUrlMarathi?: string | null;
 }
 
-// ─── Language Dropdown ─────────────────────────────────────────────────────────
-
-interface LangDropdownProps {
-  languages: VideoLanguageOption[];
-  selected: VideoLanguageCode;
-  onSelect: (code: VideoLanguageCode) => void;
-}
-
-function LanguageDropdown({
-  languages,
-  selected,
-  onSelect,
-}: LangDropdownProps) {
-  const [open, setOpen] = useState(false);
-  const selectedLang =
-    languages.find((l) => l.code === selected) ?? languages[0];
-
-  if (languages.length <= 1) return null;
-
-  return (
-    <View style={ddStyles.wrapper}>
-      <TouchableOpacity
-        style={ddStyles.trigger}
-        onPress={() => setOpen(true)}
-        activeOpacity={0.8}
-      >
-        <Text style={ddStyles.triggerLabel}>{selectedLang.label}</Text>
-        <MaterialCommunityIcons name="chevron-down" size={18} color="#64748B" />
-      </TouchableOpacity>
-
-      <Modal
-        visible={open}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setOpen(false)}
-      >
-        <TouchableOpacity
-          style={ddStyles.backdrop}
-          activeOpacity={1}
-          onPress={() => setOpen(false)}
-        >
-          <View style={ddStyles.menu}>
-            <Text style={ddStyles.menuTitle}>Select Language</Text>
-            <FlatList
-              data={languages}
-              keyExtractor={(item) => item.code}
-              renderItem={({ item }) => {
-                const isActive = item.code === selected;
-                return (
-                  <TouchableOpacity
-                    style={[ddStyles.option, isActive && ddStyles.optionActive]}
-                    onPress={() => {
-                      onSelect(item.code);
-                      setOpen(false);
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <Text
-                      style={[
-                        ddStyles.optionLabel,
-                        isActive && ddStyles.optionLabelActive,
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-                    {isActive && (
-                      <MaterialCommunityIcons
-                        name="check"
-                        size={18}
-                        color="#4338CA"
-                      />
-                    )}
-                  </TouchableOpacity>
-                );
-              }}
-              ItemSeparatorComponent={() => <View style={ddStyles.separator} />}
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
-    </View>
-  );
-}
-
-const ddStyles = StyleSheet.create({
-  wrapper: { marginBottom: 12 },
-  trigger: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F1F5F9",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8,
-    alignSelf: "flex-start",
-    minWidth: 160,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  triggerLabel: { flex: 1, fontSize: 14, fontWeight: "600", color: "#1E293B" },
-  backdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  menu: {
-    width: "80%",
-    backgroundColor: "white",
-    borderRadius: 18,
-    overflow: "hidden",
-    paddingTop: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
-  },
-  menuTitle: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#94A3B8",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-  },
-  option: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    gap: 12,
-    backgroundColor: "white",
-  },
-  optionActive: { backgroundColor: "#EEF2FF" },
-  optionLabel: { flex: 1, fontSize: 15, fontWeight: "500", color: "#334155" },
-  optionLabelActive: { fontWeight: "700", color: "#4338CA" },
-  separator: { height: 1, backgroundColor: "#F1F5F9", marginHorizontal: 18 },
-});
-
-// ─── Main Component ────────────────────────────────────────────────────────────
+// ─── Video Section Component ───────────────────────────────────────────────────
 
 export default function VideoSection({
   isExpanded,
   onToggle,
+  lang,
   videoUrl,
   videoUrlHinglish,
   videoUrlBengali,
@@ -206,24 +67,8 @@ export default function VideoSection({
   videoUrlTelugu,
   videoUrlMarathi,
 }: VideoSectionProps) {
-  // Prop map for dynamic lookup
-  const propMap: Record<string, string | null | undefined> = {
-    videoUrl,
-    videoUrlHinglish,
-    videoUrlBengali,
-    videoUrlTamil,
-    videoUrlTelugu,
-    videoUrlMarathi,
-  };
-
-  const availableLanguages = ALL_VIDEO_LANGUAGES.filter(
-    (lang) => !!propMap[lang.videoUrlKey as string],
-  );
-
-  const [language, setLanguage] = useState<VideoLanguageCode>("en");
-
-  const videoRef = useRef<Video>(null);
-  const fsVideoRef = useRef<Video>(null);
+  const videoRef = useRef<any>(null);
+  const fsVideoRef = useRef<any>(null);
   const [status, setStatus] = useState<AVPlaybackStatus | null>(null);
   const [isBuffering, setIsBuffering] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -233,13 +78,30 @@ export default function VideoSection({
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const insets = useSafeAreaInsets();
 
-  // Resolve active video URL from selected language
-  const currentLang =
-    availableLanguages.find((l) => l.code === language) ??
-    availableLanguages[0];
-  const activeVideoUrl = currentLang
-    ? ((propMap[currentLang.videoUrlKey as string] as string | null) ?? null)
-    : null;
+  const activeVideoUrl = useMemo(() => {
+    if (lang === "hi" && videoUrlHinglish) return videoUrlHinglish;
+    if (lang === "bn" && videoUrlBengali) return videoUrlBengali;
+    if (lang === "ta" && videoUrlTamil) return videoUrlTamil;
+    if (lang === "te" && videoUrlTelugu) return videoUrlTelugu;
+    if (lang === "mr" && videoUrlMarathi) return videoUrlMarathi;
+    return (
+      videoUrl ??
+      videoUrlHinglish ??
+      videoUrlBengali ??
+      videoUrlTamil ??
+      videoUrlTelugu ??
+      videoUrlMarathi ??
+      null
+    );
+  }, [
+    lang,
+    videoUrl,
+    videoUrlHinglish,
+    videoUrlBengali,
+    videoUrlTamil,
+    videoUrlTelugu,
+    videoUrlMarathi,
+  ]);
 
   const isLoaded = status?.isLoaded ?? false;
   const isPlaying = isLoaded && (status as any).isPlaying;
@@ -252,7 +114,7 @@ export default function VideoSection({
     setIsTransitioning(true);
     setStatus(null);
     setIsBuffering(false);
-  }, [language]);
+  }, [activeVideoUrl]);
 
   // Track screen size changes (orientation flips)
   useEffect(() => {
@@ -566,14 +428,6 @@ export default function VideoSection({
 
         {isExpanded && (
           <View style={styles.body}>
-            {/* Language dropdown — hidden when only 1 language available */}
-            {availableLanguages.length > 1 && (
-              <LanguageDropdown
-                languages={availableLanguages}
-                selected={language}
-                onSelect={(code) => setLanguage(code)}
-              />
-            )}
 
             {!activeVideoUrl ? (
               <View style={styles.unavailable}>

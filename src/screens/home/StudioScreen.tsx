@@ -33,6 +33,7 @@ import VideoSection from "../../components/content/VideoSection";
 import AIAssistantSection from "../../components/content/AIAssistantSection";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 import { useModuleTranslation } from "../../hooks/useModuleTranslation";
+import ModuleLanguageSelector from "../../components/content/ModuleLanguageSelector";
 
 /**
  * StudioScreen
@@ -89,7 +90,7 @@ export default function StudioScreen({ navigation }: any) {
   const moduleTitle: string = activeModule?.moduleTitle ?? "";
   const sprintTitle: string = activeModule?.sprintTitle ?? "";
 
-  const [lang, setLang] = useState<'en' | 'hi' | 'bn' | 'ta' | 'te' | 'mr' | 'gu' | 'kn'>('en');
+  const [lang, setLang] = useState<string>('en');
 
   // ─── Debug logging: Validate incoming params ──────────────────────────────
   useEffect(() => {
@@ -237,14 +238,18 @@ export default function StudioScreen({ navigation }: any) {
       >
         {/* ── Hero ── */}
         <View style={styles.hero}>
-          <TouchableOpacity
-            style={styles.backBtnRow}
-            onPress={() => navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT })}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons name="chevron-left" size={24} color="#6366F1" />
-            <Text style={styles.backBtnText}>Back to Sprint</Text>
-          </TouchableOpacity>
+          <View style={styles.topHeaderBar}>
+            <TouchableOpacity
+              style={styles.backBtnRow}
+              onPress={() => navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT })}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="chevron-left" size={24} color="#6366F1" />
+              <Text style={styles.backBtnText}>Back to Sprint</Text>
+            </TouchableOpacity>
+
+            <ModuleLanguageSelector selectedLang={lang} onSelectLang={setLang} />
+          </View>
 
           {/* <View style={styles.studioBadge}>
             <MaterialCommunityIcons name="brush" size={14} color="#4F46E5" />
@@ -344,6 +349,7 @@ export default function StudioScreen({ navigation }: any) {
             <PodcastSection
               isExpanded={expanded === "podcast"}
               onToggle={() => toggle("podcast")}
+              lang={lang}
               audioUrl={processedModule?.audio_url ?? null}
               audioUrlHinglish={processedModule?.audio_url_hinglish ?? null}
               podcastTimeline={processedModule?.podcast_timeline ?? null}
@@ -359,6 +365,7 @@ export default function StudioScreen({ navigation }: any) {
             <VideoSection
               isExpanded={expanded === "video"}
               onToggle={() => toggle("video")}
+              lang={lang}
               videoUrl={processedModule?.video_url ?? null}
               videoUrlHinglish={
                 processedModule?.video_url_hinglish ||
@@ -479,10 +486,15 @@ const styles = StyleSheet.create({
   metaTextHi: { fontSize: 12, fontWeight: "600", color: "#C2410C" },
 
   accordionList: { paddingHorizontal: 16, gap: 12 },
+  topHeaderBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
   backBtnRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
   },
   backBtnText: {
     fontSize: 14,
