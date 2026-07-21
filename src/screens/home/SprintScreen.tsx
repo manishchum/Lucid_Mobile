@@ -98,8 +98,18 @@ export default function SprintScreen({
       return [];
     }, [trainingPlan]);
 
+	const isTrainingPlanMatching = useMemo(() => {
+		if (!trainingPlan || !moduleId) return false;
+		const planModuleId =
+			trainingPlan?.module_id ??
+			trainingPlan?.plan?.module_id ??
+			"";
+		return !planModuleId || planModuleId === moduleId;
+	}, [trainingPlan, moduleId]);
+
 	const trainingPlanModulesByTitle = useMemo(() => {
 		const map = new Map<string, string>();
+		if (!isTrainingPlanMatching) return map;
 		const planModules: Array<{
 			title?: string;
 			order?: number;
@@ -112,10 +122,11 @@ export default function SprintScreen({
 			}
 		});
 		return map;
-	}, [trainingPlan]);
+	}, [trainingPlan, isTrainingPlanMatching]);
 
 	const trainingPlanModulesByOrder = useMemo(() => {
 		const map = new Map<number, string>();
+		if (!isTrainingPlanMatching) return map;
 		const planModules: Array<{
 			order?: number;
 			processed_module_id?: string;
@@ -126,12 +137,18 @@ export default function SprintScreen({
 			}
 		});
 		return map;
-	}, [trainingPlan]);
+	}, [trainingPlan, isTrainingPlanMatching]);
 
 	const resolveProcessedModuleId = (
 		index: number,
 		mod: { title?: string; order?: number },
 	): string => {
+		// 1. Primary: Direct positional match from activeSprint's processedModuleIds
+		if (processedModuleIds[index]) {
+			return processedModuleIds[index];
+		}
+
+		// 2. Fallback: Title or Order match if matching trainingPlan is available
 		const titleKey = (mod?.title ?? "").trim().toLowerCase();
 		const byTitle = titleKey
 			? trainingPlanModulesByTitle.get(titleKey)
@@ -143,7 +160,7 @@ export default function SprintScreen({
 			if (byOrder) return byOrder;
 		}
 
-		return processedModuleIds[index] ?? "";
+		return "";
 	};
 
 	const handleOpenReading = async (url: string) => {
@@ -564,22 +581,19 @@ export default function SprintScreen({
 									{/* Module info row */}
 									<View style={styles.cardRow}>
 										<View
-									style={[
-										styles.statusDot,
-										isDone && styles.statusDotDone,
-									]}>
-									{isDone ? (
-										<MaterialCommunityIcons
-											name="check"
-											size={14}
-											color="#fff"
-										/>
-									) : (
-										<Text style={styles.statusDotNumber}>
-											{index + 1}
-										</Text>
-									)}
-								</View>
+											style={[
+												styles.statusDot,
+												isDone && styles.statusDotDone,
+											]}>
+											<Text
+												style={[
+													styles.statusDotNumber,
+													isDone &&
+														styles.statusDotNumberDone,
+												]}>
+												{index + 1}
+											</Text>
+										</View>
 										<View style={styles.moduleInfo}>
 											{/* <Text style={styles.moduleLabel}>
 												MODULE {index + 1} OF{" "}
@@ -637,7 +651,7 @@ export default function SprintScreen({
 												<MaterialCommunityIcons
 													name="check-circle-outline"
 													size={14}
-													color="#6EE7B7"
+													color="#FFFFFF"
 													style={{ marginRight: 5 }}
 												/>
 											)}
@@ -873,6 +887,9 @@ const styles = StyleSheet.create({
 		fontSize: 11,
 		fontWeight: "800",
 		color: "#64748B",
+	},
+	statusDotNumberDone: {
+		color: "#FFFFFF",
 	},
 
 	moduleInfo: { flex: 1 },

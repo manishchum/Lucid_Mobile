@@ -23,6 +23,7 @@ export interface User {
   email_unsubscribed: boolean;
   unsubscribed_at: string | null;
   firebase_uid: string;
+  is_company_valid?: boolean;
 }
 
 export interface UserResponse {

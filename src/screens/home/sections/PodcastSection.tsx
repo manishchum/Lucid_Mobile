@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Audio, AVPlaybackStatus } from "expo-av";
+import { useTenant } from "../../../contex/TenantContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +76,7 @@ interface TranscriptEntry {
 interface PodcastSectionProps {
   isExpanded: boolean;
   onToggle: () => void;
+  lang?: string;
   // English (always present)
   audioUrl?: string | null;
   podcastTimeline?: string | null;
@@ -134,159 +136,12 @@ function speakerColors(speaker: string) {
   );
 }
 
-// ─── Language Dropdown ────────────────────────────────────────────────────────
-
-interface LanguageDropdownProps {
-  languages: LanguageOption[];
-  selected: LanguageCode;
-  onSelect: (code: LanguageCode) => void;
-}
-
-function LanguageDropdown({
-  languages,
-  selected,
-  onSelect,
-}: LanguageDropdownProps) {
-  const [open, setOpen] = useState(false);
-  const selectedLang =
-    languages.find((l) => l.code === selected) ?? languages[0];
-
-  // Single language — no dropdown needed
-  if (languages.length <= 1) return null;
-
-  return (
-    <View style={ddStyles.wrapper}>
-      {/* Trigger button */}
-      <TouchableOpacity
-        style={ddStyles.trigger}
-        onPress={() => setOpen(true)}
-        activeOpacity={0.8}
-      >
-        <Text style={ddStyles.triggerLabel}>{selectedLang.label}</Text>
-        <MaterialCommunityIcons name="chevron-down" size={18} color="#64748B" />
-      </TouchableOpacity>
-
-      {/* Dropdown modal */}
-      <Modal
-        visible={open}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setOpen(false)}
-      >
-        <TouchableOpacity
-          style={ddStyles.backdrop}
-          activeOpacity={1}
-          onPress={() => setOpen(false)}
-        >
-          <View style={ddStyles.menu}>
-            <Text style={ddStyles.menuTitle}>Select Language</Text>
-            <FlatList
-              data={languages}
-              keyExtractor={(item) => item.code}
-              renderItem={({ item }) => {
-                const isActive = item.code === selected;
-                return (
-                  <TouchableOpacity
-                    style={[ddStyles.option, isActive && ddStyles.optionActive]}
-                    onPress={() => {
-                      onSelect(item.code);
-                      setOpen(false);
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <Text
-                      style={[
-                        ddStyles.optionLabel,
-                        isActive && ddStyles.optionLabelActive,
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-                    {isActive && (
-                      <MaterialCommunityIcons
-                        name="check"
-                        size={18}
-                        color="#4338CA"
-                      />
-                    )}
-                  </TouchableOpacity>
-                );
-              }}
-              ItemSeparatorComponent={() => <View style={ddStyles.separator} />}
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
-    </View>
-  );
-}
-
-const ddStyles = StyleSheet.create({
-  wrapper: { marginBottom: 14 },
-  trigger: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F1F5F9",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8,
-    alignSelf: "flex-start",
-    minWidth: 160,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  flag: { fontSize: 18 },
-  triggerLabel: { flex: 1, fontSize: 14, fontWeight: "600", color: "#1E293B" },
-
-  backdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  menu: {
-    width: "80%",
-    backgroundColor: "white",
-    borderRadius: 18,
-    overflow: "hidden",
-    paddingTop: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
-  },
-  menuTitle: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#94A3B8",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-  },
-  option: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    gap: 12,
-    backgroundColor: "white",
-  },
-  optionActive: { backgroundColor: "#EEF2FF" },
-  optionFlag: { fontSize: 22 },
-  optionLabel: { flex: 1, fontSize: 15, fontWeight: "500", color: "#334155" },
-  optionLabelActive: { fontWeight: "700", color: "#4338CA" },
-  separator: { height: 1, backgroundColor: "#F1F5F9", marginHorizontal: 18 },
-});
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PodcastSection({
   isExpanded,
   onToggle,
+  lang,
   audioUrl,
   audioUrlHindi,
   podcastTimeline,
@@ -305,28 +160,48 @@ export default function PodcastSection({
   audioUrlHinglish,
   podcastTimelineHinglish,
 }: PodcastSectionProps) {
-  // ── Resolve available languages dynamically ───────────────────────────────
-  // Map prop values so the lookup works cleanly
-  const propMap: Record<string, string | null | undefined> = {
+  const activeAudioUrl = useMemo(() => {
+    if (lang === "hi" && (audioUrlHindi || audioUrlHinglish))
+      return audioUrlHindi ?? audioUrlHinglish;
+    if (lang === "ta" && audioUrlTamil) return audioUrlTamil;
+    if (lang === "te" && audioUrlTelugu) return audioUrlTelugu;
+    if (lang === "mr" && audioUrlMarathi) return audioUrlMarathi;
+    if (lang === "bn" && audioUrlBengali) return audioUrlBengali;
+    return audioUrl ?? audioUrlHindi ?? audioUrlHinglish ?? null;
+  }, [
+    lang,
     audioUrl,
-    audioUrlHindi: audioUrlHindi ?? audioUrlHinglish, // legacy fallback
+    audioUrlHindi,
+    audioUrlHinglish,
     audioUrlTamil,
     audioUrlTelugu,
     audioUrlMarathi,
     audioUrlBengali,
+  ]);
+
+  const rawTimeline = useMemo(() => {
+    if (lang === "hi" && (podcastTimelineHindi || podcastTimelineHinglish))
+      return podcastTimelineHindi ?? podcastTimelineHinglish;
+    if (lang === "ta" && podcastTimelineTamil) return podcastTimelineTamil;
+    if (lang === "te" && podcastTimelineTelugu) return podcastTimelineTelugu;
+    if (lang === "mr" && podcastTimelineMarathi) return podcastTimelineMarathi;
+    if (lang === "bn" && podcastTimelineBengali) return podcastTimelineBengali;
+    return (
+      podcastTimeline ??
+      podcastTimelineHindi ??
+      podcastTimelineHinglish ??
+      null
+    );
+  }, [
+    lang,
     podcastTimeline,
-    podcastTimelineHindi: podcastTimelineHindi ?? podcastTimelineHinglish,
+    podcastTimelineHindi,
+    podcastTimelineHinglish,
     podcastTimelineTamil,
     podcastTimelineTelugu,
     podcastTimelineMarathi,
     podcastTimelineBengali,
-  };
-
-  const availableLanguages = ALL_LANGUAGES.filter(
-    (lang) => !!propMap[lang.audioUrlKey as string],
-  );
-
-  const [language, setLanguage] = useState<LanguageCode>("en");
+  ]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [positionMillis, setPositionMillis] = useState(0);
@@ -340,16 +215,7 @@ export default function PodcastSection({
   const itemHeights = useRef<Record<number, number>>({});
   const itemOffsets = useRef<Record<number, number>>({});
 
-  const currentLang =
-    availableLanguages.find((l) => l.code === language) ??
-    availableLanguages[0];
-  const activeUrl = currentLang
-    ? (propMap[currentLang.audioUrlKey as string] as string | null)
-    : null;
-  const activeTimeline = currentLang
-    ? (propMap[currentLang.timelineKey as string] as string | null)
-    : null;
-  const entries = parseTimeline(activeTimeline);
+  const entries = parseTimeline(rawTimeline);
   const positionSec = positionMillis / 1000;
 
   // ── Sync active transcript line ──────────────────────────────────────────
@@ -387,7 +253,7 @@ export default function PodcastSection({
       setActiveIndex(-1);
     };
     reset();
-  }, [language]);
+  }, [activeAudioUrl]);
 
   // ── Pause when section collapses ─────────────────────────────────────────
   useEffect(() => {
@@ -404,12 +270,12 @@ export default function PodcastSection({
 
   // ── Load & play ──────────────────────────────────────────────────────────
   const loadAndPlay = useCallback(async () => {
-    if (!activeUrl) return;
+    if (!activeAudioUrl) return;
     setIsLoading(true);
     try {
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
       const { sound } = await Audio.Sound.createAsync(
-        { uri: activeUrl },
+        { uri: activeAudioUrl },
         { shouldPlay: true },
         (status: AVPlaybackStatus) => {
           if (status.isLoaded) {
@@ -430,7 +296,7 @@ export default function PodcastSection({
     } finally {
       setIsLoading(false);
     }
-  }, [activeUrl]);
+  }, [activeAudioUrl]);
 
   const handlePlayPause = async () => {
     if (!soundRef.current) {
@@ -504,16 +370,7 @@ export default function PodcastSection({
 
       {isExpanded && (
         <View style={styles.body}>
-          {/* Language dropdown — hidden when only 1 language available */}
-          {availableLanguages.length > 1 && (
-            <LanguageDropdown
-              languages={availableLanguages}
-              selected={language}
-              onSelect={(code) => setLanguage(code)}
-            />
-          )}
-
-          {!activeUrl ? (
+          {!activeAudioUrl ? (
             <View style={styles.empty}>
               <MaterialCommunityIcons
                 name="music-off"

@@ -15,6 +15,7 @@ import { Video, ResizeMode, Audio, AVPlaybackStatus } from "expo-av";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { simplifyHindiText } from "./HindiSimplifier";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useTenant } from "../../../contex/TenantContext";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -344,7 +345,7 @@ function parseHtmlContent(html: string): ParsedSection[] {
     .filter((section) => section.sectionClass !== "activity");
 }
 
-type SupportedLang = "en" | "hi" | "bn" | "ta" | "te" | "mr" | "gu" | "kn";
+type SupportedLang = string;
 
 interface LanguageOption {
   code: SupportedLang;
@@ -355,13 +356,50 @@ interface LanguageOption {
 const LANGUAGES: LanguageOption[] = [
   { code: "en", label: "English", englishName: "English" },
   { code: "hi", label: "हिन्दी", englishName: "Hindi" },
+  { code: "de", label: "Deutsch", englishName: "German" },
+  { code: "ru", label: "Русский", englishName: "Russian" },
+  { code: "fr", label: "Français", englishName: "French" },
+  { code: "it", label: "Italiano", englishName: "Italian" },
+  { code: "es", label: "Español", englishName: "Spanish" },
+  { code: "pl", label: "Polski", englishName: "Polish" },
+  { code: "uk", label: "Українська", englishName: "Ukrainian" },
+  { code: "ro", label: "Română", englishName: "Romanian" },
+  { code: "nl", label: "Nederlands", englishName: "Dutch" },
   { code: "bn", label: "বাংলা", englishName: "Bengali" },
   { code: "ta", label: "தமிழ்", englishName: "Tamil" },
   { code: "te", label: "తెలుగు", englishName: "Telugu" },
   { code: "mr", label: "मराठी", englishName: "Marathi" },
-  { code: "gu", label: "ગુજરાતી", englishName: "Gujarati" },
   { code: "kn", label: "ಕನ್ನಡ", englishName: "Kannada" },
+  { code: "pa", label: "ਪੰਜਾਬੀ", englishName: "Punjabi" },
+  { code: "gu", label: "ગુજરાતી", englishName: "Gujarati" },
+  { code: "ur", label: "اردو", englishName: "Urdu" },
+  { code: "or", label: "ଓଡ଼ିଆ", englishName: "Odia" },
 ];
+
+const NAME_TO_CODE: Record<string, string> = {
+  english: "en",
+  hindi: "hi",
+  hinglish: "hi",
+  german: "de",
+  russian: "ru",
+  french: "fr",
+  italian: "it",
+  spanish: "es",
+  polish: "pl",
+  ukrainian: "uk",
+  ukraine: "uk",
+  romanian: "ro",
+  dutch: "nl",
+  bengali: "bn",
+  tamil: "ta",
+  telugu: "te",
+  marathi: "mr",
+  kannada: "kn",
+  punjabi: "pa",
+  gujarati: "gu",
+  urdu: "ur",
+  odia: "or",
+};
 
 const TAB_LABEL_TRANSLATIONS: Record<string, Record<string, string>> = {
   hi: {
@@ -884,12 +922,59 @@ export default function CoreContentSection({
   sections: translatedSectionsProp,
   isTranslating: isTranslatingProp = false,
 }: Props) {
+  const { company } = useTenant();
   const [activeIdx, setActiveIdx] = useState(0);
   const [localLang, setLocalLang] = useState<SupportedLang>("en");
 
   const lang = langProp ?? localLang;
   const setLang = onLangChange ?? setLocalLang;
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  const availableLanguages = useMemo(() => {
+    if (!company) return LANGUAGES;
+
+    let candidates =
+      (company as any).enabled_languages ||
+      (company as any).translation_languages ||
+      (company as any).enabledLanguages ||
+      (company as any).enabledLanguageCodes ||
+      company.languages ||
+      (company as any).supported_languages ||
+      (company as any).allowed_languages ||
+      (company as any).selected_languages ||
+      [];
+
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      candidates = Array.isArray(company.subscription_addons)
+        ? company.subscription_addons
+        : [];
+    }
+
+    if (!Array.isArray(candidates) || candidates.length === 0) return LANGUAGES;
+
+    const validLangCodes = new Set(LANGUAGES.map((l) => l.code));
+    const normalized = new Set<string>();
+
+    for (const raw of candidates) {
+      if (!raw) continue;
+      const s = String(raw).trim().toLowerCase();
+
+      if (validLangCodes.has(s)) {
+        normalized.add(s);
+        continue;
+      }
+
+      if (NAME_TO_CODE[s]) {
+        normalized.add(NAME_TO_CODE[s]);
+        continue;
+      }
+    }
+
+    normalized.add("en");
+
+    const filtered = LANGUAGES.filter((l) => normalized.has(l.code));
+    return filtered.length > 0 ? filtered : LANGUAGES;
+  }, [company]);
 
   const rawSections = useMemo(
     () => parseHtmlContent(htmlContent ?? ""),
@@ -937,77 +1022,7 @@ export default function CoreContentSection({
 
       {isExpanded && (
         <View style={styles.content}>
-          {/* Language Selector Row */}
-          {htmlContent && rawSections.length > 0 && (
-            <View style={styles.langSelectorRow}>
-              <Text style={styles.langLabel}>Language:</Text>
-              <TouchableOpacity
-                onPress={() => setIsDropdownOpen(true)}
-                style={styles.dropdownButton}
-                activeOpacity={0.7}
-                disabled={isTranslating}
-              >
 
-                <Text style={styles.dropdownButtonText}>
-                  {LANGUAGES.find((l) => l.code === lang)?.label || "English"}
-                </Text>
-                <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
-              </TouchableOpacity>
-
-              {/* Language Selection Modal */}
-              <Modal
-                visible={isDropdownOpen}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setIsDropdownOpen(false)}
-              >
-                <TouchableOpacity
-                  style={styles.modalOverlay}
-                  activeOpacity={1}
-                  onPress={() => setIsDropdownOpen(false)}
-                >
-                  <View style={styles.dropdownMenu}>
-                    <View style={styles.dropdownMenuHeader}>
-                      <Text style={styles.dropdownMenuTitle}>Select Language</Text>
-                      <TouchableOpacity onPress={() => setIsDropdownOpen(false)}>
-                        <MaterialCommunityIcons name="close" size={20} color="#64748b" />
-                      </TouchableOpacity>
-                    </View>
-                    <ScrollView style={styles.dropdownScroll} showsVerticalScrollIndicator={false}>
-                      {LANGUAGES.map((option) => {
-                        const isActive = lang === option.code;
-                        return (
-                          <TouchableOpacity
-                            key={option.code}
-                            style={[
-                              styles.dropdownItem,
-                              isActive && styles.dropdownItemActive,
-                            ]}
-                            onPress={() => {
-                              setIsDropdownOpen(false);
-                              handleLanguageChange(option.code);
-                            }}
-                          >
-                            <Text
-                              style={[
-                                styles.dropdownItemText,
-                                isActive && styles.dropdownItemTextActive,
-                              ]}
-                            >
-                              {option.label} {option.code !== "en" ? `(${option.englishName})` : ""}
-                            </Text>
-                            {isActive && (
-                              <MaterialCommunityIcons name="check" size={18} color="#6366f1" />
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
-                </TouchableOpacity>
-              </Modal>
-            </View>
-          )}
 
           {isTranslating && lang !== "en" ? (
             <View style={styles.translatingOverlay}>
