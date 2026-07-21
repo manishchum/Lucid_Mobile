@@ -823,6 +823,7 @@ export async function resolvePlanModules(
       order: m.order ?? i + 1,
       title: m.title ?? `Module ${i + 1}`,
       recommended_time: m.recommended_time ?? 0,
+      processed_module_id: m.processed_module_id ?? m.processedModuleId ?? "",
     }));
     const processedModuleIds = await resolveProcessedModuleIdsForPlan(
       plan,
@@ -945,6 +946,7 @@ async function processDashboardResponse(
         order: m.order ?? i + 1,
         title: m.title ?? `Module ${i + 1}`,
         recommended_time: m.recommended_time ?? 0,
+        processed_module_id: m.processed_module_id ?? m.processedModuleId ?? "",
       }));
 
       const tips: string = plan.plan_json?.tips ?? "";
@@ -1006,6 +1008,7 @@ async function processDashboardResponse(
             order: i + 1,
             title: cachedMeta?.title ?? `Module ${i + 1}`,
             recommended_time: cachedMeta?.recommended_time ?? 0,
+            processed_module_id: id,
           };
         });
       }

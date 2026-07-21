@@ -141,23 +141,28 @@ export default function SprintScreen({
 
 	const resolveProcessedModuleId = (
 		index: number,
-		mod: { title?: string; order?: number },
+		mod: { title?: string; order?: number; processed_module_id?: string; processedModuleId?: string },
 	): string => {
-		// 1. Primary: Direct positional match from activeSprint's processedModuleIds
-		if (processedModuleIds[index]) {
-			return processedModuleIds[index];
-		}
+		// 1. Direct property on mod object if available
+		const directId = mod?.processed_module_id ?? mod?.processedModuleId;
+		if (directId) return directId;
 
-		// 2. Fallback: Title or Order match if matching trainingPlan is available
+		// 2. Title match if matching trainingPlan is available
 		const titleKey = (mod?.title ?? "").trim().toLowerCase();
 		const byTitle = titleKey
 			? trainingPlanModulesByTitle.get(titleKey)
 			: "";
 		if (byTitle) return byTitle;
 
+		// 3. Order match if matching trainingPlan is available
 		if (typeof mod?.order === "number") {
 			const byOrder = trainingPlanModulesByOrder.get(mod.order);
 			if (byOrder) return byOrder;
+		}
+
+		// 4. Last fallback: Direct positional match from activeSprint's processedModuleIds
+		if (processedModuleIds[index]) {
+			return processedModuleIds[index];
 		}
 
 		return "";
