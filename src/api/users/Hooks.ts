@@ -49,6 +49,81 @@ const processedModuleMetadata = new Map<
 
 export const USER_QUERY_KEY = ["user"];
 
+const PLACEHOLDER_TITLE_RE = /^Module \d+$/;
+
+function hasPlaceholderTitles(cards: ResolvedPlanCard[]): boolean {
+  return cards.some((c) =>
+    c.modules.some((m) => PLACEHOLDER_TITLE_RE.test(m.title)),
+  );
+}
+
+async function reconcilePlaceholderTitles(
+  cards: ResolvedPlanCard[],
+  userId: string,
+): Promise<{ cards: ResolvedPlanCard[]; changed: boolean }> {
+  let changed = false;
+
+  const nextCards = await Promise.all(
+    cards.map(async (card) => {
+      const placeholderIdxs = card.modules
+        .map((m, i) => (PLACEHOLDER_TITLE_RE.test(m.title) ? i : -1))
+        .filter((i) => i !== -1);
+
+      if (placeholderIdxs.length === 0) return card;
+
+      let stillMissing = false;
+      const patchedFromCache = card.modules.map((m, i) => {
+        if (!placeholderIdxs.includes(i)) return m;
+        const pid = card.processedModuleIds[i];
+        const meta = pid ? processedModuleMetadata.get(pid) : undefined;
+        if (meta?.title) return { ...m, title: meta.title };
+        stillMissing = true;
+        return m;
+      });
+
+      if (!stillMissing) {
+        changed = true;
+        return { ...card, modules: patchedFromCache };
+      }
+
+      if (!card.moduleId) return { ...card, modules: patchedFromCache };
+
+      try {
+        const response = await getProcessedModules(card.moduleId, userId);
+        const items: any[] = response?.data ?? [];
+        items.forEach((pm: any) => {
+          if (pm?.processed_module_id) {
+            processedModuleMetadata.set(pm.processed_module_id, {
+              title: pm.title ?? "Module",
+              recommended_time: pm.recommended_time ?? 0,
+            });
+          }
+        });
+
+        const patched = patchedFromCache.map((m, i) => {
+          if (!placeholderIdxs.includes(i)) return m;
+          const pid = card.processedModuleIds[i];
+          const meta = pid ? processedModuleMetadata.get(pid) : undefined;
+          return meta?.title ? { ...m, title: meta.title } : m;
+        });
+
+        if (patched.some((m, i) => m.title !== card.modules[i].title)) {
+          changed = true;
+        }
+        return { ...card, modules: patched };
+      } catch (err) {
+        console.warn(
+          `[reconcilePlaceholderTitles] Failed to fetch titles for plan "${card.planKey}":`,
+          err,
+        );
+        return card;
+      }
+    }),
+  );
+
+  return { cards: nextCards, changed };
+}
+
 // ==================== USER BY EMAIL HOOK ====================
 interface UseGetUserByEmailReturn {
   user: User | null;
@@ -374,10 +449,7 @@ export const useGetTrainingModuleDetail = (
     setIsLoading(true);
     setError(null);
     try {
-      const response = await getTrainingModuleDetail(
-        moduleId,
-        moduleId,
-      );
+      const response = await getTrainingModuleDetail(moduleId, moduleId);
       setModule(response.module || null);
     } catch (err) {
       setError(
@@ -665,7 +737,10 @@ async function fetchAuthoritativeModules(
       return parsed;
     }
   } catch (err) {
-    console.warn(`[resolveIds] Failed to read auth modules cache for ${originalModuleId}:`, err);
+    console.warn(
+      `[resolveIds] Failed to read auth modules cache for ${originalModuleId}:`,
+      err,
+    );
   }
 
   // 3. Fetch from network
@@ -1280,6 +1355,21 @@ export const useGetDashboardSummary = (
           const cacheKey = `@dashboard_data_${userId}`;
           await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
 
+          if (hasPlaceholderTitles(cards)) {
+            reconcilePlaceholderTitles(cards, userId)
+              .then(({ cards: reconciled, changed }) => {
+                if (changed) {
+                  setResolvedPlanCards(reconciled);
+                  console.log(
+                    "Reconciled placeholder module titles in background",
+                  );
+                }
+              })
+              .catch((err) =>
+                console.warn("[Hook] Title reconciliation failed:", err),
+              );
+          }
+
           console.log(
             `[Timing] Total fetchDashboardData took ${Date.now() - startTime}ms`,
           );
@@ -1329,6 +1419,19 @@ export const useGetDashboardSummary = (
             cards.length,
           );
 
+          if (hasPlaceholderTitles(cards)) {
+            reconcilePlaceholderTitles(cards, userId)
+              .then(({ cards: reconciled, changed }) => {
+                if (changed) setResolvedPlanCards(reconciled);
+              })
+              .catch((err) =>
+                console.warn(
+                  "[Hook] Cached-card title reconciliation failed:",
+                  err,
+                ),
+              );
+          }
+
           hasCache = true;
           // Cache loaded! Dismiss spinner immediately so user sees cached screen
           setIsLoading(false);
@@ -1357,7 +1460,9 @@ export const useGetDashboardSummary = (
 
   useEffect(() => {
     const handleRefresh = () => {
-      console.log("[Hook] EventBus triggered refresh_dashboard. Refreshing silently...");
+      console.log(
+        "[Hook] EventBus triggered refresh_dashboard. Refreshing silently...",
+      );
       fetchDashboardData(false).catch(() => {});
     };
     return eventBus.on("refresh_dashboard", handleRefresh);
@@ -1438,7 +1543,8 @@ export const useModuleProgress = (
               localEntry &&
               localEntry.quiz_score !== null &&
               localEntry.quiz_score !== undefined &&
-              (networkEntry.quiz_score === null || networkEntry.quiz_score === undefined)
+              (networkEntry.quiz_score === null ||
+                networkEntry.quiz_score === undefined)
             ) {
               return {
                 ...networkEntry,
@@ -1451,14 +1557,21 @@ export const useModuleProgress = (
 
           const networkPids = new Set(data.map((d) => d.processed_module_id));
           prevProgress.forEach((p) => {
-            if (p.processed_module_id && !networkPids.has(p.processed_module_id)) {
+            if (
+              p.processed_module_id &&
+              !networkPids.has(p.processed_module_id)
+            ) {
               mergedData.push(p);
             }
           });
 
           const cacheKey = `@module_progress_${userId}`;
-          AsyncStorage.setItem(cacheKey, JSON.stringify(mergedData)).catch((err) =>
-            console.warn("[Hook] Error saving merged progress to cache:", err),
+          AsyncStorage.setItem(cacheKey, JSON.stringify(mergedData)).catch(
+            (err) =>
+              console.warn(
+                "[Hook] Error saving merged progress to cache:",
+                err,
+              ),
           );
 
           return mergedData;
@@ -1525,24 +1638,34 @@ export const useModuleProgress = (
 
   useEffect(() => {
     const handleRefresh = () => {
-      console.log("[Hook] EventBus triggered refresh_dashboard in useModuleProgress. Refreshing silently...");
+      console.log(
+        "[Hook] EventBus triggered refresh_dashboard in useModuleProgress. Refreshing silently...",
+      );
       fetchProgressData(false).catch(() => {});
     };
     return eventBus.on("refresh_dashboard", handleRefresh);
   }, [fetchProgressData]);
 
   useEffect(() => {
-    const handleQuizCompleted = (eventData: { processedModuleId: string; quizScore: number }) => {
+    const handleQuizCompleted = (eventData: {
+      processedModuleId: string;
+      quizScore: number;
+    }) => {
       if (!userId) return;
-      console.log("[Hook] EventBus triggered quiz_completed in useModuleProgress:", eventData);
+      console.log(
+        "[Hook] EventBus triggered quiz_completed in useModuleProgress:",
+        eventData,
+      );
       setProgress((prevProgress) => {
-        const exists = prevProgress.some((p) => p.processed_module_id === eventData.processedModuleId);
+        const exists = prevProgress.some(
+          (p) => p.processed_module_id === eventData.processedModuleId,
+        );
         let updatedProgress: ModuleProgressEntry[];
         if (exists) {
           updatedProgress = prevProgress.map((p) =>
             p.processed_module_id === eventData.processedModuleId
               ? { ...p, quiz_score: eventData.quizScore }
-              : p
+              : p,
           );
         } else {
           updatedProgress = [
@@ -1554,12 +1677,17 @@ export const useModuleProgress = (
             } as any,
           ];
         }
-        
+
         // Write to cache immediately so any future mount reads the fresh status
         const cacheKey = `@module_progress_${userId}`;
-        AsyncStorage.setItem(cacheKey, JSON.stringify(updatedProgress)).catch((err: any) => {
-          console.warn("[Hook] Failed to write updated progress to cache:", err);
-        });
+        AsyncStorage.setItem(cacheKey, JSON.stringify(updatedProgress)).catch(
+          (err: any) => {
+            console.warn(
+              "[Hook] Failed to write updated progress to cache:",
+              err,
+            );
+          },
+        );
 
         return updatedProgress;
       });
@@ -1608,6 +1736,7 @@ interface UseGetTasksReturn {
 export const useGetTasks = (
   userId: string | null,
   companyId: string | null,
+  enabled: boolean = true,
 ): UseGetTasksReturn => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [total, setTotal] = useState(0);
@@ -1630,8 +1759,10 @@ export const useGetTasks = (
   };
 
   useEffect(() => {
+    // Skip firing this request at all when the caller has no use for it yet
+    if (!enabled) return;
     if (userId && companyId) fetchTasks();
-  }, [userId, companyId]);
+  }, [userId, companyId, enabled]);
 
   return { tasks, total, isLoading, error, refetch: fetchTasks };
 };
@@ -1649,7 +1780,8 @@ export const useGetLeaderboardHighlight = (
   topLimit: number = 10,
   enabled: boolean = true,
 ): UseGetLeaderboardHighlightReturn => {
-  const [leaderboardData, setLeaderboardData] = useState<LeaderboardHighlightData | null>(null);
+  const [leaderboardData, setLeaderboardData] =
+    useState<LeaderboardHighlightData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const fetchPromiseRef = useRef<Promise<any> | null>(null);
@@ -1727,7 +1859,9 @@ export const useGetLeaderboardHighlight = (
       } catch (err) {
         if (!hasCache) {
           setError(
-            err instanceof Error ? err : new Error("Failed to fetch leaderboard"),
+            err instanceof Error
+              ? err
+              : new Error("Failed to fetch leaderboard"),
           );
         }
       }

@@ -19,6 +19,7 @@ import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
 
 type TabId = "sprints" | "tasks";
 type SprintSortOption = "title" | "dueDate" | "progress";
+type TaskSortOption = "title" | "recent" | "completion";
 
 const SPRINT_SORT_OPTIONS: {
   id: SprintSortOption;
@@ -28,6 +29,16 @@ const SPRINT_SORT_OPTIONS: {
   { id: "title", label: "Sort by Title", icon: "sort-alphabetical-ascending" },
   { id: "dueDate", label: "Sort by Due Date", icon: "calendar-clock-outline" },
   { id: "progress", label: "Sort by Progress", icon: "progress-check" },
+];
+
+const TASK_SORT_OPTIONS: {
+  id: TaskSortOption;
+  label: string;
+  icon: string;
+}[] = [
+  { id: "title", label: "Sort by Title", icon: "sort-alphabetical-ascending" },
+  { id: "recent", label: "Recently Added", icon: "clock-plus-outline" },
+  { id: "completion", label: "Completion", icon: "progress-check" },
 ];
 
 interface AssignedSectionProps {
@@ -51,17 +62,20 @@ export default function AssignedSection({
   const [sprintQuery, setSprintQuery] = useState("");
   const [taskQuery, setTaskQuery] = useState("");
   const [sprintSort, setSprintSort] = useState<SprintSortOption>("title");
+  const [taskSort, setTaskSort] = useState<TaskSortOption>("title");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
-
-  // ── Fetch tasks from API ─────────────────────────────────────────────
-  const { tasks, total, isLoading, error, refetch } = useGetTasks(
-    userId,
-    companyId,
-  );
 
   // Sprints are non-negotiable and always render
   const { hasFeature } = useFeatureGating();
   const showTaskManagement = hasFeature(FEATURES.TASK_MANAGEMENT);
+
+  // ── Fetch tasks from API ─────────────────────────────────────────────
+  // Only fires when this user's plan actually has task management enabled
+  const { tasks, total, isLoading, error, refetch } = useGetTasks(
+    userId,
+    companyId,
+    showTaskManagement,
+  );
 
   const sprintCount = planCards.length;
   const taskCount = total > 0 ? total : tasks.length;
@@ -104,20 +118,50 @@ export default function AssignedSection({
     return sorted;
   }, [planCards, sprintQuery, sprintSort]);
 
-  // ── Filtered tasks (search only) ──────────────────────────────────────
+  // ── Filtered + sorted tasks ─────────────────────────────────────────
   const filteredTasks = useMemo(() => {
     const q = taskQuery.trim().toLowerCase();
-    if (!q) return tasks;
-    return tasks.filter(
-      (task) =>
-        task.title?.toLowerCase().includes(q) ||
-        task.description?.toLowerCase().includes(q),
-    );
-  }, [tasks, taskQuery]);
+    const filtered = q
+      ? tasks.filter(
+          (task) =>
+            task.title?.toLowerCase().includes(q) ||
+            task.description?.toLowerCase().includes(q),
+        )
+      : tasks;
 
-  const activeSortOption = SPRINT_SORT_OPTIONS.find(
+    const sorted = [...filtered].sort((a, b) => {
+      switch (taskSort) {
+        case "recent": {
+          const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return bTime - aTime;
+        }
+        case "completion": {
+          const aPct = a.total_target_count
+            ? a.completion_count / a.total_target_count
+            : 0;
+          const bPct = b.total_target_count
+            ? b.completion_count / b.total_target_count
+            : 0;
+          return bPct - aPct;
+        }
+        case "title":
+        default:
+          return (a.title ?? "").localeCompare(b.title ?? "");
+      }
+    });
+
+    return sorted;
+  }, [tasks, taskQuery, taskSort]);
+
+  const activeSprintSortOption = SPRINT_SORT_OPTIONS.find(
     (opt) => opt.id === sprintSort,
   )!;
+  const activeTaskSortOption = TASK_SORT_OPTIONS.find(
+    (opt) => opt.id === taskSort,
+  )!;
+  const activeSortOption =
+    effectiveTab === "sprints" ? activeSprintSortOption : activeTaskSortOption;
 
   return (
     <View style={styles.container}>
@@ -189,82 +233,92 @@ export default function AssignedSection({
           )}
         </View>
 
-        {/* Sort dropdown — Sprints tab only */}
-        {effectiveTab === "sprints" && (
-          <>
-            <TouchableOpacity
-              style={styles.sortButton}
-              onPress={() => setSortMenuOpen(true)}
-              activeOpacity={0.8}
-            >
-              <MaterialCommunityIcons
-                name={activeSortOption.icon as any}
-                size={16}
-                color="#2563EB"
-              />
-              <MaterialCommunityIcons
-                name="chevron-down"
-                size={16}
-                color="#2563EB"
-              />
-            </TouchableOpacity>
+        {/* Sort dropdown — available on both Sprints and Tasks tabs */}
+        <TouchableOpacity
+          style={styles.sortButton}
+          onPress={() => setSortMenuOpen(true)}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons
+            name={activeSortOption.icon as any}
+            size={16}
+            color="#2563EB"
+          />
+          <MaterialCommunityIcons
+            name="chevron-down"
+            size={16}
+            color="#2563EB"
+          />
+        </TouchableOpacity>
 
-            <Modal
-              visible={sortMenuOpen}
-              transparent
-              animationType="fade"
-              onRequestClose={() => setSortMenuOpen(false)}
-            >
-              <Pressable
-                style={styles.modalOverlay}
-                onPress={() => setSortMenuOpen(false)}
-              >
-                <View style={styles.sortMenu}>
-                  <Text style={styles.sortMenuTitle}>Sort Sprints By</Text>
-                  {SPRINT_SORT_OPTIONS.map((opt) => {
-                    const isSelected = opt.id === sprintSort;
-                    return (
-                      <TouchableOpacity
-                        key={opt.id}
-                        style={[
-                          styles.sortMenuItem,
-                          isSelected && styles.sortMenuItemActive,
-                        ]}
-                        onPress={() => {
-                          setSprintSort(opt.id);
-                          setSortMenuOpen(false);
-                        }}
-                        activeOpacity={0.75}
-                      >
-                        <MaterialCommunityIcons
-                          name={opt.icon as any}
-                          size={17}
-                          color={isSelected ? "#2563EB" : "#64748B"}
-                        />
-                        <Text
-                          style={[
-                            styles.sortMenuItemText,
-                            isSelected && styles.sortMenuItemTextActive,
-                          ]}
-                        >
-                          {opt.label}
-                        </Text>
-                        {isSelected && (
-                          <MaterialCommunityIcons
-                            name="check"
-                            size={17}
-                            color="#2563EB"
-                            style={{ marginLeft: "auto" }}
-                          />
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </Pressable>
-            </Modal>
-          </>
-        )}
+        <Modal
+          visible={sortMenuOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setSortMenuOpen(false)}
+        >
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setSortMenuOpen(false)}
+          >
+            <View style={styles.sortMenu}>
+              <Text style={styles.sortMenuTitle}>
+                {effectiveTab === "sprints"
+                  ? "Sort Sprints By"
+                  : "Sort Tasks By"}
+              </Text>
+              {(effectiveTab === "sprints"
+                ? SPRINT_SORT_OPTIONS
+                : TASK_SORT_OPTIONS
+              ).map((opt) => {
+                const isSelected =
+                  effectiveTab === "sprints"
+                    ? opt.id === sprintSort
+                    : opt.id === taskSort;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.sortMenuItem,
+                      isSelected && styles.sortMenuItemActive,
+                    ]}
+                    onPress={() => {
+                      if (effectiveTab === "sprints") {
+                        setSprintSort(opt.id as SprintSortOption);
+                      } else {
+                        setTaskSort(opt.id as TaskSortOption);
+                      }
+                      setSortMenuOpen(false);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <MaterialCommunityIcons
+                      name={opt.icon as any}
+                      size={17}
+                      color={isSelected ? "#2563EB" : "#64748B"}
+                    />
+                    <Text
+                      style={[
+                        styles.sortMenuItemText,
+                        isSelected && styles.sortMenuItemTextActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                    {isSelected && (
+                      <MaterialCommunityIcons
+                        name="check"
+                        size={17}
+                        color="#2563EB"
+                        style={{ marginLeft: "auto" }}
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Modal>
       </View>
 
       {/* ── Content ───────────────────────────────────────────────── */}

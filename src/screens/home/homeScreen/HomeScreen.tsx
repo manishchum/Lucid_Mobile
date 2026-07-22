@@ -14,6 +14,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "../../../contex/AuthContext";
+import { useActiveSprint } from "../../../contex/ActiveSprintContext";
 import { useGetUserByPhone, useGetDashboardSummary } from "../../../api/users";
 import createStyles from "./style";
 import { useScreenProtection } from "../../../hooks/security/useScreenProtection";
@@ -26,10 +27,19 @@ const ProgressRing = ({ percentage }: { percentage: number }) => {
   const strokeWidth = 7;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (circumference * Math.min(Math.max(percentage, 0), 100)) / 100;
+  const strokeDashoffset =
+    circumference -
+    (circumference * Math.min(Math.max(percentage, 0), 100)) / 100;
 
   return (
-    <View style={{ width: size, height: size, justifyContent: "center", alignItems: "center" }}>
+    <View
+      style={{
+        width: size,
+        height: size,
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    >
       <Svg width={size} height={size}>
         <Circle
           cx={size / 2}
@@ -52,7 +62,13 @@ const ProgressRing = ({ percentage }: { percentage: number }) => {
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </Svg>
-      <View style={{ position: "absolute", justifyContent: "center", alignItems: "center" }}>
+      <View
+        style={{
+          position: "absolute",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
         <Text style={{ fontSize: 13, fontWeight: "800", color: "#0F172A" }}>
           {Math.round(percentage)}%
         </Text>
@@ -101,6 +117,27 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     error: dashboardError,
     refetch,
   } = useGetDashboardSummary(userId ?? null, companyId ?? null);
+
+  // Keep the Sprint screen's snapshot in sync
+  const { activeSprint, setActiveSprint } = useActiveSprint();
+  React.useEffect(() => {
+    if (!activeSprint) return;
+    const matchingCard = resolvedPlanCards.find(
+      (c) => c.planKey === activeSprint.planId,
+    );
+    if (!matchingCard) return;
+
+    const titlesChanged = matchingCard.modules.some(
+      (m, i) => m.title !== activeSprint.modules[i]?.title,
+    );
+    if (titlesChanged) {
+      setActiveSprint({
+        ...activeSprint,
+        modules: matchingCard.modules,
+        processedModuleIds: matchingCard.processedModuleIds,
+      });
+    }
+  }, [resolvedPlanCards, activeSprint, setActiveSprint]);
 
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -179,9 +216,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
-          refreshControl={
-            RefreshSpinner(refreshing, onRefresh)
-          }
+          refreshControl={RefreshSpinner(refreshing, onRefresh)}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
@@ -194,7 +229,9 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                 <Text style={styles.welcomeName}>
                   {(user?.name || "Learner").split(" ")[0]}!
                 </Text>
-                <Text style={styles.welcomeTagline}>Keep learning, keep growing.</Text>
+                <Text style={styles.welcomeTagline}>
+                  Keep learning, keep growing.
+                </Text>
               </View>
               <View style={styles.ringWrapper}>
                 <ProgressRing percentage={progressPercentage} />
@@ -224,7 +261,8 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                 color="#FFF7ED"
                 iconColor="#F59E0B"
                 val={String(
-                  resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS").length,
+                  resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS")
+                    .length,
                 )}
                 label="In Progress"
               />
