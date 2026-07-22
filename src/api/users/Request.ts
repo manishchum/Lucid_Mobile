@@ -84,9 +84,13 @@ export const postModuleChat = async (
     processed_module_id: data.processed_module_id,
   });
 
+  const chatToken = await getFirebaseToken();
   const response = await fetch(MODULE_CHAT_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(chatToken ? { Authorization: `Bearer ${chatToken}` } : {}),
+    },
     body: JSON.stringify({
       processed_module_id: data.processed_module_id,
       user_message: data.user_message,
@@ -107,14 +111,19 @@ export const postModuleChat = async (
   return result;
 };
 
-const getHeaders = async (userId?: string): Promise<Record<string, string>> => {
+const getHeaders = async (
+  userId?: string,
+  options?: { noCache?: boolean },
+): Promise<Record<string, string>> => {
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
-    "Cache-Control": "no-cache, no-store, must-revalidate",
-    Pragma: "no-cache",
-    Expires: "0",
   };
+  if (options?.noCache) {
+    headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    headers["Pragma"] = "no-cache";
+    headers["Expires"] = "0";
+  }
   if (userId) headers["X-User-ID"] = userId;
   const token = await getFirebaseToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -224,7 +233,7 @@ export const getModuleProgress = async (
   userId: string,
 ): Promise<ModuleProgress> => {
   try {
-    const headers = await getHeaders(userId);
+    const headers = await getHeaders(userId, { noCache: true });
     const url = `${API_BASE_URL}/module-progress/user/${userId}`;
     console.log("[Request] getModuleProgress →", url);
     const response = await fetch(url, { method: "GET", headers });
@@ -640,9 +649,9 @@ export const getDashboardSummary = async (
   companyId: string,
 ): Promise<DashboardSummaryResponse> => {
   try {
-    const headers = await getHeaders(userId);
+    const headers = await getHeaders(userId, { noCache: true });
     headers["X-Company-ID"] = companyId;
-    const url = `${API_BASE_URL}/employee/dashboard_summary/${encodeURIComponent(userId)}?_t=${Date.now()}`;
+    const url = `${API_BASE_URL}/employee/dashboard_summary/${encodeURIComponent(userId)}`;
     console.log("[Request] getDashboardSummary →", url);
     const response = await fetch(url, { method: "GET", headers });
     if (!response.ok) {
@@ -700,16 +709,16 @@ export const getDashboardSummary = async (
   }
 };
 
-// 14. Get tasks (Task Manager) — GET /task-manager/tasks
+// 14. Get tasks (Task Manager) — GET /task-manager/tasks/user/{userId}
 
 export const getTasks = async (
   userId: string,
   companyId: string,
 ): Promise<TasksResponse> => {
   try {
-    const headers = await getHeaders(userId);
+    const headers = await getHeaders(userId, { noCache: true });
     headers["X-Company-ID"] = companyId;
-    const url = `${API_BASE_URL}/task-manager/tasks`;
+    const url = `${API_BASE_URL}/task-manager/tasks/user/${userId}`;
     console.log("[Request] getTasks →", url);
     const response = await fetch(url, { method: "GET", headers });
     if (!response.ok) {
@@ -965,7 +974,7 @@ export interface FormatSubmissionInput {
   formatAnswer: FormatAnswer;
 }
 
-const TEXT_ANALYSIS_FORMATS: SubmissionFormat[] = ["text", "multiple_choice"];
+const TEXT_ANALYSIS_FORMATS: SubmissionFormat[] = ["text"];
 
 export const submitFormatAnswer = async (
   input: FormatSubmissionInput,
@@ -1130,7 +1139,7 @@ export const getLeaderboardHighlight = async (
   try {
     const url = `${API_BASE_URL}/analytics/leaderboard/${companyId}/highlight?top_limit=${topLimit}`;
     console.log("[Request] getLeaderboardHighlight →", url);
-    const headers = await getHeaders(userId);
+    const headers = await getHeaders(userId, { noCache: true });
     const response = await fetch(url, {
       method: "GET",
       headers,
