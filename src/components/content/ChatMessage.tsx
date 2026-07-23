@@ -15,11 +15,11 @@ export default function ChatMessage({ message, isUserMessage }: ChatMessageProps
         isUserMessage ? styles.userContainer : styles.aiContainer,
       ]}
     >
-      {!isUserMessage && (
+      {/* {!isUserMessage && (
         <View style={styles.aiAvatarCircle}>
           <MaterialCommunityIcons name="robot" size={20} color="#4F46E5" />
         </View>
-      )}
+      )} */}
       <View
         style={[
           styles.messageBubble,
@@ -41,7 +41,7 @@ export default function ChatMessage({ message, isUserMessage }: ChatMessageProps
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: 8,
     paddingHorizontal: 8,
     flexDirection: "row",
   },
@@ -55,24 +55,24 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     gap: 8,
   },
-  aiAvatarCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#F5F3FF",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#EBE9FE",
-    marginBottom: 2,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
-  },
+  // aiAvatarCircle: {
+  //   width: 36,
+  //   height: 36,
+  //   borderRadius: 18,
+  //   backgroundColor: "#F5F3FF",
+  //   justifyContent: "center",
+  //   alignItems: "center",
+  //   borderWidth: 1,
+  //   borderColor: "#EBE9FE",
+  //   marginBottom: 2,
+  //   shadowColor: "#0F172A",
+  //   shadowOffset: { width: 0, height: 2 },
+  //   shadowOpacity: 0.03,
+  //   shadowRadius: 4,
+  //   elevation: 1,
+  // },
   messageBubble: {
-    maxWidth: "80%",
+    // maxWidth: "80%",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 20,
@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.03,
     shadowRadius: 10,
-    elevation: 2,
+    // elevation: 1,
   },
   messageText: {
     fontSize: 14,

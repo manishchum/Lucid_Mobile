@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   StatusBar,
   BackHandler,
+  Keyboard,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
@@ -58,6 +60,8 @@ import ModuleLanguageSelector from "../../components/content/ModuleLanguageSelec
  */
 export default function StudioScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const mainScrollRef = useRef<ScrollView>(null);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>("core");
   const { cachedUser } = useAuth();
   const { hasFeature } = useFeatureGating();
@@ -91,6 +95,27 @@ export default function StudioScreen({ navigation }: any) {
   const sprintTitle: string = activeModule?.sprintTitle ?? "";
 
   const [lang, setLang] = useState<string>('en');
+
+  // ── Keyboard height listener ──
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => {
+        setKeyboardOffset(e.endCoordinates.height);
+        setTimeout(() => {
+          mainScrollRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardOffset(0)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // ─── Debug logging: Validate incoming params ──────────────────────────────
   useEffect(() => {
@@ -230,8 +255,10 @@ export default function StudioScreen({ navigation }: any) {
   return (
     <View style={styles.main}>
       <ScrollView
+        ref={mainScrollRef}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 + keyboardOffset }}
         refreshControl={
           RefreshSpinner(refreshing, onRefresh)
         }
@@ -400,6 +427,11 @@ export default function StudioScreen({ navigation }: any) {
               userId={userId ?? ""}
               companyId={companyId}
               lang={lang}
+              onInputFocus={() => {
+                setTimeout(() => {
+                  mainScrollRef.current?.scrollToEnd({ animated: true });
+                }, 150);
+              }}
             />
           )}
         </View>

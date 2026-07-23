@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator,
+  TouchableOpacity, ActivityIndicator, Keyboard, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,8 +19,31 @@ import ModuleLanguageSelector from '../../components/content/ModuleLanguageSelec
 
 export default function ContentDetailScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const mainScrollRef = useRef<ScrollView>(null);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>('core');
   const [lang, setLang] = useState<string>('en');
+
+  // Keyboard offset listener
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardOffset(e.endCoordinates.height);
+        setTimeout(() => {
+          mainScrollRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardOffset(0)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Get the authenticated user directly — no email lookup needed
   const { cachedUser } = useAuth();
@@ -73,8 +96,10 @@ export default function ContentDetailScreen({ route, navigation }: any) {
         </View>
       ) : (
         <ScrollView
+          ref={mainScrollRef}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: insets.bottom + 20 + keyboardOffset }}
         >
           {/* Hero */}
           <View style={styles.hero}>
@@ -168,6 +193,11 @@ export default function ContentDetailScreen({ route, navigation }: any) {
               userId={userId ?? ""}
               companyId={cachedUser?.companyId ?? ""}
               lang={lang}
+              onInputFocus={() => {
+                setTimeout(() => {
+                  mainScrollRef.current?.scrollToEnd({ animated: true });
+                }, 150);
+              }}
             />
           </View>
         </ScrollView>

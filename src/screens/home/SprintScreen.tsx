@@ -370,10 +370,14 @@ export default function SprintScreen({
 			`[SprintScreen] ✅ Module Quiz: Module[${index}] "${modTitle}" → processedModuleId="${processedModuleId}"`,
 		);
 
+		const targetMod = modules?.[index];
+		const thresholdValue = targetMod?.threshold_value ?? (mod as any)?.threshold_value;
+
 		navigation.navigate(STACK_ROUTES.MODULE_QUIZ, {
 			processedModuleId,
 			moduleId,
 			moduleTitle: modTitle,
+			passingThreshold: thresholdValue,
 		});
 	};
 

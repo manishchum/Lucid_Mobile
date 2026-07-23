@@ -467,7 +467,8 @@ export const getExistingAssessment = async (
     const raw = assessments[0]?.questions;
     if (!raw) return null;
     const questions = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return { questions, assessmentId: assessments[0]?.assessment_id };
+    const thresholdValue = assessments[0]?.threshold_value ?? assessments[0]?.threshold ?? null;
+    return { questions, assessmentId: assessments[0]?.assessment_id, thresholdValue };
   } catch (err) {
     console.warn("[Quiz] getExistingAssessment error:", err);
     return null;
@@ -479,7 +480,7 @@ export const generateModuleQuiz = async (
   learningStyle: string,
   userId: string,
   companyId: string,
-): Promise<{ questions: any[]; assessmentId?: string } | null> => {
+): Promise<{ questions: any[]; assessmentId?: string; thresholdValue?: number } | null> => {
   try {
     const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/gpt-mcq-quiz`;
@@ -520,6 +521,7 @@ export const generateModuleQuiz = async (
 
     let questions: any[] | null = null;
     let assessmentId: string | undefined;
+    let thresholdValue: number | undefined = json?.threshold_value ?? json?.thresholdValue ?? json?.threshold;
 
     // Shape A
     if (Array.isArray(json?.quizMapping) && json.quizMapping.length > 0) {
@@ -595,7 +597,7 @@ export const generateModuleQuiz = async (
       }
     }
 
-    return { questions, assessmentId };
+    return { questions, assessmentId, thresholdValue };
   } catch (err) {
     console.error("[Quiz] generateModuleQuiz error:", err);
     return null;
