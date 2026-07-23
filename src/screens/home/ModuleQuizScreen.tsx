@@ -11,6 +11,8 @@ import {
   Easing,
   Dimensions,
   Platform,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,6 +22,7 @@ import {
   getExistingAssessment,
   generateModuleQuiz,
   submitQuizForGrading,
+  getProcessedModuleById,
 } from "../../api/users/Request";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
@@ -152,11 +155,13 @@ const ResultProgressRing = ({
   max,
   pct,
   passed,
+  threshold = 70,
 }: {
   score: number;
   max: number;
   pct: number;
   passed: boolean;
+  threshold?: number;
 }) => {
   const size = 160;
   const strokeWidth = 12;
@@ -191,11 +196,14 @@ const ResultProgressRing = ({
         />
       </Svg>
       <View style={{ position: "absolute", justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ fontSize: 36, fontWeight: "900", color: "#0F172A", letterSpacing: -1 }}>
+        <Text style={{ fontSize: 34, fontWeight: "900", color: "#0F172A", letterSpacing: -1 }}>
           {Math.round(pct)}%
         </Text>
-        <Text style={{ fontSize: 13, fontWeight: "600", color: "#64748B", marginTop: 4 }}>
+        <Text style={{ fontSize: 12, fontWeight: "600", color: "#64748B", marginTop: 2 }}>
           {score} / {max} Correct
+        </Text>
+        <Text style={{ fontSize: 11, fontWeight: "700", color: passed ? "#10B981" : "#D97706", marginTop: 2 }}>
+          Pass Target: {threshold}%
         </Text>
       </View>
     </View>
@@ -223,7 +231,13 @@ export default function ModuleQuizScreen({
   const processedModuleId: string = route?.params?.processedModuleId ?? "";
   const moduleId: string = route?.params?.moduleId ?? ""; // original TrainingModule UUID
   const moduleTitle: string = route?.params?.moduleTitle ?? "Module Quiz";
+  const routeThreshold = route?.params?.passingThreshold ?? route?.params?.thresholdValue ?? route?.params?.threshold;
   const companyId: string = cachedUser?.companyId ?? "";
+
+  const [passingThreshold, setPassingThreshold] = useState<number>(
+    typeof routeThreshold === "number" ? routeThreshold : 70
+  );
+  const userId = cachedUser?.userId ?? "";
 
   const [phase, setPhase] = useState<LoadPhase>("idle");
   const [errorMsg, setErrorMsg] = useState("");
@@ -298,24 +312,51 @@ export default function ModuleQuizScreen({
     };
   }, [phase]);
 
-  // Pagination
+  // Pagination & Horizontal Pager
   const [currentPage, setCurrentPage] = useState(0);
+  const [containerWidth, setContainerWidth] = useState(SCREEN_WIDTH);
   const isSubmittingRef = useRef(false);
 
-  const scrollRef = useRef<ScrollView>(null);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const horizontalScrollRef = useRef<ScrollView>(null);
+  const resultScrollRef = useRef<ScrollView>(null);
 
   const totalPages = Math.ceil(questions.length / PAGE_SIZE);
   const pageStart = currentPage * PAGE_SIZE;
   const pageEnd = Math.min(pageStart + PAGE_SIZE, questions.length);
   const pageQuestions = questions.slice(pageStart, pageEnd);
 
+  const answeredCount = userAnswers.filter((a) => a !== null).length;
+  const remainingCount = questions.length - answeredCount;
+  const allAnswered = questions.length > 0 && remainingCount === 0;
   const answeredOnPage = pageQuestions.every(
     (_, i) => userAnswers[pageStart + i] !== null,
   );
-  const allAnswered =
-    questions.length > 0 && userAnswers.every((a) => a !== null);
   const isLastPage = currentPage === totalPages - 1;
+
+  const animatePage = (newPage: number) => {
+    if (newPage < 0 || newPage >= totalPages) return;
+    setCurrentPage(newPage);
+    horizontalScrollRef.current?.scrollTo({
+      x: newPage * containerWidth,
+      animated: true,
+    });
+  };
+
+  const handleNextPage = () => {
+    if (!isLastPage) animatePage(currentPage + 1);
+  };
+
+  const handlePrevPage = () => {
+    if (currentPage > 0) animatePage(currentPage - 1);
+  };
+
+  const handleScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetX = e.nativeEvent.contentOffset.x;
+    const pageIndex = Math.round(offsetX / containerWidth);
+    if (pageIndex !== currentPage && pageIndex >= 0 && pageIndex < totalPages) {
+      setCurrentPage(pageIndex);
+    }
+  };
 
   // ─── Load quiz ──────────────────────────────────────────────────────────────
   const loadQuiz = useCallback(async () => {
@@ -327,11 +368,21 @@ export default function ModuleQuizScreen({
       );
       return;
     }
-    if (isOnline === false) {
-      setShowNoInternet(true);
-      return;
-    }
+
     try {
+      // Fetch dynamic threshold from module if not supplied in route params
+      if (!routeThreshold && processedModuleId && userId) {
+        try {
+          const pm = await getProcessedModuleById(processedModuleId, userId);
+          if (pm?.threshold_value && typeof pm.threshold_value === "number") {
+            console.log(`[Quiz] Dynamic passing threshold loaded from module: ${pm.threshold_value}%`);
+            setPassingThreshold(pm.threshold_value);
+          }
+        } catch (e) {
+          console.warn("[Quiz] Dynamic threshold fetch error:", e);
+        }
+      }
+
       setPhase("fetching_style");
       const learningStyle = await getEmployeeLearningStyle(userId);
 
@@ -342,6 +393,10 @@ export default function ModuleQuizScreen({
         userId,
         moduleId,
       );
+
+      if (existing?.thresholdValue) {
+        setPassingThreshold(existing.thresholdValue);
+      }
 
       if (existing?.questions?.length > 0) {
         setQuestions(existing.questions);
@@ -359,6 +414,9 @@ export default function ModuleQuizScreen({
         userId,
         companyId,
       );
+      if (generated?.thresholdValue) {
+        setPassingThreshold(generated.thresholdValue);
+      }
       if (!generated || generated.questions.length === 0) {
         setPhase("error");
         setErrorMsg(
@@ -371,13 +429,13 @@ export default function ModuleQuizScreen({
       setAssessmentId(generated.assessmentId ?? "");
       setCurrentPage(0);
       setPhase("ready");
-    } catch {
+    } catch (_err) {
       setPhase("error");
       setErrorMsg(
         "Something went wrong. Please check your connection and try again.",
       );
     }
-  }, [cachedUser?.userId, cachedUser?.companyId, processedModuleId]);
+  }, [cachedUser?.userId, cachedUser?.companyId, processedModuleId, routeThreshold]);
 
   useEffect(() => {
     loadQuiz();
@@ -392,30 +450,7 @@ export default function ModuleQuizScreen({
     });
   };
 
-  // ─── Page navigation ────────────────────────────────────────────────────────
-  const animatePage = (newPage: number) => {
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 130,
-      useNativeDriver: true,
-    }).start(() => {
-      setCurrentPage(newPage);
-      scrollRef.current?.scrollTo({ y: 0, animated: false });
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true,
-      }).start();
-    });
-  };
 
-  const handleNextPage = () => {
-    if (!isLastPage) animatePage(currentPage + 1);
-  };
-
-  const handlePrevPage = () => {
-    if (currentPage > 0) animatePage(currentPage - 1);
-  };
 
   // ─── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -428,14 +463,15 @@ export default function ModuleQuizScreen({
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
 
-    // 1. Grade the quiz LOCALLY instantly!
+    // 1. Grade the quiz LOCALLY instantly using dynamic passingThreshold!
     const answerIndices = userAnswers.map((idx) => idx ?? 0);
     const score = answerIndices.reduce((acc, selectedIdx, i) => {
       return acc + (selectedIdx === questions[i]?.correctIndex ? 1 : 0);
     }, 0);
     const maxScore = questions.length;
     const computedPct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
-    const passed = computedPct >= 70;
+    const passed = computedPct >= passingThreshold;
+    console.log(`[Quiz Submit] Score: ${score}/${maxScore} (${computedPct}%), Dynamic Threshold: ${passingThreshold}%, Passed: ${passed}`);
 
     // Transition to results screen instantly (within ~10ms!)
     const localResult = {
@@ -449,7 +485,10 @@ export default function ModuleQuizScreen({
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 3200);
       // Trigger native in-app review at the "Aha! Moment" after confetti starts
-      setTimeout(() => requestReview(), 1500);
+      setTimeout(() => {
+        console.log("[Quiz] Requesting in-app review...");
+        requestReview();
+      }, 1500);
     }
     setPhase("ready");
 
@@ -524,7 +563,7 @@ export default function ModuleQuizScreen({
     setGradingResult(null);
     setShowConfetti(false);
     setCurrentPage(0);
-    fadeAnim.setValue(1);
+    horizontalScrollRef.current?.scrollTo({ x: 0, animated: false });
   };
 
   // ─── Shared header ──────────────────────────────────────────────────────────
@@ -539,14 +578,14 @@ export default function ModuleQuizScreen({
       </TouchableOpacity>
       <View style={{ flex: 1, marginHorizontal: 12 }}>
         <Text style={styles.headerTitle} numberOfLines={1}>
-          {moduleTitle}
+          Quiz
         </Text>
-        {phase === "ready" && !gradingResult && questions.length > 0 && (
+        {/* {phase === "ready" && !gradingResult && questions.length > 0 && (
           <Text style={styles.headerSub}>
             {userAnswers.filter((a) => a !== null).length} of {questions.length}{" "}
             answered
           </Text>
-        )}
+        )} */}
       </View>
       {phase === "ready" && !gradingResult && questions.length > 0 && (
         <View style={styles.pageChip}>
@@ -704,7 +743,7 @@ export default function ModuleQuizScreen({
     const score = gradingResult?.score ?? 0;
     const max = gradingResult?.maxScore ?? questions.length;
     const pct = gradingResult?.percentage ?? 0;
-    const passed = pct >= 70;
+    const passed = pct >= passingThreshold;
 
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -719,7 +758,7 @@ export default function ModuleQuizScreen({
         ]} />
 
         <ScrollView
-          ref={scrollRef}
+          ref={resultScrollRef}
           contentContainerStyle={[
             styles.scrollContent,
             { paddingBottom: insets.bottom + 32 },
@@ -737,7 +776,7 @@ export default function ModuleQuizScreen({
             </Text>
 
             {/* Circular Progress Ring */}
-            <ResultProgressRing score={score} max={max} pct={pct} passed={passed} />
+            <ResultProgressRing score={score} max={max} pct={pct} passed={passed} threshold={passingThreshold} />
 
             {/* Result Pips Row */}
             <View style={styles.pipsLabelRow}>
@@ -911,192 +950,263 @@ export default function ModuleQuizScreen({
         </View>
       )}
 
+      {/* Native Horizontal Paging Carousel for 100% Zero-Flicker Transitions */}
       <ScrollView
-        ref={scrollRef}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: insets.bottom + 24 },
-        ]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+        ref={horizontalScrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={handleScrollEnd}
+        scrollEventThrottle={16}
+        onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+        style={{ flex: 1 }}
       >
-        <Animated.View style={{ opacity: fadeAnim }}>
-          {/* Page heading */}
-          <View style={styles.pageHeadingRow}>
-            <Text style={styles.pageHeadingText}>
-              Questions {pageStart + 1}–{pageEnd}
-            </Text>
-            {answeredOnPage && !isLastPage && (
-              <View style={styles.pageCompletePill}>
-                <MaterialCommunityIcons
-                  name="check"
-                  size={11}
-                  color="#065F46"
-                />
-                <Text style={styles.pageCompleteText}>Page done</Text>
-              </View>
-            )}
-          </View>
+        {Array.from({ length: totalPages }, (_, pageIdx) => {
+          const pStart = pageIdx * PAGE_SIZE;
+          const pEnd = Math.min(pStart + PAGE_SIZE, questions.length);
+          const pQuestions = questions.slice(pStart, pEnd);
+          const pAnswered = pQuestions.every(
+            (_, i) => userAnswers[pStart + i] !== null,
+          );
 
-          {/* Questions on this page */}
-          {pageQuestions.map((q, localIdx) => {
-            const globalIdx = pageStart + localIdx;
-            const selected = userAnswers[globalIdx];
-
-            return (
-              <View key={globalIdx} style={styles.questionCard}>
-                {/* Question number + bloom */}
-                <View style={styles.questionMeta}>
-                  <View style={styles.qNumCircle}>
-                    <Text style={styles.qNumText}>{globalIdx + 1}</Text>
+          return (
+            <View key={pageIdx} style={{ width: containerWidth }}>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  { paddingBottom: 24 },
+                ]}
+                keyboardShouldPersistTaps="handled"
+              >
+                {/* Module title card (welcome card) only on the first page */}
+                {pageIdx === 0 && (
+                  <View style={styles.moduleTitleCard}>
+                    <View style={styles.moduleTitleBadge}>
+                      <MaterialCommunityIcons
+                        name="book-open-page-variant"
+                        size={14}
+                        color="#4F46E5"
+                      />
+                      <Text style={styles.moduleTitleBadgeText}>
+                        Module Details
+                      </Text>
+                    </View>
+                    <Text style={styles.moduleTitleText}>{moduleTitle}</Text>
                   </View>
-                  {selected !== null && (
-                    <MaterialCommunityIcons
-                      name="check-circle"
-                      size={16}
-                      color="#10B981"
-                      style={{ marginLeft: "auto" }}
-                    />
+                )}
+                {/* Page heading */}
+                <View style={styles.pageHeadingRow}>
+                  <Text style={styles.pageHeadingText}>
+                    Questions {pStart + 1}–{pEnd}
+                  </Text>
+                  {pAnswered && pageIdx < totalPages - 1 && (
+                    <View style={styles.pageCompletePill}>
+                      <MaterialCommunityIcons
+                        name="check"
+                        size={11}
+                        color="#065F46"
+                      />
+                      <Text style={styles.pageCompleteText}>Page done</Text>
+                    </View>
                   )}
                 </View>
 
-                {/* Question text */}
-                <Text style={styles.questionText}>{q.question}</Text>
+                {/* Questions on this page */}
+                {pQuestions.map((q, localIdx) => {
+                  const globalIdx = pStart + localIdx;
+                  const selected = userAnswers[globalIdx];
 
-                {/* Options */}
-                <View style={styles.optionsWrap}>
-                  {q.options.map((option, optIdx) => {
-                    const isSelected = selected === optIdx;
-                    return (
-                      <TouchableOpacity
-                        key={optIdx}
-                        style={[
-                          styles.optionRow,
-                          isSelected && styles.optionRowSelected,
-                        ]}
-                        onPress={() => handleSelectOption(globalIdx, optIdx)}
-                        activeOpacity={0.7}
-                      >
-                        <View
-                          style={[
-                            styles.optionLetter,
-                            isSelected && styles.optionLetterSelected,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.optionLetterText,
-                              isSelected && styles.optionLetterTextSelected,
-                            ]}
-                          >
-                            {LETTERS[optIdx]}
-                          </Text>
+                  return (
+                    <View key={globalIdx} style={styles.questionCard}>
+                      {/* Question number */}
+                      <View style={styles.questionMeta}>
+                        <View style={styles.qNumCircle}>
+                          <Text style={styles.qNumText}>{globalIdx + 1}</Text>
                         </View>
-                        <Text
-                          style={[
-                            styles.optionText,
-                            isSelected && styles.optionTextSelected,
-                          ]}
-                          numberOfLines={4}
-                        >
-                          {option}
-                        </Text>
-                        {isSelected && (
+                        {selected !== null && (
                           <MaterialCommunityIcons
-                            name="radiobox-marked"
-                            size={18}
-                            color="#4F46E5"
-                            style={{ marginLeft: 8, flexShrink: 0 }}
+                            name="check-circle"
+                            size={16}
+                            color="#10B981"
+                            style={{ marginLeft: "auto" }}
                           />
                         )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            );
-          })}
+                      </View>
 
-          {/* Navigation row */}
-          <View style={styles.navRow}>
-            {currentPage > 0 ? (
-              <TouchableOpacity
-                style={styles.prevBtn}
-                onPress={handlePrevPage}
-                activeOpacity={0.85}
-              >
-                <MaterialCommunityIcons
-                  name="arrow-left"
-                  size={16}
-                  color="#4F46E5"
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={styles.prevBtnText}>Previous</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={{ flex: 1 }} />
-            )}
+                      {/* Question text */}
+                      <Text style={styles.questionText}>{q.question}</Text>
 
-            {isLastPage ? (
-              <TouchableOpacity
-                style={[
-                  styles.submitBtn,
-                  !allAnswered && styles.submitBtnDisabled,
-                ]}
-                onPress={allAnswered ? handleSubmit : undefined}
-                activeOpacity={allAnswered ? 0.85 : 1}
-              >
-                <Text
-                  style={[
-                    styles.submitBtnText,
-                    !allAnswered && styles.submitBtnTextDisabled,
-                  ]}
-                >
-                  {allAnswered
-                    ? "Submit Quiz"
-                    : `${questions.length - userAnswers.filter((a) => a !== null).length} left`}
-                </Text>
-                <MaterialCommunityIcons
-                  name={allAnswered ? "send" : "lock-outline"}
-                  size={16}
-                  color={allAnswered ? "white" : "#9CA3AF"}
-                  style={{ marginLeft: 6 }}
-                />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[styles.nextBtn, !answeredOnPage && styles.nextBtnSoft]}
-                onPress={handleNextPage}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.nextBtnText}>Next Page</Text>
-                <MaterialCommunityIcons
-                  name="arrow-right"
-                  size={16}
-                  color="white"
-                  style={{ marginLeft: 4 }}
-                />
-              </TouchableOpacity>
-            )}
-          </View>
+                      {/* Options */}
+                      <View style={styles.optionsWrap}>
+                        {q.options.map((option, optIdx) => {
+                          const isSelected = selected === optIdx;
+                          return (
+                            <TouchableOpacity
+                              key={optIdx}
+                              style={[
+                                styles.optionRow,
+                                isSelected && styles.optionRowSelected,
+                              ]}
+                              onPress={() => handleSelectOption(globalIdx, optIdx)}
+                              activeOpacity={0.7}
+                            >
+                              <View
+                                style={[
+                                  styles.optionLetter,
+                                  isSelected && styles.optionLetterSelected,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.optionLetterText,
+                                    isSelected && styles.optionLetterTextSelected,
+                                  ]}
+                                >
+                                  {LETTERS[optIdx]}
+                                </Text>
+                              </View>
+                              <Text
+                                style={[
+                                  styles.optionText,
+                                  isSelected && styles.optionTextSelected,
+                                ]}
+                                numberOfLines={4}
+                              >
+                                {option}
+                              </Text>
+                              {isSelected && (
+                                <MaterialCommunityIcons
+                                  name="radiobox-marked"
+                                  size={18}
+                                  color="#4F46E5"
+                                  style={{ marginLeft: 8, flexShrink: 0 }}
+                                />
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  );
+                })}
 
-          {/* Unanswered hint on last page */}
-          {isLastPage && !allAnswered && (
-            <View style={styles.hintBox}>
-              <MaterialCommunityIcons
-                name="information-outline"
-                size={14}
-                color="#6366F1"
-                style={{ marginRight: 6 }}
-              />
-              <Text style={styles.hintText}>
-                Answer all {questions.length} questions to enable submission.
-                Use the page dots above to revisit earlier pages.
-              </Text>
+                {/* Unanswered hint on last page */}
+                {pageIdx === totalPages - 1 && !allAnswered && (
+                  <View style={styles.hintBox}>
+                    <MaterialCommunityIcons
+                      name="information-outline"
+                      size={14}
+                      color="#6366F1"
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text style={styles.hintText}>
+                      Answer all {questions.length} questions to enable submission.
+                      Use page dots or swipe to review earlier pages.
+                    </Text>
+                  </View>
+                )}
+              </ScrollView>
             </View>
-          )}
-        </Animated.View>
+          );
+        })}
       </ScrollView>
+
+      {/* Fixed Bottom Navigation Card — ALWAYS VISIBLE */}
+      <View
+        style={[
+          styles.bottomBarCard,
+          { paddingBottom: Math.max(insets.bottom, 12) },
+        ]}
+      >
+        {/* Status indicator row */}
+        <View style={styles.bottomStatusRow}>
+          <View style={[styles.statusPill, allAnswered && styles.statusPillDone]}>
+            <MaterialCommunityIcons
+              name={allAnswered ? "check-circle-outline" : "help-circle-outline"}
+              size={13}
+              color={allAnswered ? "#059669" : "#4F46E5"}
+              style={{ marginRight: 5 }}
+            />
+            <Text
+              style={[
+                styles.statusPillText,
+                allAnswered && styles.statusPillTextDone,
+              ]}
+            >
+              {allAnswered
+                ? "All questions answered — ready to submit!"
+                : `${remainingCount} of ${questions.length} questions remaining`}
+            </Text>
+          </View>
+        </View>
+
+        {/* Action Buttons Row */}
+        <View style={styles.navRow}>
+          {/* Left: Previous Button (only rendered when currentPage > 0) */}
+          {currentPage > 0 && (
+            <TouchableOpacity
+              style={styles.prevBtn}
+              onPress={handlePrevPage}
+              activeOpacity={0.85}
+            >
+              <MaterialCommunityIcons
+                name="arrow-left"
+                size={16}
+                color="#4F46E5"
+                style={{ marginRight: 4 }}
+              />
+              <Text style={styles.prevBtnText}>Previous</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Right: Next Page or Submit Quiz Button */}
+          {isLastPage ? (
+            <TouchableOpacity
+              style={[
+                styles.submitBtn,
+                !allAnswered && styles.submitBtnDisabled,
+                currentPage === 0 && { flex: 1 },
+              ]}
+              onPress={allAnswered ? handleSubmit : undefined}
+              activeOpacity={allAnswered ? 0.85 : 1}
+            >
+              <Text
+                style={[
+                  styles.submitBtnText,
+                  !allAnswered && styles.submitBtnTextDisabled,
+                ]}
+              >
+                Submit Quiz
+              </Text>
+              <MaterialCommunityIcons
+                name={allAnswered ? "send" : "lock-outline"}
+                size={15}
+                color={allAnswered ? "white" : "#9CA3AF"}
+                style={{ marginLeft: 6 }}
+              />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[
+                styles.nextBtn,
+                !answeredOnPage && styles.nextBtnSoft,
+                currentPage === 0 && { flex: 1 },
+              ]}
+              onPress={handleNextPage}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.nextBtnText}>Next Page</Text>
+              <MaterialCommunityIcons
+                name="arrow-right"
+                size={16}
+                color="white"
+                style={{ marginLeft: 4 }}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
 
       <NoInternetModal
         visible={showNoInternet}
@@ -1110,7 +1220,7 @@ export default function ModuleQuizScreen({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F9FB" },
+  container: { flex: 1, backgroundColor: "#fff" },
 
   header: {
     flexDirection: "row",
@@ -1129,7 +1239,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitle: { fontSize: 15, fontWeight: "700", color: "#111827" },
+  headerTitle: { fontSize: 16, fontWeight: "700", color: "#111827" },
   headerSub: { fontSize: 11, color: "#9CA3AF", marginTop: 1 },
   pageChip: {
     backgroundColor: "#EEF2FF",
@@ -1153,8 +1263,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: "#FFFFFF",
     gap: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#F3F4F6",
+    // borderBottomWidth: StyleSheet.hairlineWidth,
+    // borderBottomColor: "#F3F4F6",
   },
   pageDot: {
     width: 8,
@@ -1371,7 +1481,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    // elevation: 2,
+    borderWidth:1,
+    borderColor: "#E5E7EB",
   },
   questionMeta: {
     flexDirection: "row",
@@ -1433,12 +1545,52 @@ const styles = StyleSheet.create({
   optionText: { flex: 1, fontSize: 14, color: "#374151", lineHeight: 20 },
   optionTextSelected: { color: "#3730A3", fontWeight: "600" },
 
+  bottomBarCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -4 },
+    elevation: 8,
+  },
+
+  bottomStatusRow: {
+    marginBottom: 10,
+  },
+
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EEF2FF",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+  },
+  statusPillDone: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4338CA",
+  },
+  statusPillTextDone: {
+    color: "#047857",
+    fontWeight: "700",
+  },
+
   navRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginTop: 4,
-    marginBottom: 8,
+    gap: 12,
   },
 
   prevBtn: {
@@ -1448,11 +1600,54 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#EEF2FF",
     borderRadius: 14,
-    paddingVertical: 14,
+    paddingVertical: 13,
     borderWidth: 1.5,
     borderColor: "#C7D2FE",
   },
+  prevBtnDisabled: {
+    backgroundColor: "#F9FAFB",
+    borderColor: "#E5E7EB",
+  },
   prevBtnText: { fontSize: 14, fontWeight: "700", color: "#4F46E5" },
+  prevBtnTextDisabled: { color: "#9CA3AF" },
+
+  moduleTitleCard: {
+    backgroundColor: "#4F46E5",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: "#E5E7EB",
+    // shadowColor: "#4F46E5",
+    // shadowOpacity: 0.04,
+    // shadowRadius: 10,
+    // shadowOffset: { width: 0, height: 4 },
+    // elevation: 2,
+  },
+  moduleTitleBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EEF2FF",
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 6,
+    marginBottom: 10,
+  },
+  moduleTitleBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#4F46E5",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  moduleTitleText: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#fff",
+    lineHeight: 24,
+  },
 
   nextBtn: {
     flex: 1,

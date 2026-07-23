@@ -1,4 +1,4 @@
-﻿import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Platform,
   Keyboard,
-  KeyboardEvent,
   Animated,
   Easing,
   Alert,
@@ -36,6 +35,7 @@ interface ChatInterfaceProps {
   messages: Message[];
   onMessagesChange: (updater: (prev: Message[]) => Message[]) => void;
   lang: string;
+  onInputFocus?: () => void;
 }
 
 // --- Voice state type --------------------------------------------------------
@@ -219,10 +219,10 @@ export default function ChatInterface({
   messages,
   onMessagesChange,
   lang,
+  onInputFocus,
 }: ChatInterfaceProps) {
   const [inputText, setInputText] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
-  const [keyboardHeight, setKeyboardHeight] = React.useState(0);
   const scrollRef = useRef<ScrollView>(null);
 
   const hasConversation = messages.length > 0;
@@ -306,16 +306,11 @@ export default function ChatInterface({
   useEffect(() => {
     const showSub = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      (e: KeyboardEvent) => {
-        setKeyboardHeight(e.endCoordinates.height);
+      () => {
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
       },
     );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      () => setKeyboardHeight(0),
-    );
-    return () => { showSub.remove(); hideSub.remove(); };
+    return () => { showSub.remove(); };
   }, []);
 
   // -- Auto-scroll --
@@ -554,7 +549,7 @@ export default function ChatInterface({
   const canSend = inputText.trim().length > 0 && !isLoading;
 
   return (
-    <View style={[styles.flex, { paddingBottom: keyboardHeight }]}>
+    <View style={styles.flex}>
       {/* -- Messages -- */}
       <ScrollView
         ref={scrollRef}
@@ -623,6 +618,7 @@ export default function ChatInterface({
               placeholderTextColor={isRecording ? "#ef4444" : "#94A3B8"}
               value={isRecording ? "" : inputText}
               onChangeText={setInputText}
+              onFocus={onInputFocus}
               multiline
               maxLength={1000}
               editable={!isLoading && !isRecording}

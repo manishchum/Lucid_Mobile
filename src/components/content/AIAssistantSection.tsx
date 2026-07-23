@@ -16,6 +16,7 @@ interface AIAssistantSectionProps {
   isExpanded: boolean;
   onToggle: () => void;
   lang: string;
+  onInputFocus?: () => void;
 }
 
 export default function AIAssistantSection({
@@ -26,6 +27,7 @@ export default function AIAssistantSection({
   isExpanded,
   onToggle,
   lang,
+  onInputFocus,
 }: AIAssistantSectionProps) {
   const [messages, setMessages] = useState<Message[]>([]);
 
@@ -41,10 +43,11 @@ export default function AIAssistantSection({
           <View style={styles.iconBadge}>
             <MaterialCommunityIcons name="creation" size={22} color="#4F46E5" />
           </View>
-          <View>
+          <View style={styles.titleWrap}>
             <Text style={styles.headerTitle}>AI Assistant</Text>
           </View>
         </View>
+
         <MaterialCommunityIcons
           name={isExpanded ? 'chevron-up' : 'chevron-down'}
           size={24}
@@ -62,6 +65,7 @@ export default function AIAssistantSection({
           messages={messages}
           onMessagesChange={setMessages}
           lang={lang}
+          onInputFocus={onInputFocus}
         />
       </View>
     </View>
@@ -71,7 +75,7 @@ export default function AIAssistantSection({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#fff',
-    borderRadius: 20, // Matches the rounded card style in the mockup
+    borderRadius: 20,
     borderColor: '#F1F5F9',
     overflow: 'hidden',
     borderWidth: 1,
@@ -92,6 +96,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
+    flex: 1,
   },
   iconBadge: {
     width: 40,
@@ -101,15 +106,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  titleWrap: {
+    flex: 1,
+  },
   headerTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#1E293B',
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 2,
   },
   chatPanel: {
     height: 480,
