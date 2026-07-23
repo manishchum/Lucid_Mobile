@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
-  Alert,
   View,
   Text,
   TouchableOpacity,
@@ -8,13 +7,17 @@ import {
   ScrollView,
   ActivityIndicator,
   StatusBar,
+  BackHandler,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "../../contex/AuthContext";
 import { getUserByPhone } from "../../api/users/Request";
 import { useGetCompany } from "../../api/users/Hooks";
 import { User } from "../../api/users/Dto";
+import FeedbackCard from "../../components/feedback/FeedbackCard";
+import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
 function toE164(rawPhone: string): string {
   const digits = rawPhone.replace(/[^\d]/g, "");
@@ -26,19 +29,19 @@ function toE164(rawPhone: string): string {
 }
 
 export default function ProfileScreen() {
-  const { logout, phoneNumber, cachedUser } = useAuth();
+  const { phoneNumber, cachedUser } = useAuth();
+  const navigation = useNavigation<any>();
 
-  const confirmLogout = () => {
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to sign out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Sign Out", style: "destructive", onPress: () => logout() },
-      ],
-      { cancelable: true },
-    );
-  };
+  useEffect(() => {
+    const onBackPress = () => {
+      navigation.goBack();
+      return true;
+    };
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [navigation]);
+
+
   const [user, setUser] = useState<User | null>(
     cachedUser
       ? {
@@ -69,33 +72,50 @@ export default function ProfileScreen() {
       : null,
   );
   const [loading, setLoading] = useState(!cachedUser);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        if (phoneNumber) {
-          const normalizedPhone = toE164(phoneNumber);
-          const response = await getUserByPhone(normalizedPhone);
-          if (response?.user) {
-            setUser(response.user);
-          } else {
-            console.warn("[ProfileScreen] No user found for", normalizedPhone);
-          }
+  const fetchUserData = useCallback(async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
+    try {
+      if (phoneNumber) {
+        const normalizedPhone = toE164(phoneNumber);
+        const response = await getUserByPhone(normalizedPhone);
+        if (response?.user) {
+          setUser(response.user);
+        } else {
+          console.warn("[ProfileScreen] No user found for", normalizedPhone);
         }
-      } catch (error) {
-        console.error("[ProfileScreen] Error fetching user:", error);
-      } finally {
-        setLoading(false);
       }
-    };
-    fetchUserData();
+    } catch (error) {
+      console.error("[ProfileScreen] Error fetching user:", error);
+    } finally {
+      setLoading(false);
+    }
   }, [phoneNumber]);
 
+  useEffect(() => {
+    fetchUserData(true);
+  }, [fetchUserData]);
+
   // Fetch company name from company_id once the user record is loaded
-  const { company, isLoading: companyLoading } = useGetCompany(
+  const { company, isLoading: companyLoading, refetch: refetchCompany } = useGetCompany(
     user?.company_id ?? null,
     cachedUser?.userId ?? null,
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        fetchUserData(false),
+        refetchCompany(),
+      ]);
+    } catch (err) {
+      console.error("[ProfileScreen] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchUserData, refetchCompany]);
 
   if (loading) {
     return (
@@ -129,9 +149,23 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#1E293B" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>My Profile</Text>
+        <View style={{ width: 32 }} />
+      </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          RefreshSpinner(refreshing, onRefresh)
+        }
       >
         {/* PROFILE HEADER */}
         <View style={styles.profileHeader}>
@@ -200,6 +234,12 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* RATE YOUR EXPERIENCE SECTION */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Rate Your Experience</Text>
+          <FeedbackCard />
+        </View>
+
         {/* ADMIN NOTICE */}
         <View style={styles.adminNotice}>
           <MaterialCommunityIcons
@@ -212,16 +252,6 @@ export default function ProfileScreen() {
             update information.
           </Text>
         </View>
-
-        {/* LOGOUT BUTTON */}
-        <TouchableOpacity
-          style={styles.logoutButton}
-          onPress={confirmLogout}
-          activeOpacity={0.8}
-        >
-          <MaterialCommunityIcons name="logout" size={20} color="#EF4444" />
-          <Text style={styles.logoutText}>Sign Out</Text>
-        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -246,7 +276,7 @@ const Divider = () => <View style={styles.divider} />;
 
 /** STYLES **/
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#FFF" },
   loader: {
     flex: 1,
     justifyContent: "center",
@@ -384,23 +414,22 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Logout
-  logoutButton: {
+  header: {
+    height: 52,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    marginHorizontal: 20,
-    marginTop: 24,
-    paddingVertical: 16,
-    borderRadius: 16,
-    backgroundColor: "#FFF1F2",
-    borderWidth: 1,
-    borderColor: "#FECACA",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    backgroundColor: "#ffffff",
   },
-  logoutText: {
-    fontSize: 16,
+  backBtn: {
+    padding: 4,
+  },
+  headerTitle: {
+    fontSize: 18,
     fontWeight: "700",
-    color: "#EF4444",
-    marginLeft: 8,
+    color: "#1E293B",
   },
 });

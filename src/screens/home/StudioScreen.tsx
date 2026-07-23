@@ -1,19 +1,28 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  TouchableOpacity,
+  StatusBar,
+  BackHandler,
+  Keyboard,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 
 import { useAuth } from "../../contex/AuthContext";
 import { useGetProcessedModuleById } from "../../api/users";
+import { useActiveSprint } from "../../contex/ActiveSprintContext";
+import { APP_ROUTES, STACK_ROUTES } from "../../navigations/Routes";
 import CoreContentSection from "./sections/CoreContentSection";
 import PodcastSection from "./sections/PodcastSection";
 import FlashcardsSection from "../../components/content/FlashcardsSection";
+import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
 // ─── Phase 2: Mind Map ────────────────────────────────────────────────────────
 // MindmapSection will be implemented in Phase 2 using a proper graph/SVG renderer.
@@ -26,6 +35,7 @@ import VideoSection from "../../components/content/VideoSection";
 import AIAssistantSection from "../../components/content/AIAssistantSection";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 import { useModuleTranslation } from "../../hooks/useModuleTranslation";
+import ModuleLanguageSelector from "../../components/content/ModuleLanguageSelector";
 
 /**
  * StudioScreen
@@ -48,8 +58,10 @@ import { useModuleTranslation } from "../../hooks/useModuleTranslation";
  *   Mind Map     → data.mindmap_data   (Phase 2: { nodes, edges })
  * ─────────────────────────────────────────────────────────────────────────────
  */
-export default function StudioScreen({ route }: any) {
+export default function StudioScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const mainScrollRef = useRef<ScrollView>(null);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>("core");
   const { cachedUser } = useAuth();
   const { hasFeature } = useFeatureGating();
@@ -58,16 +70,52 @@ export default function StudioScreen({ route }: any) {
   const showPodcast = hasFeature(FEATURES.PODCAST);
   const showVideo = hasFeature(FEATURES.VIDEO);
   const showAiAssistant = hasFeature(FEATURES.CHAT_IN_STUDIO);
-
-  // Params from SprintScreen "View Content" — each module tap passes its own processedModuleId
-  const processedModuleId: string = route?.params?.processedModuleId ?? "";
-  const moduleTitle: string = route?.params?.moduleTitle ?? "";
-  const sprintTitle: string = route?.params?.sprintTitle ?? "";
-
   const userId = cachedUser?.userId ?? null;
   const companyId = cachedUser?.companyId ?? "";
 
-  const [lang, setLang] = useState<'en' | 'hi' | 'bn' | 'ta' | 'te' | 'mr' | 'gu' | 'kn'>('en');
+  // Intercept physical back press to redirect to Sprint tab
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+
+      return () => subscription.remove();
+    }, [navigation])
+  );
+
+  const { activeModule } = useActiveSprint();
+
+  // Params from ActiveSprintContext — each module tap passes its own processedModuleId
+  const processedModuleId: string = activeModule?.processedModuleId ?? "";
+  const moduleTitle: string = activeModule?.moduleTitle ?? "";
+  const sprintTitle: string = activeModule?.sprintTitle ?? "";
+
+  const [lang, setLang] = useState<string>('en');
+
+  // ── Keyboard height listener ──
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => {
+        setKeyboardOffset(e.endCoordinates.height);
+        setTimeout(() => {
+          mainScrollRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardOffset(0)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // ─── Debug logging: Validate incoming params ──────────────────────────────
   useEffect(() => {
@@ -90,13 +138,27 @@ export default function StudioScreen({ route }: any) {
     }
   }, [processedModuleId, moduleTitle, sprintTitle, userId]);
 
+  const [refreshing, setRefreshing] = useState(false);
+
   // Fetch processed module by ID — endpoint: GET /processed-modules/{processedModuleId}
   // This is the single source of truth for all Studio sections below.
   const {
     module: processedModule,
     isLoading,
     error,
+    refetch,
   } = useGetProcessedModuleById(processedModuleId || null, userId);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } catch (err) {
+      console.error("[StudioScreen] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   const { isTranslating, translatedSections, translatedFlashcards } = useModuleTranslation(
     processedModuleId || null,
@@ -143,16 +205,23 @@ export default function StudioScreen({ route }: any) {
   // ── Empty state: tab opened directly without a module selected ──
   if (!processedModuleId) {
     return (
-      <View style={[styles.emptyContainer, { paddingTop: insets.top }]}>
+      <View style={[styles.emptyContainer, { paddingTop: 20 }]}>
         <View style={styles.emptyIconWrap}>
           <MaterialCommunityIcons name="brush" size={44} color="#A5B4FC" />
         </View>
-        <Text style={styles.emptyTitle}>Studio</Text>
+        <Text style={styles.emptyTitle}>Studio Empty</Text>
         <Text style={styles.emptySubtitle}>
           Tap <Text style={styles.emptyHighlight}>View Content</Text> on any
           Sprint module to explore core content, podcasts, flashcards, videos
           and AI assistance here.
         </Text>
+        <TouchableOpacity
+          style={styles.emptyBtn}
+          onPress={() => navigation.navigate(APP_ROUTES.HOME)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.emptyBtnText}>Go to Home</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -160,7 +229,7 @@ export default function StudioScreen({ route }: any) {
   // ── Loading ──
   if (isLoading) {
     return (
-      <View style={[styles.loader, { paddingTop: insets.top }]}>
+      <View style={[styles.loader, { paddingTop: 20 }]}>
         <ActivityIndicator size="large" color="#4F46E5" />
         <Text style={styles.loaderText}>Loading content…</Text>
       </View>
@@ -170,7 +239,7 @@ export default function StudioScreen({ route }: any) {
   // ── Error ──
   if (error) {
     return (
-      <View style={[styles.loader, { paddingTop: insets.top }]}>
+      <View style={[styles.loader, { paddingTop: 20 }]}>
         <MaterialCommunityIcons
           name="alert-circle-outline"
           size={40}
@@ -184,17 +253,35 @@ export default function StudioScreen({ route }: any) {
 
   // ── Full content view ──
   return (
-    <View style={[styles.main, { paddingTop: insets.top }]}>
+    <View style={styles.main}>
       <ScrollView
+        ref={mainScrollRef}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 + keyboardOffset }}
+        refreshControl={
+          RefreshSpinner(refreshing, onRefresh)
+        }
       >
         {/* ── Hero ── */}
         <View style={styles.hero}>
-          <View style={styles.studioBadge}>
+          <View style={styles.topHeaderBar}>
+            <TouchableOpacity
+              style={styles.backBtnRow}
+              onPress={() => navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT })}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="chevron-left" size={24} color="#6366F1" />
+              <Text style={styles.backBtnText}>Back to Sprint</Text>
+            </TouchableOpacity>
+
+            <ModuleLanguageSelector selectedLang={lang} onSelectLang={setLang} />
+          </View>
+
+          {/* <View style={styles.studioBadge}>
             <MaterialCommunityIcons name="brush" size={14} color="#4F46E5" />
             <Text style={styles.studioBadgeText}>Studio</Text>
-          </View>
+          </View> */}
           {/* {sprintTitle ? (
             <Text style={styles.sprintLabel}>{sprintTitle}</Text>
           ) : null} */}
@@ -289,6 +376,7 @@ export default function StudioScreen({ route }: any) {
             <PodcastSection
               isExpanded={expanded === "podcast"}
               onToggle={() => toggle("podcast")}
+              lang={lang}
               audioUrl={processedModule?.audio_url ?? null}
               audioUrlHinglish={processedModule?.audio_url_hinglish ?? null}
               podcastTimeline={processedModule?.podcast_timeline ?? null}
@@ -304,12 +392,28 @@ export default function StudioScreen({ route }: any) {
             <VideoSection
               isExpanded={expanded === "video"}
               onToggle={() => toggle("video")}
+              lang={lang}
               videoUrl={processedModule?.video_url ?? null}
-              videoUrlHinglish={processedModule?.video_url_hinglish ?? null}
-              videoUrlBengali={processedModule?.video_url_bengali ?? null}
-              videoUrlTamil={processedModule?.video_url_tamil ?? null}
-              videoUrlTelugu={processedModule?.video_url_telugu ?? null}
-              videoUrlMarathi={processedModule?.video_url_marathi ?? null}
+              videoUrlHinglish={
+                processedModule?.video_url_hinglish ||
+                (processedModule?.audio_url_hinglish ? processedModule?.video_url : null)
+              }
+              videoUrlBengali={
+                processedModule?.video_url_bengali ||
+                (processedModule?.audio_url_bengali ? processedModule?.video_url : null)
+              }
+              videoUrlTamil={
+                processedModule?.video_url_tamil ||
+                (processedModule?.audio_url_tamil ? processedModule?.video_url : null)
+              }
+              videoUrlTelugu={
+                processedModule?.video_url_telugu ||
+                (processedModule?.audio_url_telugu ? processedModule?.video_url : null)
+              }
+              videoUrlMarathi={
+                processedModule?.video_url_marathi ||
+                (processedModule?.audio_url_marathi ? processedModule?.video_url : null)
+              }
             />
           )}
 
@@ -322,6 +426,12 @@ export default function StudioScreen({ route }: any) {
               moduleTitle={moduleTitle}
               userId={userId ?? ""}
               companyId={companyId}
+              lang={lang}
+              onInputFocus={() => {
+                setTimeout(() => {
+                  mainScrollRef.current?.scrollToEnd({ animated: true });
+                }, 150);
+              }}
             />
           )}
         </View>
@@ -331,12 +441,12 @@ export default function StudioScreen({ route }: any) {
 }
 
 const styles = StyleSheet.create({
-  main: { flex: 1, backgroundColor: "#F8FAFC" },
+  main: { flex: 1, backgroundColor: "#FFF" },
 
   // ── Empty state ──
   emptyContainer: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFF",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 36,
@@ -371,7 +481,7 @@ const styles = StyleSheet.create({
   errorSub: { fontSize: 13, color: "#94A3B8" },
 
   // ── Hero ──
-  hero: { padding: 24, paddingBottom: 16 },
+  hero: { paddingHorizontal: 24, paddingVertical: 16 },
   studioBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -408,4 +518,44 @@ const styles = StyleSheet.create({
   metaTextHi: { fontSize: 12, fontWeight: "600", color: "#C2410C" },
 
   accordionList: { paddingHorizontal: 16, gap: 12 },
+  topHeaderBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  backBtnRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  backBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6366F1",
+    marginLeft: 2,
+  },
+  backBtn: {
+    marginBottom: 12,
+    alignSelf: "flex-start",
+    padding: 4,
+  },
+  backBtnAbsolute: {
+    position: "absolute",
+    left: 20,
+    top: 20,
+    padding: 4,
+    zIndex: 10,
+  },
+  emptyBtn: {
+    backgroundColor: "#6366F1",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  emptyBtnText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
 });

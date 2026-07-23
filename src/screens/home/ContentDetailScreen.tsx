@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator,
+  TouchableOpacity, ActivityIndicator, Keyboard, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,11 +15,35 @@ import MindmapSection from '../../components/content/MindmapSection';
 import VideoSection from '../../components/content/VideoSection';
 import AIAssistantSection from '../../components/content/AIAssistantSection';
 import { useModuleTranslation } from '../../hooks/useModuleTranslation';
+import ModuleLanguageSelector from '../../components/content/ModuleLanguageSelector';
 
 export default function ContentDetailScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const mainScrollRef = useRef<ScrollView>(null);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>('core');
-  const [lang, setLang] = useState<'en' | 'hi' | 'bn' | 'ta' | 'te' | 'mr' | 'gu' | 'kn'>('en');
+  const [lang, setLang] = useState<string>('en');
+
+  // Keyboard offset listener
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardOffset(e.endCoordinates.height);
+        setTimeout(() => {
+          mainScrollRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardOffset(0)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Get the authenticated user directly — no email lookup needed
   const { cachedUser } = useAuth();
@@ -55,6 +79,8 @@ export default function ContentDetailScreen({ route, navigation }: any) {
           <MaterialCommunityIcons name="chevron-left" size={28} color="#4F46E5" />
           <Text style={styles.backLabel}>Back</Text>
         </TouchableOpacity>
+
+        <ModuleLanguageSelector selectedLang={lang} onSelectLang={setLang} />
       </View>
 
       {isLoading ? (
@@ -70,8 +96,10 @@ export default function ContentDetailScreen({ route, navigation }: any) {
         </View>
       ) : (
         <ScrollView
+          ref={mainScrollRef}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: insets.bottom + 20 + keyboardOffset }}
         >
           {/* Hero */}
           <View style={styles.hero}>
@@ -101,7 +129,7 @@ export default function ContentDetailScreen({ route, navigation }: any) {
                     <Text style={styles.metaText}>Video</Text>
                   </View>
                 )}
-                {primaryModule.flashcard_data && (
+                {primaryModule.flashcard_data && primaryModule.flashcard_data.length > 0 && (
                   <View style={styles.metaBadge}>
                     <MaterialCommunityIcons name="cards-outline" size={14} color="#4F46E5" />
                     <Text style={styles.metaText}>Flashcards</Text>
@@ -142,6 +170,7 @@ export default function ContentDetailScreen({ route, navigation }: any) {
             <PodcastSection
               isExpanded={expanded === 'podcast'}
               onToggle={() => toggle('podcast')}
+              lang={lang}
               audioUrl={primaryModule?.audio_url ?? null}
               audioUrlHinglish={primaryModule?.audio_url_hinglish ?? null}
               podcastTimeline={primaryModule?.podcast_timeline ?? null}
@@ -152,6 +181,7 @@ export default function ContentDetailScreen({ route, navigation }: any) {
             <VideoSection
               isExpanded={expanded === 'video'}
               onToggle={() => toggle('video')}
+              lang={lang}
               videoUrl={primaryModule?.video_url ?? null}
             />
 
@@ -162,6 +192,12 @@ export default function ContentDetailScreen({ route, navigation }: any) {
               moduleTitle={primaryModule?.title ?? moduleTitle}
               userId={userId ?? ""}
               companyId={cachedUser?.companyId ?? ""}
+              lang={lang}
+              onInputFocus={() => {
+                setTimeout(() => {
+                  mainScrollRef.current?.scrollToEnd({ animated: true });
+                }, 150);
+              }}
             />
           </View>
         </ScrollView>
@@ -172,7 +208,13 @@ export default function ContentDetailScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   main: { flex: 1, backgroundColor: '#F8FAFC' },
-  navBar: { height: 50, justifyContent: 'center', paddingHorizontal: 10 },
+  navBar: {
+    height: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+  },
   backBtn: { flexDirection: 'row', alignItems: 'center' },
   backLabel: { fontSize: 16, fontWeight: '600', color: '#4F46E5' },
 

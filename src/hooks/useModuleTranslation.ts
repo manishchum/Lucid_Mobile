@@ -3,7 +3,7 @@ import { Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { simplifyHindiText } from "../screens/home/sections/HindiSimplifier";
 
-export type SupportedLang = "en" | "hi" | "bn" | "ta" | "te" | "mr" | "gu" | "kn";
+export type SupportedLang = string;
 
 export interface Flashcard {
   heading: string;

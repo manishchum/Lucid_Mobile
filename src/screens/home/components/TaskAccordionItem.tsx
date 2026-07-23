@@ -1,102 +1,45 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
-  Animated,
   StyleSheet,
-  LayoutAnimation,
-  Platform,
-  UIManager,
-  TextInput,
+  Modal,
+  ScrollView,
   Alert,
   ActivityIndicator,
+  Pressable,
+  Dimensions,
+  KeyboardAvoidingView,
+  Keyboard,
+  Platform,
 } from "react-native";
+
+const SCREEN_HEIGHT = Dimensions.get("window").height;
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Task,
   SubmissionFormat,
-  TaskSubmissionType,
-  submitTaskAnswer,
+  TaskQuestion,
+  BundleTask,
+  FormatAnswer,
+  BundleSubmissionEntry,
+  submitFormatAnswer,
 } from "../../../api/users";
-import CameraCapture from "../../../components/camera/CamerCapture";
+import TaskSubmissionBlock, {
+  FormatAnswerLocal,
+  emptyAnswer,
+  isFormatAnswered,
+  getFormatMeta,
+  toFormatList,
+} from "../../../components/tasks/TaskSubmissionBlock";
 import { useAuth } from "../../../contex/AuthContext";
 
-if (
-  Platform.OS === "android" &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-const FORMAT_META: Record<
-  SubmissionFormat,
-  { icon: string; color: string; bg: string; label: string }
-> = {
-  image: {
-    icon: "image-outline",
-    color: "#7C3AED",
-    bg: "#F5F3FF",
-    label: "Image",
-  },
-  audio: {
-    icon: "microphone-outline",
-    color: "#0891B2",
-    bg: "#ECFEFF",
-    label: "Audio",
-  },
-  video: {
-    icon: "video-outline",
-    color: "#DB2777",
-    bg: "#FDF2F8",
-    label: "Video",
-  },
-  text: {
-    icon: "text-box-outline",
-    color: "#059669",
-    bg: "#ECFDF5",
-    label: "Text",
-  },
-};
-
-const OPTIONS_META = {
-  icon: "format-list-bulleted",
-  color: "#D97706",
-  bg: "#FFFBEB",
-  label: "Options",
-};
-
-const getFormatMeta = (fmt?: SubmissionFormat) =>
-  FORMAT_META[fmt ?? "text"] ?? FORMAT_META["text"];
-
-/**
- * Resolves the *effective* submission type the mobile app actually collects.
- * Mobile currently only supports 3 input modes: image / text / options.
- * - If the task has a question with options → "options"
- * - Else if the primary submission_format is "image" → "image"
- * - Else (text, audio, video — audio/video are answered via text for now) → "text"
- */
-const resolveEffectiveType = (
-  task: Task,
-  primaryFormat: SubmissionFormat,
-): TaskSubmissionType => {
-  const firstQuestion = Array.isArray(task.questions)
-    ? task.questions[0]
-    : null;
-  if (
-    firstQuestion &&
-    Array.isArray(firstQuestion.options) &&
-    firstQuestion.options.length > 0
-  ) {
-    return "options";
-  }
-  if (primaryFormat === "image") return "image";
-  return "text";
-};
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 const isTaskCompleted = (task: Task): boolean => {
+  if (typeof task.submitted === "boolean") return task.submitted;
   const status = (task.status ?? "").toString().toLowerCase();
   return (
     status.includes("complete") ||
@@ -105,7 +48,6 @@ const isTaskCompleted = (task: Task): boolean => {
   );
 };
 
-/** Returns true when due_date (YYYY-MM-DD) is in the past */
 const isTaskOverdue = (dueDate: string | null): boolean => {
   if (!dueDate) return false;
   return new Date(dueDate) < new Date(new Date().toDateString());
@@ -117,103 +59,155 @@ const formatDate = (iso: string | null): string => {
   return `${d}/${m}/${y}`;
 };
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+const questionsForFormat = (
+  format: SubmissionFormat,
+  questions: TaskQuestion[],
+): TaskQuestion[] => (format === "multiple_choice" ? (questions ?? []) : []);
 
-/** Text area for non-image submissions */
-const TextSubmissionInput = ({
+const buildFormatAnswers = (
+  formats: SubmissionFormat[],
+  questions: TaskQuestion[],
+  answersByFormat: Record<string, FormatAnswerLocal>,
+): FormatAnswer[] =>
+  formats
+    .filter((f) => f !== "bundle")
+    .map((format) => {
+      const val = answersByFormat[format] ?? emptyAnswer();
+      const out: FormatAnswer = { format };
+      if (format === "text") out.text_answer = val.text?.trim();
+      if (format === "image") out.image_url = val.image?.uri;
+      if (format === "video") out.video_url = val.video?.uri;
+      if (format === "audio") out.audio_url = val.audio?.uri;
+      if (format === "multiple_choice") {
+        const qs = questionsForFormat(format, questions);
+        out.answers = qs.map((q) => {
+          const sel = val.optionSelections?.[q.id];
+          const selArray = Array.isArray(sel)
+            ? sel
+            : typeof sel === "string" && sel.length > 0
+              ? [sel]
+              : [];
+          const selectedOption = selArray.join(", ");
+          const correctAnswer =
+            q.correctAnswer ?? q.correctAnswers?.[0] ?? q.writtenAnswer ?? "";
+          return {
+            question_id: q.id,
+            question: q.question,
+            correct_answer: correctAnswer,
+            selected_option: selectedOption,
+          };
+        });
+      }
+      return out;
+    });
+
+// ── Step number badge───
+
+const StepBadge = ({ index, done }: { index: number; done?: boolean }) => (
+  <View style={[s.stepBadge, done && s.stepBadgeDone]}>
+    {done ? (
+      <MaterialCommunityIcons name="check" size={13} color="#fff" />
+    ) : (
+      <Text style={s.stepBadgeText}>{index}</Text>
+    )}
+  </View>
+);
+
+const FormatStep = ({
+  index,
+  title,
+  format,
+  questions,
   value,
   onChange,
-  placeholder,
+  done,
 }: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
+  index: number;
+  title: string;
+  format: SubmissionFormat;
+  questions: TaskQuestion[];
+  value: FormatAnswerLocal;
+  onChange: (next: FormatAnswerLocal) => void;
+  done: boolean;
 }) => (
-  <View style={verifyStyles.textInputWrapper}>
-    <MaterialCommunityIcons
-      name="pencil-outline"
-      size={16}
-      color="#94A3B8"
-      style={{ marginBottom: 6 }}
-    />
-    <TextInput
-      style={verifyStyles.textInput}
-      multiline
-      numberOfLines={4}
-      value={value}
-      onChangeText={onChange}
-      placeholder={placeholder}
-      placeholderTextColor="#CBD5E1"
-      textAlignVertical="top"
-    />
-    <Text style={verifyStyles.charCount}>{value.length} chars</Text>
+  <View style={s.stepRow}>
+    <StepBadge index={index} done={done} />
+    <View style={{ flex: 1 }}>
+      <Text style={s.stepTitle}>{title}</Text>
+      <View style={{ marginTop: 10 }}>
+        <TaskSubmissionBlock
+          format={format}
+          questions={questionsForFormat(format, questions)}
+          value={value}
+          onChange={onChange}
+          textPlaceholder="Write your answer here…"
+        />
+      </View>
+    </View>
   </View>
 );
 
-/** Single/choice option picker for question-based tasks */
-const OptionsSubmissionInput = ({
-  question,
-  options,
-  selected,
-  onSelect,
+const BundleStep = ({
+  index,
+  bt,
+  value,
+  onChange,
+  expanded,
+  onToggle,
+  done,
 }: {
-  question: string;
-  options: string[];
-  selected: string | null;
-  onSelect: (v: string) => void;
-}) => (
-  <View style={verifyStyles.optionsWrapper}>
-    {!!question && <Text style={verifyStyles.optionsQuestion}>{question}</Text>}
-    {options.map((opt) => {
-      const isSelected = selected === opt;
-      return (
+  index: number;
+  bt: BundleTask;
+  value: FormatAnswerLocal;
+  onChange: (next: FormatAnswerLocal) => void;
+  expanded: boolean;
+  onToggle: () => void;
+  done: boolean;
+}) => {
+  const fmt = (toFormatList(bt.submission_format)[0] ??
+    "text") as SubmissionFormat;
+  const meta = getFormatMeta(fmt);
+  return (
+    <View style={s.stepRow}>
+      <StepBadge index={index} done={done} />
+      <View style={{ flex: 1 }}>
         <TouchableOpacity
-          key={opt}
-          style={[
-            verifyStyles.optionRow,
-            isSelected && verifyStyles.optionRowSelected,
-          ]}
-          onPress={() => onSelect(opt)}
-          activeOpacity={0.8}
+          style={s.bundleStepHeader}
+          onPress={onToggle}
+          activeOpacity={0.7}
         >
-          <View
-            style={[
-              verifyStyles.radioOuter,
-              isSelected && verifyStyles.radioOuterSelected,
-            ]}
-          >
-            {isSelected && <View style={verifyStyles.radioInner} />}
-          </View>
-          <Text
-            style={[
-              verifyStyles.optionText,
-              isSelected && verifyStyles.optionTextSelected,
-            ]}
-          >
-            {opt}
-          </Text>
+          <Text style={s.stepTitle}>{bt.title}</Text>
+          <MaterialCommunityIcons
+            name={meta.icon as any}
+            size={18}
+            color={meta.color}
+          />
         </TouchableOpacity>
-      );
-    })}
-  </View>
-);
+        {expanded && (
+          <View style={{ marginTop: 10 }}>
+            {!!bt.description && (
+              <Text style={s.stepDescription}>{bt.description}</Text>
+            )}
+            <TaskSubmissionBlock
+              format={fmt}
+              questions={bt.questions ?? []}
+              value={value}
+              onChange={onChange}
+              textPlaceholder="Write your answer here…"
+            />
+          </View>
+        )}
+      </View>
+    </View>
+  );
+};
 
-// ── Main component ─────────────────────────────────────────────────────────────
+// ── Main component ──────────────────────────────────────────────────────────
 
 interface TaskAccordionItemProps {
   task: Task;
   userId?: string | null;
-  onSubmit?: (
-    task: Task,
-    payload: {
-      text?: string;
-      imageUri?: string;
-      base64?: string;
-      mimeType?: string;
-      selectedOption?: string;
-    },
-  ) => void;
-  /** Called after a successful API submission so the parent can refetch tasks */
+  onSubmit?: (task: Task, payload: Record<string, any>) => void;
   onSubmitted?: (task: Task) => void;
 }
 
@@ -223,16 +217,19 @@ export default function TaskAccordionItem({
   onSubmit,
   onSubmitted,
 }: TaskAccordionItemProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [textValue, setTextValue] = useState("");
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [imageBase64, setImageBase64] = useState<string | null>(null);
-  const [imageMime, setImageMime] = useState<string>("image/jpeg");
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const insets = useSafeAreaInsets();
   const [submitting, setSubmitting] = useState(false);
   const [justCompleted, setJustCompleted] = useState(false);
-  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const [answers, setAnswers] = useState<Record<string, FormatAnswerLocal>>({});
+  const [bundleAnswers, setBundleAnswers] = useState<
+    Record<number, Record<string, FormatAnswerLocal>>
+  >({});
+  const [expandedBundleIdx, setExpandedBundleIdx] = useState<
+    Record<number, boolean>
+  >({ 0: true });
 
   let cachedUserId: string | null = null;
   try {
@@ -247,446 +244,434 @@ export default function TaskAccordionItem({
   )
     ? task.submission_format
     : [];
-  const primaryFormat = submissionFormats[0] ?? "text";
-  const firstQuestion = Array.isArray(task.questions)
-    ? task.questions[0]
-    : null;
-  const effectiveType = resolveEffectiveType(task, primaryFormat);
-  const isImage = effectiveType === "image";
-  const isOptions = effectiveType === "options";
-  const primaryMeta = isOptions ? OPTIONS_META : getFormatMeta(primaryFormat);
+  const questions: TaskQuestion[] = Array.isArray(task.questions)
+    ? task.questions
+    : [];
+  const bundleTasks: BundleTask[] = Array.isArray(task.bundle_tasks)
+    ? task.bundle_tasks
+    : [];
+  const isBundle =
+    submissionFormats.includes("bundle") && bundleTasks.length > 0;
+
   const overdue = isTaskOverdue(task.due_date ?? null);
   const completed = isTaskCompleted(task) || justCompleted;
 
-  const toggle = () => {
-    LayoutAnimation.configureNext({
-      duration: 260,
-      create: { type: "easeInEaseOut", property: "opacity" },
-      update: { type: "spring", springDamping: 0.8 },
-    });
-    Animated.timing(rotateAnim, {
-      toValue: expanded ? 0 : 1,
-      duration: 220,
-      useNativeDriver: true,
-    }).start();
-    if (expanded) setVerifying(false); // collapse resets verify panel
-    setExpanded((p) => !p);
+  const getAnswer = (format: string) => answers[format] ?? emptyAnswer();
+  const setAnswer = (format: string, next: FormatAnswerLocal) =>
+    setAnswers((prev) => ({ ...prev, [format]: next }));
+
+  const getBundleAnswer = (bIdx: number, format: string) =>
+    bundleAnswers[bIdx]?.[format] ?? emptyAnswer();
+  const setBundleAnswer = (
+    bIdx: number,
+    format: string,
+    next: FormatAnswerLocal,
+  ) =>
+    setBundleAnswers((prev) => ({
+      ...prev,
+      [bIdx]: { ...(prev[bIdx] ?? {}), [format]: next },
+    }));
+
+  const toggleBundleIdx = (idx: number) =>
+    setExpandedBundleIdx((prev) => ({ ...prev, [idx]: !prev[idx] }));
+
+  const resetAllAnswers = () => {
+    setAnswers({});
+    setBundleAnswers({});
+    setExpandedBundleIdx({ 0: true });
+  };
+
+  const openModal = () => {
+    setSubmitError(null);
+    setModalOpen(true);
+  };
+  const closeModal = () => {
+    setModalOpen(false);
+    setSubmitError(null);
+  };
+
+  const validate = (): string | null => {
+    if (isBundle) {
+      for (const bt of bundleTasks) {
+        const idx = bundleTasks.indexOf(bt);
+        const fmts = toFormatList(bt.submission_format);
+        for (const fmt of fmts) {
+          const val = getBundleAnswer(idx, fmt);
+          if (!isFormatAnswered(fmt, bt.questions ?? [], val)) {
+            return `Please complete "${bt.title}".`;
+          }
+        }
+      }
+      return null;
+    }
+    for (const fmt of submissionFormats) {
+      const val = getAnswer(fmt);
+      if (!isFormatAnswered(fmt, questions, val)) {
+        return `Please complete the ${getFormatMeta(fmt).label} section.`;
+      }
+    }
+    return null;
   };
 
   const handleSubmit = async () => {
-    if (isImage && !imageBase64) {
-      Alert.alert("Required", "Please take a photo first.");
-      return;
-    }
-    if (isOptions && !selectedOption) {
-      Alert.alert("Required", "Please select an option.");
-      return;
-    }
-    if (!isImage && !isOptions && textValue.trim().length < 5) {
-      Alert.alert("Required", "Please enter at least 5 characters.");
+    const validationError = validate();
+    if (validationError) {
+      Alert.alert("Incomplete", validationError);
       return;
     }
     if (!effectiveUserId) {
-      console.warn(
-        "[TaskAccordionItem] Missing userId — prop:",
-        userId,
-        "cachedUser.userId:",
-        cachedUserId,
-      );
       Alert.alert("Error", "You must be signed in to submit this task.");
       return;
     }
 
-    // Notify parent (kept for backwards-compat / local bookkeeping)
-    onSubmit?.(task, {
-      text: textValue,
-      imageUri: imageUri ?? undefined,
-      base64: imageBase64 ?? undefined,
-      mimeType: imageMime,
-      selectedOption: selectedOption ?? undefined,
-    });
+    const resolvedMaxScore: number = isBundle
+      ? bundleTasks.length
+      : ((task as any).max_score ?? 1);
 
-    const questionId: string =
-      firstQuestion?.id ?? firstQuestion?.question_id ?? "";
-    const correctAnswer: string | undefined =
-      firstQuestion?.correctAnswer ||
-      firstQuestion?.correct_answer ||
-      undefined;
+    const payload = isBundle
+      ? {
+          is_bundle: true,
+          bundle_answers: bundleTasks.map((bt, idx) => ({
+            title: bt.title,
+            answers: buildFormatAnswers(
+              toFormatList(bt.submission_format),
+              bt.questions ?? [],
+              bundleAnswers[idx] ?? {},
+            ),
+          })) as BundleSubmissionEntry[],
+        }
+      : {
+          is_bundle: false,
+          answers: buildFormatAnswers(submissionFormats, questions, answers),
+        };
 
-    const resolvedMaxScore: number =
-      (firstQuestion &&
-        (firstQuestion.max_score ?? firstQuestion.points ?? undefined)) ??
-      (task as any).max_score ??
-      1;
-
-    const resolvedScore: number = resolvedMaxScore;
+    onSubmit?.(task, payload);
 
     setSubmitting(true);
+    setSubmitError(null);
     try {
-      await submitTaskAnswer(effectiveUserId, {
-        assignment_id: task.assignment_id,
-        task_id: task.task_id,
-        user_id: effectiveUserId,
-        submission_type: effectiveType,
-        max_score: resolvedMaxScore,
-        score: resolvedScore,
-        image_url: isImage
-          ? `data:${imageMime};base64,${imageBase64}`
-          : undefined,
-        text_answer: !isImage && !isOptions ? textValue.trim() : undefined,
-        answers:
-          isOptions && selectedOption && firstQuestion
-            ? [
-                {
-                  question_id: questionId,
-                  question: firstQuestion.question ?? "",
-                  correct_answer: correctAnswer,
-                  selected_option: selectedOption,
-                },
-              ]
-            : undefined,
-      });
+      if (isBundle) {
+        for (let idx = 0; idx < bundleTasks.length; idx++) {
+          const bt = bundleTasks[idx];
+          const fmts = toFormatList(bt.submission_format);
+          const childTaskId = `${task.task_id}-${idx}`;
+          const formatAnswers = buildFormatAnswers(
+            fmts,
+            bt.questions ?? [],
+            bundleAnswers[idx] ?? {},
+          );
+          for (const fa of formatAnswers) {
+            await submitFormatAnswer({
+              taskId: task.task_id,
+              childTaskId,
+              assignmentId: task.assignment_id,
+              userId: effectiveUserId,
+              maxScore: resolvedMaxScore,
+              score: 1,
+              format: fa.format,
+              formatAnswer: fa,
+            });
+          }
+        }
+      } else {
+        const formatAnswers = buildFormatAnswers(
+          submissionFormats,
+          questions,
+          answers,
+        );
+        for (const fa of formatAnswers) {
+          await submitFormatAnswer({
+            taskId: task.task_id,
+            assignmentId: task.assignment_id,
+            userId: effectiveUserId,
+            maxScore: resolvedMaxScore,
+            score: resolvedMaxScore,
+            format: fa.format,
+            formatAnswer: fa,
+          });
+        }
+      }
 
       setJustCompleted(true);
-      setVerifying(false);
-      setTextValue("");
-      setImageUri(null);
-      setImageBase64(null);
-      setSelectedOption(null);
+      resetAllAnswers();
       onSubmitted?.(task);
+      setModalOpen(false);
     } catch (err) {
-      Alert.alert(
-        "Submission failed",
+      const message =
         err instanceof Error
           ? err.message
-          : "Something went wrong. Please try again.",
-      );
+          : "Something went wrong. Please try again.";
+      setSubmitError(message);
+      Alert.alert("Submission failed", message);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const rotateInterpolate = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "90deg"],
-  });
+  const validationMessage = validate();
+
+  const primaryMeta = isBundle
+    ? getFormatMeta("bundle")
+    : getFormatMeta(submissionFormats[0] ?? "text");
 
   return (
-    <View
-      style={[
-        styles.card,
-        overdue && !completed && styles.cardOverdue,
-        completed && styles.cardCompleted,
-      ]}
-    >
-      {/* ── HEADER (always visible) ─────────────────────────────────── */}
+    <>
       <TouchableOpacity
-        style={styles.headerRow}
-        onPress={toggle}
-        activeOpacity={0.7}
+        style={[s.row, completed && s.rowCompleted]}
+        onPress={openModal}
+        activeOpacity={0.8}
       >
-        <View style={[styles.typeIconBox, { backgroundColor: primaryMeta.bg }]}>
+        <View style={[s.typeIconBox, { backgroundColor: primaryMeta.bg }]}>
           <MaterialCommunityIcons
             name={primaryMeta.icon as any}
-            size={18}
+            size={19}
             color={primaryMeta.color}
           />
         </View>
 
-        <View style={styles.headerTextBlock}>
-          <Text style={styles.taskTitle} numberOfLines={expanded ? 0 : 2}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.rowTitle} numberOfLines={1}>
             {task.title}
           </Text>
-          {!expanded && (
-            <View style={styles.metaRow}>
-              {completed ? (
-                <View style={styles.completedBadge}>
-                  <MaterialCommunityIcons
-                    name="check-circle"
-                    size={12}
-                    color="#059669"
-                  />
-                  <Text style={styles.completedBadgeText}>
-                    Completed &amp; Verified
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  <MaterialCommunityIcons
-                    name="clock-outline"
-                    size={11}
-                    color={overdue ? "#EF4444" : "#94A3B8"}
-                  />
-                  <Text
-                    style={[styles.metaText, overdue && { color: "#EF4444" }]}
-                  >
-                    Due {formatDate(task.due_date ?? null)}
-                  </Text>
+          <View style={s.rowMetaLine}>
+            <MaterialCommunityIcons
+              name="clock-outline"
+              size={12}
+              color={overdue && !completed ? "#EF4444" : "#94A3B8"}
+            />
+            <Text
+              style={[
+                s.rowMetaText,
+                overdue && !completed && { color: "#EF4444" },
+              ]}
+            >
+              Due {formatDate(task.due_date ?? null)}
+            </Text>
+
+            {isBundle ? (
+              <View
+                style={[s.formatBadge, { backgroundColor: primaryMeta.bg }]}
+              >
+                <Text style={[s.formatBadgeText, { color: primaryMeta.color }]}>
+                  {bundleTasks.length} steps
+                </Text>
+              </View>
+            ) : (
+              submissionFormats.map((fmt) => {
+                const meta = getFormatMeta(fmt);
+                return (
                   <View
-                    style={[
-                      styles.formatBadge,
-                      { backgroundColor: primaryMeta.bg },
-                    ]}
+                    key={fmt}
+                    style={[s.formatBadge, { backgroundColor: meta.bg }]}
                   >
-                    <Text
-                      style={[
-                        styles.formatBadgeText,
-                        { color: primaryMeta.color },
-                      ]}
-                    >
-                      {primaryMeta.label}
+                    <MaterialCommunityIcons
+                      name={meta.icon as any}
+                      size={10}
+                      color={meta.color}
+                    />
+                    <Text style={[s.formatBadgeText, { color: meta.color }]}>
+                      {meta.label}
                     </Text>
                   </View>
-                </>
-              )}
-            </View>
-          )}
-        </View>
+                );
+              })
+            )}
 
-        <Animated.View
-          style={{ transform: [{ rotate: rotateInterpolate }], marginLeft: 8 }}
-        >
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={22}
-            color="#94A3B8"
-          />
-        </Animated.View>
-      </TouchableOpacity>
-
-      {/* ── EXPANDED BODY ──────────────────────────────────────────── */}
-      {expanded && (
-        <View style={styles.body}>
-          <View style={styles.divider} />
-
-          {/* Meta chips */}
-          <View style={styles.metaChipsRow}>
-            <View style={styles.metaChip}>
-              <MaterialCommunityIcons
-                name="account-group-outline"
-                size={13}
-                color="#64748B"
-              />
-              <Text style={styles.metaChipText}>
-                {task.audience_display_name}
-              </Text>
-            </View>
-            <View style={styles.metaChip}>
-              <MaterialCommunityIcons
-                name="clock-outline"
-                size={13}
-                color={overdue ? "#EF4444" : "#64748B"}
-              />
-              <Text
-                style={[styles.metaChipText, overdue && { color: "#EF4444" }]}
-              >
-                Due {formatDate(task.due_date ?? null)}
-              </Text>
-            </View>
-            {overdue && (
-              <View style={[styles.statusPill, { backgroundColor: "#FEF2F2" }]}>
-                <Text style={[styles.statusPillText, { color: "#EF4444" }]}>
-                  Overdue
-                </Text>
+            {completed && (
+              <View style={s.completedPill}>
+                <MaterialCommunityIcons
+                  name="check"
+                  size={11}
+                  color="#059669"
+                />
+                <Text style={s.completedPillText}>Done</Text>
               </View>
             )}
           </View>
+        </View>
 
-          {/* Description */}
-          {!!task.description && task.description !== task.title && (
-            <View style={styles.descriptionBox}>
-              <Text style={styles.descriptionText}>{task.description}</Text>
+        <TouchableOpacity
+          style={[s.startBtn, completed && s.startBtnDone]}
+          onPress={openModal}
+          activeOpacity={0.85}
+        >
+          <Text style={[s.startBtnText, completed && s.startBtnTextDone]}>
+            {completed ? "View" : "Start"}
+          </Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+
+      <Modal
+        visible={modalOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={closeModal}
+      >
+        <View style={s.sheetOverlay}>
+          <Pressable style={s.sheetBackdrop} onPress={closeModal} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
+            style={s.sheetContainer}
+          >
+            <View style={s.sheetGrabber} />
+
+            <View style={s.modalHeader}>
+              <View
+                style={[s.modalHeaderIcon, { backgroundColor: primaryMeta.bg }]}
+              >
+                <MaterialCommunityIcons
+                  name={primaryMeta.icon as any}
+                  size={18}
+                  color={primaryMeta.color}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.modalTitle} numberOfLines={2}>
+                  {task.title}
+                </Text>
+                {!!task.description && task.description !== task.title && (
+                  <Text style={s.modalSubtitle} numberOfLines={2}>
+                    {task.description}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity
+                onPress={closeModal}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={20}
+                  color="#64748B"
+                />
+              </TouchableOpacity>
             </View>
-          )}
 
-          {/* Submission format badges */}
-          <Text style={styles.sectionLabel}>SUBMISSION FORMAT</Text>
-          <View style={styles.formatsRow}>
-            {submissionFormats.map((fmt) => {
-              const meta = getFormatMeta(fmt);
-              return (
-                <View
-                  key={fmt}
-                  style={[styles.formatChip, { backgroundColor: meta.bg }]}
-                >
+            <ScrollView
+              style={s.modalBody}
+              contentContainerStyle={{
+                paddingBottom: completed ? 16 + insets.bottom : 16,
+              }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              onScrollBeginDrag={Keyboard.dismiss}
+              showsVerticalScrollIndicator={false}
+            >
+              {completed ? (
+                <View style={s.completedPanel}>
                   <MaterialCommunityIcons
-                    name={meta.icon as any}
-                    size={13}
-                    color={meta.color}
+                    name="check-circle"
+                    size={20}
+                    color="#059669"
                   />
-                  <Text style={[styles.formatChipText, { color: meta.color }]}>
-                    {meta.label}
+                  <Text style={s.completedPanelText}>
+                    This task has already been submitted.
                   </Text>
                 </View>
-              );
-            })}
-          </View>
-
-          {/* Progress bar */}
-          {task.total_target_count > 0 && (
-            <View style={styles.progressSection}>
-              <View style={styles.progressLabelRow}>
-                <Text style={styles.sectionLabel}>COMPLETION</Text>
-                <Text style={styles.progressFraction}>
-                  {task.completion_count}/{task.total_target_count}
-                </Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    {
-                      width: `${Math.min(
-                        (task.completion_count / task.total_target_count) * 100,
-                        100,
-                      )}%` as any,
-                    },
-                  ]}
-                />
-              </View>
-            </View>
-          )}
-
-          {/* ── COMPLETED / VERIFICATION PANEL ─────────────────────── */}
-          {completed ? (
-            <View style={styles.completedPanel}>
-              <MaterialCommunityIcons
-                name="check-circle"
-                size={18}
-                color="#059669"
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.completedPanelTitle}>Completed</Text>
-                <Text style={styles.completedPanelSubtitle}>
-                  Task submitted successfully
-                </Text>
-              </View>
-            </View>
-          ) : verifying ? (
-            <View style={styles.verifyPanel}>
-              <Text style={styles.verifyTitle}>
-                {isImage
-                  ? "Submit a Photo"
-                  : isOptions
-                    ? (firstQuestion?.question ?? "Answer the Question")
-                    : "Type Your Response"}
-              </Text>
-              <Text style={styles.verifySubtitle}>
-                {isImage
-                  ? "Use your camera to take a live photo"
-                  : isOptions
-                    ? "Select the option that applies"
-                    : "Describe your response in writing"}
-              </Text>
-
-              {isImage ? (
-                <CameraCapture
-                  onCapture={(b64, uri) => {
-                    setImageBase64(b64);
-                    setImageUri(uri);
-                  }}
-                />
-              ) : isOptions ? (
-                <OptionsSubmissionInput
-                  question=""
-                  options={(firstQuestion?.options as string[]) ?? []}
-                  selected={selectedOption}
-                  onSelect={setSelectedOption}
-                />
+              ) : isBundle ? (
+                bundleTasks.map((bt, idx) => {
+                  const fmts = toFormatList(bt.submission_format);
+                  const val = getBundleAnswer(idx, fmts[0] ?? "text");
+                  const done = fmts.every((fmt) =>
+                    isFormatAnswered(
+                      fmt,
+                      bt.questions ?? [],
+                      getBundleAnswer(idx, fmt),
+                    ),
+                  );
+                  return (
+                    <BundleStep
+                      key={`${bt.title}-${idx}`}
+                      index={idx + 1}
+                      bt={bt}
+                      value={val}
+                      onChange={(next) =>
+                        setBundleAnswer(idx, fmts[0] ?? "text", next)
+                      }
+                      expanded={!!expandedBundleIdx[idx]}
+                      onToggle={() => toggleBundleIdx(idx)}
+                      done={done}
+                    />
+                  );
+                })
               ) : (
-                <TextSubmissionInput
-                  value={textValue}
-                  onChange={setTextValue}
-                  placeholder={`Write your response for "${task.title}"…`}
-                />
+                submissionFormats.map((fmt, idx) => (
+                  <FormatStep
+                    key={fmt}
+                    index={idx + 1}
+                    title={
+                      questions.length && fmt === "multiple_choice"
+                        ? (questions[0]?.question ?? task.title)
+                        : task.title
+                    }
+                    format={fmt}
+                    questions={questions}
+                    value={getAnswer(fmt)}
+                    onChange={(next) => setAnswer(fmt, next)}
+                    done={isFormatAnswered(fmt, questions, getAnswer(fmt))}
+                  />
+                ))
               )}
 
-              <View style={styles.verifyActions}>
+              {!completed && !!submitError && (
+                <Text style={s.inlineError}>{submitError}</Text>
+              )}
+            </ScrollView>
+
+            {!completed && (
+              <View
+                style={[s.modalFooter, { paddingBottom: 20 + insets.bottom }]}
+              >
                 <TouchableOpacity
-                  style={styles.cancelBtn}
-                  onPress={() => {
-                    setVerifying(false);
-                    setTextValue("");
-                    setImageUri(null);
-                    setImageBase64(null);
-                    setSelectedOption(null);
-                  }}
-                  activeOpacity={0.8}
-                  disabled={submitting}
-                >
-                  <Text style={styles.cancelBtnText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
+                  style={[
+                    s.submitBtn,
+                    (submitting || !!validationMessage) && { opacity: 0.5 },
+                  ]}
                   onPress={handleSubmit}
                   activeOpacity={0.85}
-                  disabled={submitting}
+                  disabled={submitting || !!validationMessage}
                 >
                   {submitting ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
-                    <MaterialCommunityIcons
-                      name="send"
-                      size={15}
-                      color="#fff"
-                    />
+                    <>
+                      <MaterialCommunityIcons
+                        name="send"
+                        size={15}
+                        color="#fff"
+                      />
+                      <Text style={s.submitBtnText}>Submit</Text>
+                    </>
                   )}
-                  <Text style={styles.submitBtnText}>
-                    {submitting ? "Submitting…" : "Submit Verification"}
-                  </Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.beginBtn}
-              onPress={() => setVerifying(true)}
-              activeOpacity={0.85}
-            >
-              <MaterialCommunityIcons name="play" size={15} color="#fff" />
-              <Text style={styles.beginBtnText}>Begin Verification</Text>
-            </TouchableOpacity>
-          )}
+            )}
+          </KeyboardAvoidingView>
         </View>
-      )}
-    </View>
+      </Modal>
+    </>
   );
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  card: {
+const s = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#fff",
-    borderRadius: 20,
-    marginBottom: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#F1F5F9",
-    overflow: "hidden",
+    padding: 12,
+    marginBottom: 10,
+    gap: 12,
     shadowColor: "#94A3B8",
     shadowOpacity: 0.06,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    elevation: 1,
   },
-  cardOverdue: {
-    borderLeftWidth: 3,
-    borderLeftColor: "#EF4444",
-    borderColor: "#FECACA",
-  },
-  cardCompleted: {
-    borderLeftWidth: 3,
-    borderLeftColor: "#10B981",
-    borderColor: "#D1FAE5",
-  },
-
-  // Header
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 14,
-    gap: 10,
-  },
+  rowCompleted: { borderColor: "#D1FAE5", backgroundColor: "#FAFFFE" },
   typeIconBox: {
     width: 38,
     height: 38,
@@ -695,240 +680,152 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexShrink: 0,
   },
-  headerTextBlock: { flex: 1 },
-  taskTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#1E293B",
-    lineHeight: 20,
-  },
-  metaRow: {
+  rowTitle: { fontSize: 14, fontWeight: "700", color: "#1E293B" },
+  rowMetaLine: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
     marginTop: 5,
     flexWrap: "wrap",
   },
-  metaText: { fontSize: 11, color: "#94A3B8", fontWeight: "500" },
-  completedBadge: {
+  rowMetaText: { fontSize: 11, color: "#94A3B8", fontWeight: "500" },
+  formatBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "#ECFDF5",
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  completedBadgeText: { fontSize: 10, fontWeight: "700", color: "#059669" },
-  formatBadge: {
+    gap: 3,
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
   formatBadgeText: { fontSize: 10, fontWeight: "700" },
-
-  // Body
-  body: { paddingHorizontal: 14, paddingBottom: 14 },
-  divider: { height: 1, backgroundColor: "#F1F5F9", marginBottom: 12 },
-
-  metaChipsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 7,
-    marginBottom: 12,
-  },
-  metaChip: {
+  completedPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "#F8FAFC",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    gap: 3,
+    backgroundColor: "#ECFDF5",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
   },
-  metaChipText: { fontSize: 11, color: "#64748B", fontWeight: "600" },
-  statusPill: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
-  statusPillText: { fontSize: 10, fontWeight: "700" },
+  completedPillText: { fontSize: 10, fontWeight: "700", color: "#059669" },
 
-  descriptionBox: {
-    backgroundColor: "#F8FAFC",
+  startBtn: {
+    backgroundColor: "#2563EB",
     borderRadius: 10,
-    padding: 10,
-    marginBottom: 12,
-    borderLeftWidth: 2,
-    borderLeftColor: "#E2E8F0",
+    paddingHorizontal: 16,
+    paddingVertical: 9,
   },
-  descriptionText: { fontSize: 13, color: "#475569", lineHeight: 18 },
+  startBtnDone: { backgroundColor: "#F1F5F9" },
+  startBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  startBtnTextDone: { color: "#475569" },
 
-  sectionLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#94A3B8",
-    letterSpacing: 0.6,
-    marginBottom: 7,
+  // Bottom-sheet modal — ~70% of screen height, scrollable body
+  sheetOverlay: { flex: 1, justifyContent: "flex-end" },
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15, 23, 42, 0.4)",
   },
-
-  formatsRow: {
+  sheetContainer: {
+    maxHeight: SCREEN_HEIGHT * 0.7,
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  sheetGrabber: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#E2E8F0",
+    alignSelf: "center",
+    marginBottom: 10,
+  },
+  modalHeader: {
     flexDirection: "row",
-    gap: 7,
-    marginBottom: 14,
-    flexWrap: "wrap",
+    alignItems: "flex-start",
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    gap: 10,
   },
-  formatChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  formatChipText: { fontSize: 11, fontWeight: "700" },
-
-  progressSection: { marginBottom: 14 },
-  progressLabelRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 5,
-  },
-  progressFraction: { fontSize: 11, fontWeight: "700", color: "#475569" },
-  progressTrack: {
-    height: 6,
-    backgroundColor: "#F1F5F9",
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: "#2563EB",
-    borderRadius: 4,
-  },
-
-  // CTA buttons
-  beginBtn: {
-    marginTop: 4,
-    backgroundColor: "#2563EB",
-    borderRadius: 14,
-    paddingVertical: 13,
-    flexDirection: "row",
+  modalHeaderIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
-    gap: 7,
+    marginTop: 1,
   },
-  beginBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  modalTitle: { fontSize: 16, fontWeight: "800", color: "#1E293B" },
+  modalSubtitle: { fontSize: 12, color: "#64748B", marginTop: 3 },
+  modalBody: { paddingHorizontal: 20, paddingTop: 16 },
+
+  stepRow: { flexDirection: "row", gap: 12, marginBottom: 22 },
+  stepBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#EFF6FF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  stepBadgeDone: { backgroundColor: "#10B981" },
+  stepBadgeText: { fontSize: 12, fontWeight: "800", color: "#2563EB" },
+  stepTitle: { fontSize: 14, fontWeight: "700", color: "#1E293B", flex: 1 },
+  stepDescription: { fontSize: 12, color: "#64748B", marginBottom: 8 },
+  bundleStepHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
 
   completedPanel: {
-    marginTop: 4,
-    backgroundColor: "#ECFDF5",
-    borderRadius: 14,
-    padding: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    backgroundColor: "#ECFDF5",
+    borderRadius: 14,
+    padding: 16,
     borderWidth: 1,
     borderColor: "#A7F3D0",
   },
-  completedPanelTitle: { fontSize: 14, fontWeight: "800", color: "#047857" },
-  completedPanelSubtitle: { fontSize: 12, color: "#059669", marginTop: 1 },
-
-  verifyPanel: {
-    marginTop: 4,
-    backgroundColor: "#F8FAFC",
-    borderRadius: 14,
-    padding: 14,
-  },
-  verifyTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#1E293B",
-    marginBottom: 2,
-  },
-  verifySubtitle: { fontSize: 12, color: "#64748B", marginBottom: 12 },
-
-  verifyActions: { flexDirection: "row", gap: 10, marginTop: 12 },
-  cancelBtn: {
-    flex: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-    backgroundColor: "#fff",
-    alignItems: "center",
-  },
-  cancelBtnText: { fontSize: 13, fontWeight: "700", color: "#64748B" },
-  submitBtn: {
-    flex: 2,
-    borderRadius: 12,
-    paddingVertical: 12,
-    backgroundColor: "#2563EB",
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-  },
-  submitBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
-});
-
-const verifyStyles = StyleSheet.create({
-  textInputWrapper: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 12,
-  },
-  textInput: {
+  completedPanelText: {
     fontSize: 13,
-    color: "#1E293B",
-    minHeight: 90,
-    lineHeight: 19,
-  },
-  charCount: {
-    textAlign: "right",
-    fontSize: 10,
-    color: "#CBD5E1",
-    marginTop: 4,
     fontWeight: "600",
+    color: "#047857",
+    flex: 1,
   },
 
-  optionsWrapper: { gap: 8 },
-  optionsQuestion: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#1E293B",
-    marginBottom: 4,
+  inlineError: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#EF4444",
+    marginTop: 4,
+    textAlign: "center",
   },
-  optionRow: {
+
+  modalFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 20,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  submitBtn: {
+    backgroundColor: "#2563EB",
+    borderRadius: 14,
+    paddingVertical: 14,
     flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  optionRowSelected: {
-    borderColor: "#2563EB",
-    backgroundColor: "#EFF6FF",
-  },
-  radioOuter: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: "#CBD5E1",
     justifyContent: "center",
     alignItems: "center",
+    gap: 8,
   },
-  radioOuterSelected: { borderColor: "#2563EB" },
-  radioInner: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    backgroundColor: "#2563EB",
-  },
-  optionText: { fontSize: 13, fontWeight: "600", color: "#475569" },
-  optionTextSelected: { color: "#1E3A8A", fontWeight: "700" },
+  submitBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
 });

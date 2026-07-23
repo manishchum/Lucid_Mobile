@@ -58,7 +58,7 @@ export function useCamera(): UseCameraReturn {
 
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true, // lets user crop/rotate before confirming
+        allowsEditing: false,
         quality: 0.7, // balance quality vs upload size
         base64: true, // need base64 for the API
         exif: false, // not needed to save memory

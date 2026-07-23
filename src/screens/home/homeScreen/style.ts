@@ -2,13 +2,13 @@ import { StyleSheet } from 'react-native';
 
 const createStyles = () => {
   return StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
+    safeArea: { flex: 1, backgroundColor: '#FFF' },
     loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' },
 
     // ── Header ────────────────────────────────────────────────────────────
     header: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
+      justifyContent: "flex-end",
       alignItems: 'center',
       paddingHorizontal: 20,
       paddingVertical: 15,
@@ -49,61 +49,51 @@ const createStyles = () => {
     sectionWrapper: { marginTop: 20, paddingHorizontal: 20 },
     sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1E293B', marginBottom: 14 },
 
-    // ── Your Progress Card ────────────────────────────────────────────────
-    // Mirrors the web card: left side (icon + text), right side (circle + subtext)
-    progressCard: {
+    // ── Consolidated Hero ──────────────────────────────────────────────────
+    welcomeContainer: {
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: 12,
       backgroundColor: '#fff',
-      borderRadius: 24,
-      padding: 20,
+    },
+    welcomeHeaderRow: {
       flexDirection: 'row',
+      justifyContent: 'space-between',
       alignItems: 'center',
-      borderWidth: 1,
-      borderColor: '#F1F5F9',
-      elevation: 3,
-      shadowColor: '#64748B',
-      shadowOpacity: 0.08,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 3 },
     },
-    progressLeft: {
+    welcomeTextColumn: {
       flex: 1,
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: 12,
-      paddingRight: 12,
+      justifyContent: 'center',
     },
-    progressIconBox: {
-      width: 44, height: 44, borderRadius: 12,
-      backgroundColor: '#EFF6FF',
-      justifyContent: 'center', alignItems: 'center',
-      flexShrink: 0,
+    welcomeSub: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: '#64748B',
+      marginBottom: 4,
     },
-    progressTextBlock: { flex: 1 },
-    progressCardTitle: { fontSize: 16, fontWeight: '800', color: '#1E293B' },
-    progressNudge: {
-      fontSize: 12, color: '#64748B', fontWeight: '500',
-      lineHeight: 17, marginTop: 4, marginBottom: 10,
+    welcomeName: {
+      fontSize: 32,
+      fontWeight: '900',
+      color: '#0F172A',
+      letterSpacing: -1,
+      marginBottom: 6,
     },
-    completedBadge: {
-      alignSelf: 'flex-start',
-      backgroundColor: '#F1F5F9',
-      borderRadius: 6,
-      paddingHorizontal: 8, paddingVertical: 4,
+    welcomeTagline: {
+      fontSize: 13,
+      fontWeight: '500',
+      color: '#94A3B8',
     },
-    completedBadgeText: { fontSize: 11, fontWeight: '700', color: '#475569', letterSpacing: 0.3 },
-
-    // Right side: circle + "X of Y"
-    progressRight: { alignItems: 'center', gap: 6 },
-    progressCircleContainer: { justifyContent: 'center', alignItems: 'center' },
-    progressCircleInner: { position: 'absolute', alignItems: 'center' },
-    progressCirclePercent: { fontSize: 16, fontWeight: '900', color: '#2563EB' },
-    progressOfText: { fontSize: 11, fontWeight: '700', color: '#94A3B8', textAlign: 'center' },
+    ringWrapper: {
+      marginLeft: 16,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
 
     // ── Stats Grid ────────────────────────────────────────────────────────
     statsGrid: { flexDirection: 'row', gap: 12 },
     statCard: {
       flex: 1, backgroundColor: '#fff', borderRadius: 20, padding: 16,
-      alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9',
+      alignItems: 'center', borderWidth: 1, borderColor: "#e2e8f0",
     },
     statIconBox: {
       width: 40, height: 40, borderRadius: 12,

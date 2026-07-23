@@ -16,12 +16,14 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { APP_ROUTES, STACK_ROUTES } from "../../navigations/Routes";
+import { STACK_ROUTES, APP_ROUTES } from "../../navigations/Routes";
 import { useAuth } from "../../contex/AuthContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
 import { useModuleProgress, useGetTrainingPlan } from "../../api/users/Hooks";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
+import { useActiveSprint } from "../../contex/ActiveSprintContext";
+import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
 if (
 	Platform.OS === "android" &&
@@ -32,32 +34,30 @@ if (
 
 export default function SprintScreen({
 	navigation,
-	route,
 }: {
 	navigation: any;
-	route: any;
 }) {
 	const insets = useSafeAreaInsets();
 	const { cachedUser } = useAuth();
 	const { hasFeature } = useFeatureGating();
 	const showStudio = hasFeature(FEATURES.LUCID_STUDIO);
+	const { activeSprint, setActiveModule } = useActiveSprint();
 
-	// ── Route params passed from HomeScreen ──────────────────────────────────
-	const moduleId: string = route?.params?.moduleId ?? "";
-	const planTitle: string = route?.params?.planTitle ?? "Performance Sprint";
-	const tips: string = route?.params?.tips ?? "";
-	const rawModules: any[] = route?.params?.modules ?? [];
-	// processedModuleIds are resolved on the home screen from the learning-plans
-	// API (default learning style). Index-aligned with rawModules[].
+	// ── Active Sprint Context params ──────────────────────────────────
+	const moduleId: string = activeSprint?.moduleId ?? "";
+	const planTitle: string = activeSprint?.planTitle ?? "Performance Sprint";
+	const tips: string = activeSprint?.tips ?? "";
+	const rawModules: any[] = activeSprint?.modules ?? [];
 	const processedModuleIds: string[] =
-		route?.params?.processedModuleIds ?? [];
+		activeSprint?.processedModuleIds ?? [];
 
 	const [tipsExpanded, setTipsExpanded] = useState(false);
 	const [showNoInternet, setShowNoInternet] = useState(false);
+	const [refreshing, setRefreshing] = useState(false);
 
 	const isOnline = useNetworkStatus();
 
-  const { plan: trainingPlan } = useGetTrainingPlan(
+  const { plan: trainingPlan, refetch: refetchTrainingPlan } = useGetTrainingPlan(
     cachedUser?.userId ?? null,
     moduleId || null,
   );
@@ -98,8 +98,18 @@ export default function SprintScreen({
       return [];
     }, [trainingPlan]);
 
+	const isTrainingPlanMatching = useMemo(() => {
+		if (!trainingPlan || !moduleId) return false;
+		const planModuleId =
+			trainingPlan?.module_id ??
+			trainingPlan?.plan?.module_id ??
+			"";
+		return !planModuleId || planModuleId === moduleId;
+	}, [trainingPlan, moduleId]);
+
 	const trainingPlanModulesByTitle = useMemo(() => {
 		const map = new Map<string, string>();
+		if (!isTrainingPlanMatching) return map;
 		const planModules: Array<{
 			title?: string;
 			order?: number;
@@ -112,10 +122,11 @@ export default function SprintScreen({
 			}
 		});
 		return map;
-	}, [trainingPlan]);
+	}, [trainingPlan, isTrainingPlanMatching]);
 
 	const trainingPlanModulesByOrder = useMemo(() => {
 		const map = new Map<number, string>();
+		if (!isTrainingPlanMatching) return map;
 		const planModules: Array<{
 			order?: number;
 			processed_module_id?: string;
@@ -126,24 +137,35 @@ export default function SprintScreen({
 			}
 		});
 		return map;
-	}, [trainingPlan]);
+	}, [trainingPlan, isTrainingPlanMatching]);
 
 	const resolveProcessedModuleId = (
 		index: number,
-		mod: { title?: string; order?: number },
+		mod: { title?: string; order?: number; processed_module_id?: string; processedModuleId?: string },
 	): string => {
+		// 1. Direct property on mod object if available
+		const directId = mod?.processed_module_id ?? mod?.processedModuleId;
+		if (directId) return directId;
+
+		// 2. Title match if matching trainingPlan is available
 		const titleKey = (mod?.title ?? "").trim().toLowerCase();
 		const byTitle = titleKey
 			? trainingPlanModulesByTitle.get(titleKey)
 			: "";
 		if (byTitle) return byTitle;
 
+		// 3. Order match if matching trainingPlan is available
 		if (typeof mod?.order === "number") {
 			const byOrder = trainingPlanModulesByOrder.get(mod.order);
 			if (byOrder) return byOrder;
 		}
 
-		return processedModuleIds[index] ?? "";
+		// 4. Last fallback: Direct positional match from activeSprint's processedModuleIds
+		if (processedModuleIds[index]) {
+			return processedModuleIds[index];
+		}
+
+		return "";
 	};
 
 	const handleOpenReading = async (url: string) => {
@@ -188,6 +210,20 @@ export default function SprintScreen({
 			// eslint-disable-next-line react-hooks/exhaustive-deps
 		}, [cachedUser?.userId]),
 	);
+
+	const onRefresh = useCallback(async () => {
+		setRefreshing(true);
+		try {
+			await Promise.all([
+				refetchTrainingPlan(),
+				refetchModuleProgress(),
+			]);
+		} catch (err) {
+			console.error("[SprintScreen] Refresh error:", err);
+		} finally {
+			setRefreshing(false);
+		}
+	}, [refetchTrainingPlan, refetchModuleProgress]);
 
 	// ── Verified completion sets
 	const { completedProcessedModuleIds, quizPassedProcessedModuleIds } =
@@ -293,11 +329,12 @@ export default function SprintScreen({
 			`[SprintScreen] ✅ View Content: Module[${index}] "${modTitle}" → processedModuleId="${processedModuleId}"`,
 		);
 
-		navigation.navigate(APP_ROUTES.STUDIO, {
+		setActiveModule({
 			processedModuleId,
 			moduleTitle: modTitle,
 			sprintTitle: planTitle,
 		});
+		navigation.navigate("AppTabs", { screen: STACK_ROUTES.STUDIO });
 	};
 
 	/**
@@ -333,62 +370,82 @@ export default function SprintScreen({
 			`[SprintScreen] ✅ Module Quiz: Module[${index}] "${modTitle}" → processedModuleId="${processedModuleId}"`,
 		);
 
+		const targetMod = modules?.[index];
+		const thresholdValue = targetMod?.threshold_value ?? (mod as any)?.threshold_value;
+
 		navigation.navigate(STACK_ROUTES.MODULE_QUIZ, {
 			processedModuleId,
 			moduleId,
 			moduleTitle: modTitle,
+			passingThreshold: thresholdValue,
 		});
 	};
 
 	if (!moduleId) {
 		return (
-			<View style={[styles.centered, { paddingTop: insets.top + 20 }]}>
+			<View style={styles.centered}>
+				<View style={styles.emptyIconWrap}>
 				<MaterialCommunityIcons
-					name="lightning-bolt"
-					size={48}
-					color="#CBD5E1"
-				/>
-				<Text style={styles.emptyTitle}>No Sprint Selected</Text>
+					name="lightning-bolt-outline"
+					size={56}
+					color="#A5B4FC"
+					/>
+				</View>
+				<Text style={styles.emptyTitle}>No Sprint Started</Text>
 				<Text style={styles.emptySubtitle}>
-					Go to Home and tap "Start your sprint" on a learning plan to
-					begin.
+					Go to the Home tab and tap <Text style={styles.emptyHighlight}>Start Sprint</Text> on a learning plan to begin.
 				</Text>
+				<TouchableOpacity
+					style={styles.emptyBtn}
+					onPress={() => navigation.navigate(APP_ROUTES.HOME)}
+					activeOpacity={0.8}
+				>
+					<Text style={styles.emptyBtnText}>Go to Home</Text>
+				</TouchableOpacity>
 			</View>
 		);
 	}
 
 	return (
-		<View style={[styles.container, { paddingTop: insets.top }]}>
+		<View style={styles.container}>
 			<StatusBar barStyle="dark-content" />
 			<ScrollView
 				showsVerticalScrollIndicator={false}
-				contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+				contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+				refreshControl={
+					RefreshSpinner(refreshing, onRefresh)
+				}>
 				{/* ── Header ──────────────────────────────────────────────────────── */}
-				<View style={styles.header}>
-					<Text style={styles.headerTitle} numberOfLines={2}>
-						{planTitle}
-					</Text>
+				<View style={[styles.header, { paddingBottom: 0 }]}>
+					<TouchableOpacity
+						style={styles.backBtnRow}
+						onPress={() => navigation.navigate(APP_ROUTES.HOME)}
+						activeOpacity={0.7}
+					>
+						<MaterialCommunityIcons name="chevron-left" size={24} color="#6366F1" />
+						<Text style={styles.backBtnText}>Back to Home</Text>
+					</TouchableOpacity>
 				</View>
 
 				{/* ── Hero Card ───────────────────────────────────────────────────── */}
 				<View style={styles.sprintCard}>
 					<View style={styles.cardHeader}>
-						<View style={styles.iconCircle}>
+						{/* <View style={styles.iconCircle}>
 							<MaterialCommunityIcons
 								name="lightning-bolt"
 								size={24}
 								color="white"
 							/>
-						</View>
+						</View> */}
 						<View style={{ flex: 1 }}>
-							<Text style={styles.cardTitle}>
-								Your Roadmap to Mastery
-							</Text>
-							<Text style={styles.cardMeta}>
+							<Text style={styles.headerTitle} numberOfLines={2}>
+						{planTitle}
+					</Text>
+							{/* <Text style={styles.cardMeta}>
 								{totalModules} Module
 								{totalModules !== 1 ? "s" : ""}
 								{` · ${completedModulesCount} / ${totalModules} Completed`}
-							</Text>
+							</Text> */}
 						</View>
 					</View>
 
@@ -410,7 +467,7 @@ export default function SprintScreen({
 						{`${completedModulesCount} of ${totalModules} modules complete`}
 					</Text>
 
-					{tips ? (
+					{/* {tips ? (
 						<TouchableOpacity
 							onPress={handleToggleTips}
 							activeOpacity={0.85}
@@ -441,7 +498,7 @@ export default function SprintScreen({
 								</Text>
 							)}
 						</TouchableOpacity>
-					) : null}
+					) : null} */}
 				</View>
 
 				{/* ── Additional Readings ─────────────────────────────────────────── */}
@@ -537,23 +594,20 @@ export default function SprintScreen({
 												styles.statusDot,
 												isDone && styles.statusDotDone,
 											]}>
-											<MaterialCommunityIcons
-												name={
-													isDone
-														? "check"
-														: "circle-outline"
-												}
-												size={14}
-												color={
-													isDone ? "#fff" : "#94A3B8"
-												}
-											/>
+											<Text
+												style={[
+													styles.statusDotNumber,
+													isDone &&
+														styles.statusDotNumberDone,
+												]}>
+												{index + 1}
+											</Text>
 										</View>
 										<View style={styles.moduleInfo}>
-											<Text style={styles.moduleLabel}>
+											{/* <Text style={styles.moduleLabel}>
 												MODULE {index + 1} OF{" "}
 												{totalModules}
-											</Text>
+											</Text> */}
 											<Text style={styles.moduleTitle}>
 												{mod.title}
 											</Text>
@@ -606,7 +660,7 @@ export default function SprintScreen({
 												<MaterialCommunityIcons
 													name="check-circle-outline"
 													size={14}
-													color="#6EE7B7"
+													color="#FFFFFF"
 													style={{ marginRight: 5 }}
 												/>
 											)}
@@ -638,29 +692,50 @@ export default function SprintScreen({
 }
 
 const styles = StyleSheet.create({
-	container: { flex: 1, backgroundColor: "#F9FAFB" },
+	container: { flex: 1, backgroundColor: "#FFF" },
 	centered: {
 		flex: 1,
 		justifyContent: "center",
 		alignItems: "center",
-		paddingHorizontal: 32,
-		gap: 12,
+		paddingHorizontal: 36,
+		backgroundColor: "#FFF",
 	},
+	emptyIconWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 24,
+    backgroundColor: "#EEF2FF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
+  },
 	emptyTitle: {
-		fontSize: 20,
-		fontWeight: "700",
-		color: "#374151",
-		textAlign: "center",
+		fontSize: 26,
+		fontWeight: "800",
+		color: "#1E293B",
+		marginBottom: 12,
 	},
 	emptySubtitle: {
 		fontSize: 14,
 		color: "#6B7280",
 		textAlign: "center",
-		lineHeight: 22,
+		lineHeight: 24,
 	},
+	emptyHighlight: { color: "#4F46E5", fontWeight: "700" },
 
 	header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 4 },
-	headerTitle: { fontSize: 24, fontWeight: "800", color: "#111827" },
+	backBtnRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		marginBottom: 8,
+	},
+	backBtnText: {
+		fontSize: 14,
+		fontWeight: "600",
+		color: "#6366F1",
+		marginLeft: 2,
+	},
+	headerTitle: { fontSize: 24, fontWeight: "800", color: "#fff"},
 	headerSub: { fontSize: 14, color: "#6B7280", marginTop: 2 },
 
 	sprintCard: {
@@ -690,7 +765,7 @@ const styles = StyleSheet.create({
 		borderRadius: 3,
 		backgroundColor: "rgba(255,255,255,0.25)",
 	},
-	progressSegmentFilled: { backgroundColor: "#A5F3FC" },
+	progressSegmentFilled: { backgroundColor: "#10B981" },
 	progressFraction: {
 		color: "rgba(255,255,255,0.65)",
 		fontSize: 12,
@@ -817,6 +892,14 @@ const styles = StyleSheet.create({
 		marginTop: 2,
 	},
 	statusDotDone: { backgroundColor: "#10B981" },
+	statusDotNumber: {
+		fontSize: 11,
+		fontWeight: "800",
+		color: "#64748B",
+	},
+	statusDotNumberDone: {
+		color: "#FFFFFF",
+	},
 
 	moduleInfo: { flex: 1 },
 	moduleLabel: {
@@ -868,11 +951,28 @@ const styles = StyleSheet.create({
 	},
 	quizButtonDisabled: { backgroundColor: "#C7D2FE" },
 	quizButtonPassed: {
-		backgroundColor: "#7a8b87",
-		borderWidth: 1,
-		borderColor: "#065F46",
-		opacity: 0.75,
+		backgroundColor: "#10B981",
+		// borderWidth: 1,
+		// borderColor: "#065F46",
+		// opacity: 0.75,
 	},
 	quizButtonText: { fontSize: 13, fontWeight: "700", color: "white" },
-	quizButtonTextPassed: { color: "#6EE7B7", fontWeight: "600" },
+	quizButtonTextPassed: { color: "#fff", fontWeight: "600" },
+	backBtn: {
+		marginBottom: 12,
+		alignSelf: "flex-start",
+		padding: 4,
+	},
+	emptyBtn: {
+		backgroundColor: "#6366F1",
+		paddingVertical: 12,
+		paddingHorizontal: 24,
+		borderRadius: 12,
+		marginTop: 16,
+	},
+	emptyBtnText: {
+		color: "#ffffff",
+		fontSize: 15,
+		fontWeight: "700",
+	},
 });

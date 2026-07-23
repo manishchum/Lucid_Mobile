@@ -19,13 +19,18 @@ export type Addon =
   | "chat_in_studio"
   | "task_management"
   | "kpi"
-  | "role_play";
+  | "role_play"
+  | "sprintverse";
 
 type CompanyInfo = {
   company_id?: string;
   name?: string;
   subscription_tier?: string | null;
   subscription_addons?: string[] | null;
+  enabled_languages?: string[] | null;
+  translation_languages?: string[] | null;
+  languages?: string[] | null;
+  rawCompany?: any;
 };
 
 interface TenantContextType {
@@ -50,6 +55,7 @@ const KNOWN_ADDONS: Addon[] = [
   "task_management",
   "kpi",
   "role_play",
+  "sprintverse",
 ];
 
 const normalizeAddonKey = (value: string): Addon | null => {
@@ -82,8 +88,10 @@ const TenantContext = createContext<TenantContextType>({
 
 export const useTenant = () => useContext(TenantContext);
 
-export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({
+export const TenantProvider = ({
   children,
+}: {
+  children: React.ReactNode;
 }) => {
   const { cachedUser } = useAuth();
   const [company, setCompany] = useState<CompanyInfo | null>(null);
@@ -98,12 +106,23 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     setCompany({
+      ...companyLike,
       company_id: companyLike.company_id,
       name: companyLike.name,
       subscription_tier: companyLike.subscription_tier ?? null,
       subscription_addons: Array.isArray(companyLike.subscription_addons)
         ? companyLike.subscription_addons
         : null,
+      enabled_languages: Array.isArray(companyLike.enabled_languages)
+        ? companyLike.enabled_languages
+        : null,
+      translation_languages: Array.isArray(companyLike.translation_languages)
+        ? companyLike.translation_languages
+        : null,
+      languages: Array.isArray(companyLike.languages)
+        ? companyLike.languages
+        : null,
+      rawCompany: companyLike,
     });
 
     setAddonsKnown(Array.isArray(companyLike.subscription_addons));

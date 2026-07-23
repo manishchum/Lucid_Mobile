@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,8 +6,10 @@ import {
   Image,
   ActivityIndicator,
   StyleSheet,
+  Alert,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import ImageCropPicker from "react-native-image-crop-picker";
 import { useCamera } from "../../hooks/useCamera";
 
 interface CameraCaptureProps {
@@ -17,25 +19,57 @@ interface CameraCaptureProps {
 
 export default function CameraCapture({ onCapture }: CameraCaptureProps) {
   const { isCapturing, capturedUri, launchCamera, reset } = useCamera();
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const [isCropping, setIsCropping] = useState(false);
 
   const handleTakePhoto = async () => {
     const result = await launchCamera();
     if (result.success) {
+      setPreviewUri(result.uri);
       onCapture(result.base64, result.uri);
     }
   };
 
   const handleRetake = () => {
     reset();
+    setPreviewUri(null);
     onCapture(null, null);
   };
 
+  const handleCrop = async () => {
+    const sourceUri = previewUri ?? capturedUri;
+    if (!sourceUri) return;
+    try {
+      setIsCropping(true);
+      const cropped = await ImageCropPicker.openCropper({
+        path: sourceUri,
+        includeBase64: true,
+        cropperToolbarTitle: "Crop Photo",
+        mediaType: "photo",
+        compressImageQuality: 0.8,
+      });
+      if (cropped?.path && cropped?.data) {
+        setPreviewUri(cropped.path);
+        onCapture(cropped.data, cropped.path);
+      }
+    } catch (err: any) {
+      if (err?.code !== "E_PICKER_CANCELLED") {
+        Alert.alert(
+          "Crop failed",
+          err?.message ?? "Could not crop this photo. Please try again.",
+        );
+      }
+    } finally {
+      setIsCropping(false);
+    }
+  };
+
   // ── After capture: show thumbnail
-  if (capturedUri) {
+  if (previewUri ?? capturedUri) {
     return (
       <View style={styles.previewWrapper}>
         <Image
-          source={{ uri: capturedUri }}
+          source={{ uri: previewUri ?? capturedUri ?? undefined }}
           style={styles.thumbnail}
           resizeMode="cover"
         />
@@ -50,19 +84,38 @@ export default function CameraCapture({ onCapture }: CameraCaptureProps) {
           <Text style={styles.successBadgeText}>Photo ready to submit</Text>
         </View>
 
-        {/* Retake */}
-        <TouchableOpacity
-          style={styles.retakeBtn}
-          onPress={handleRetake}
-          activeOpacity={0.8}
-        >
-          <MaterialCommunityIcons
-            name="camera-retake-outline"
-            size={14}
-            color="#7C3AED"
-          />
-          <Text style={styles.retakeBtnText}>Retake</Text>
-        </TouchableOpacity>
+        {/* Actions */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.retakeBtn]}
+            onPress={handleRetake}
+            activeOpacity={0.8}
+            disabled={isCropping}
+          >
+            <MaterialCommunityIcons
+              name="camera-retake-outline"
+              size={14}
+              color="#7C3AED"
+            />
+            <Text style={styles.retakeBtnText}>Retake</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.cropBtn]}
+            onPress={handleCrop}
+            activeOpacity={0.8}
+            disabled={isCropping}
+          >
+            {isCropping ? (
+              <ActivityIndicator size="small" color="#7C3AED" />
+            ) : (
+              <MaterialCommunityIcons name="crop" size={14} color="#7C3AED" />
+            )}
+            <Text style={styles.retakeBtnText}>
+              {isCropping ? "Cropping…" : "Crop"}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -157,11 +210,22 @@ const styles = StyleSheet.create({
     color: "#16A34A",
   },
   retakeBtn: {
+    backgroundColor: "#F5F3FF",
+  },
+  cropBtn: {
+    backgroundColor: "#EDE9FE",
+    borderLeftWidth: 1,
+    borderLeftColor: "#DDD6FE",
+  },
+  actionsRow: {
+    flexDirection: "row",
+  },
+  actionBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    backgroundColor: "#F5F3FF",
     paddingVertical: 10,
   },
   retakeBtnText: {
