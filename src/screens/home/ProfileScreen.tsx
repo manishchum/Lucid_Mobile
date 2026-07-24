@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   StatusBar,
   BackHandler,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -31,16 +32,6 @@ function toE164(rawPhone: string): string {
 export default function ProfileScreen() {
   const { phoneNumber, cachedUser } = useAuth();
   const navigation = useNavigation<any>();
-
-  useEffect(() => {
-    const onBackPress = () => {
-      navigation.goBack();
-      return true;
-    };
-    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
-    return () => subscription.remove();
-  }, [navigation]);
-
 
   const [user, setUser] = useState<User | null>(
     cachedUser
@@ -72,6 +63,42 @@ export default function ProfileScreen() {
       : null,
   );
   const [loading, setLoading] = useState(!cachedUser);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      navigation.goBack();
+      return true;
+    };
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [navigation]);
+
+  // Skeleton Breathing Animation State
+  const [skeletonOpacity] = useState(new Animated.Value(0.3));
+
+  useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (loading) {
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.8,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.3,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    }
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [loading, skeletonOpacity]);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchUserData = useCallback(async (showSpinner = true) => {
@@ -119,9 +146,37 @@ export default function ProfileScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#4F46E5" />
-      </View>
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        <StatusBar barStyle="dark-content" />
+        {/* Header skeleton */}
+        <View style={styles.header}>
+          <View style={styles.backBtn}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#CBD5E1" />
+          </View>
+          <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 80, height: 16 }]} />
+          <View style={{ width: 32 }} />
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40, paddingTop: 24 }}>
+          {/* Avatar Section Skeleton */}
+          <Animated.View style={[styles.skeletonAvatar, { opacity: skeletonOpacity }]} />
+          <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: 140, height: 20, alignSelf: "center", marginBottom: 8 }]} />
+          <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 180, height: 12, alignSelf: "center", marginBottom: 30 }]} />
+
+          {/* User Details list skeleton */}
+          <View style={{ paddingHorizontal: 20 }}>
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <View key={idx} style={styles.skeletonRow}>
+                <Animated.View style={[styles.skeletonIconBox, { opacity: skeletonOpacity }]} />
+                <View style={{ flex: 1 }}>
+                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 60, height: 10, marginBottom: 6 }]} />
+                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "80%", height: 14 }]} />
+                </View>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
     );
   }
 
@@ -431,5 +486,38 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: "#1E293B",
+  },
+  skeletonLineShort: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 6,
+  },
+  skeletonLineLong: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 8,
+  },
+  skeletonAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#E2E8F0",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  skeletonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 16,
+    marginBottom: 12,
+  },
+  skeletonIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: "#E2E8F0",
+    marginRight: 15,
   },
 });

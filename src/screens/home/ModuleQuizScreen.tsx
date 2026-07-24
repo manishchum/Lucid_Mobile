@@ -494,6 +494,7 @@ export default function ModuleQuizScreen({
 
     // 2. Emit global event updates instantly so lists refresh in real-time
     eventBus.emit("refresh_dashboard");
+    eventBus.emit("refresh_reports");
     eventBus.emit("quiz_completed", { processedModuleId, quizScore: score });
 
     // 3. Write progress to cache instantly so returns are immediate and synced
@@ -578,7 +579,7 @@ export default function ModuleQuizScreen({
       </TouchableOpacity>
       <View style={{ flex: 1, marginHorizontal: 12 }}>
         <Text style={styles.headerTitle} numberOfLines={1}>
-          Quiz
+          Module Quiz
         </Text>
         {/* {phase === "ready" && !gradingResult && questions.length > 0 && (
           <Text style={styles.headerSub}>
@@ -765,6 +766,14 @@ export default function ModuleQuizScreen({
           ]}
           showsVerticalScrollIndicator={false}
         >
+          {/* Module name title chip centered on results page */}
+          <View style={[styles.bodyModuleHeader, { alignSelf: "center", marginBottom: 16 }]}>
+            <MaterialCommunityIcons name="book-open-outline" size={14} color="#6366F1" />
+            <Text style={styles.bodyModuleHeaderText} numberOfLines={1}>
+              {moduleTitle || "Lucid Module Quiz"}
+            </Text>
+          </View>
+
           {/* Achievement Badge Container */}
           <View style={styles.achievementBadgeContainer}>
             <Text style={styles.badgeEmoji}>{passed ? "🏆" : "💪"}</Text>
@@ -979,22 +988,13 @@ export default function ModuleQuizScreen({
                 ]}
                 keyboardShouldPersistTaps="handled"
               >
-                {/* Module title card (welcome card) only on the first page */}
-                {pageIdx === 0 && (
-                  <View style={styles.moduleTitleCard}>
-                    <View style={styles.moduleTitleBadge}>
-                      <MaterialCommunityIcons
-                        name="book-open-page-variant"
-                        size={14}
-                        color="#4F46E5"
-                      />
-                      <Text style={styles.moduleTitleBadgeText}>
-                        Module Details
-                      </Text>
-                    </View>
-                    <Text style={styles.moduleTitleText}>{moduleTitle}</Text>
-                  </View>
-                )}
+                {/* Module name title chip at the top of each page */}
+                <View style={styles.bodyModuleHeader}>
+                  <MaterialCommunityIcons name="book-open-outline" size={14} color="#6366F1" />
+                  <Text style={styles.bodyModuleHeaderText} numberOfLines={1}>
+                    {moduleTitle || "Lucid Module Quiz"}
+                  </Text>
+                </View>
                 {/* Page heading */}
                 <View style={styles.pageHeadingRow}>
                   <Text style={styles.pageHeadingText}>
@@ -1987,5 +1987,21 @@ const styles = StyleSheet.create({
     color: "#3730A3",
     lineHeight: 19,
     fontWeight: "500",
+  },
+  bodyModuleHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EFF6FF",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+    marginBottom: 16,
+    gap: 6,
+  },
+  bodyModuleHeaderText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6366F1",
   },
 });

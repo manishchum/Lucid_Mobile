@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
+  Animated,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -18,6 +20,33 @@ import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 export default function NotificationsScreen({ navigation }: { navigation: any }) {
   const { notifications, isLoading, fetchNotifications, markAsRead, markAllAsRead } = useNotifications();
   const [refreshing, setRefreshing] = useState(false);
+
+  // Skeleton Breathing Animation State
+  const [skeletonOpacity] = useState(new Animated.Value(0.3));
+
+  useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (isLoading) {
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.8,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.3,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    }
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [isLoading, skeletonOpacity]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -109,9 +138,20 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
 
       {/* ── NOTIFICATIONS LIST ──────────────────────────────────────────── */}
       {isLoading && notifications.length === 0 ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#6366F1" />
-        </View>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 16 }}>
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <View key={idx} style={styles.skeletonCard}>
+              <Animated.View style={[styles.skeletonCircleMedium, { opacity: skeletonOpacity }]} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "60%", height: 14 }]} />
+                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 40, height: 10 }]} />
+                </View>
+                <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "85%", height: 12 }]} />
+              </View>
+            </View>
+          ))}
+        </ScrollView>
       ) : notifications.length === 0 ? (
         <View style={styles.center}>
           <MaterialCommunityIcons name="bell-outline" size={64} color="#CBD5E1" />
@@ -250,5 +290,30 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 12,
     top: 14,
+  },
+  skeletonLineShort: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 6,
+  },
+  skeletonLineLong: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 8,
+  },
+  skeletonCircleMedium: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#E2E8F0",
+  },
+  skeletonCard: {
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 16,
+    marginBottom: 12,
+    marginHorizontal: 16,
+    alignItems: "center",
   },
 });

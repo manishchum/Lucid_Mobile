@@ -1,4 +1,5 @@
 import React from "react";
+import { friendlyError } from "../../../utils/friendlyError";
 import {
   View,
   Text,
@@ -8,6 +9,7 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -160,14 +162,86 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
   const isLoading = (userLoading && !cachedUser) || dashboardLoading;
 
+  // Skeleton Breathing Animation State
+  const [skeletonOpacity] = React.useState(new Animated.Value(0.3));
+
+  React.useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (isLoading) {
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.8,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.3,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    }
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [isLoading, skeletonOpacity]);
+
   if (isLoading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={{ marginTop: 12, color: "#64748B", fontSize: 14 }}>
-          Loading your dashboard…
-        </Text>
-      </View>
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        <StatusBar barStyle="dark-content" />
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          {/* WELCOME SKELETON */}
+          <View style={styles.welcomeContainer}>
+            <View style={styles.welcomeHeaderRow}>
+              <View style={styles.welcomeTextColumn}>
+                <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 80, height: 12, marginBottom: 8 }]} />
+                <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: 150, height: 24, marginBottom: 8 }]} />
+                <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: 120, height: 10 }]} />
+              </View>
+              <Animated.View style={[styles.skeletonProgressCircle, { opacity: skeletonOpacity }]} />
+            </View>
+          </View>
+
+          {/* STATS GRID SKELETON */}
+          <View style={styles.sectionWrapper}>
+            <View style={styles.statsGrid}>
+              {Array.from({ length: 3 }).map((_, idx) => (
+                <View key={idx} style={styles.statCard}>
+                  <Animated.View style={[styles.skeletonIconBox, { opacity: skeletonOpacity }]} />
+                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 30, height: 14, marginBottom: 6 }]} />
+                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 50, height: 10 }]} />
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* CONTENT SECTION SKELETON */}
+          <View style={[styles.sectionWrapper, { marginTop: 24 }]}>
+            {/* Tabs placeholder */}
+            <Animated.View style={[styles.skeletonTabsContainer, { opacity: skeletonOpacity }]}>
+              <View style={styles.skeletonTab} />
+              <View style={styles.skeletonTab} />
+            </Animated.View>
+
+            {/* Sprint Card placeholder */}
+            <View style={styles.planCard}>
+              <View style={styles.planContentRow}>
+                <Animated.View style={[styles.skeletonIconCircle, { opacity: skeletonOpacity }]} />
+                <View style={{ flex: 1 }}>
+                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "70%", height: 16, marginBottom: 8 }]} />
+                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "40%", height: 12, marginBottom: 8 }]} />
+                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "30%", height: 18 }]} />
+                </View>
+              </View>
+              <Animated.View style={[styles.skeletonButton, { opacity: skeletonOpacity }]} />
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
     );
   }
 
@@ -198,7 +272,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             paddingHorizontal: 20,
           }}
         >
-          {dashboardError.message}
+          {friendlyError(dashboardError)}
         </Text>
       </View>
     );

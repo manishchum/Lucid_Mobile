@@ -9,6 +9,7 @@ export const APP_ROUTES = {
   CONTENT_LIBRARY: "ContentLibrary",
   SPRINTVERSE: "Sprintverse",
   PROFILE: "Profile",
+  REPORTS: "Reports",
 } as const;
 
 // Stack Routes (modal screens)

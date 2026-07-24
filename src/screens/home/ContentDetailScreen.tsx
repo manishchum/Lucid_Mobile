@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+import { friendlyError } from '../../utils/friendlyError';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator, Keyboard, Platform,
+  TouchableOpacity, ActivityIndicator, Keyboard, Platform, Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -57,6 +58,33 @@ export default function ContentDetailScreen({ route, navigation }: any) {
     userId,
   );
 
+  // Skeleton Breathing Animation State
+  const [skeletonOpacity] = useState(new Animated.Value(0.3));
+
+  useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (isLoading) {
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.8,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.3,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    }
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [isLoading, skeletonOpacity]);
+
   const primaryModule = modules?.[0] ?? null;
 
   const { isTranslating, translatedSections, translatedFlashcards } = useModuleTranslation(
@@ -84,15 +112,31 @@ export default function ContentDetailScreen({ route, navigation }: any) {
       </View>
 
       {isLoading ? (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#4F46E5" />
-          <Text style={styles.loaderText}>Loading content...</Text>
+        <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16 }}>
+          {/* Main Module Content / Hero Section Skeleton */}
+          <Animated.View style={[styles.skeletonHeroImage, { opacity: skeletonOpacity }]} />
+          
+          <View style={{ marginBottom: 24 }}>
+            <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "90%", height: 24, marginBottom: 8 }]} />
+            <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "60%", height: 16, marginBottom: 14 }]} />
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Animated.View style={[styles.skeletonChip, { opacity: skeletonOpacity }]} />
+              <Animated.View style={[styles.skeletonChip, { opacity: skeletonOpacity }]} />
+            </View>
+          </View>
+
+          {/* Accordion List Skeleton */}
+          <View style={{ marginTop: 8 }}>
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <Animated.View key={idx} style={[styles.skeletonCard, { opacity: skeletonOpacity }]} />
+            ))}
+          </View>
         </View>
       ) : error ? (
         <View style={styles.loader}>
           <MaterialCommunityIcons name="alert-circle-outline" size={40} color="#EF4444" />
           <Text style={styles.errorText}>Failed to load content</Text>
-          <Text style={styles.errorSub}>{error.message}</Text>
+          <Text style={styles.errorSub}>{friendlyError(error)}</Text>
         </View>
       ) : (
         <ScrollView
@@ -235,4 +279,32 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 12, fontWeight: '600', color: '#4F46E5' },
 
   accordionList: { paddingHorizontal: 16, gap: 12 },
+  skeletonLineShort: {
+    backgroundColor: '#E2E8F0',
+    borderRadius: 6,
+  },
+  skeletonLineLong: {
+    backgroundColor: '#E2E8F0',
+    borderRadius: 8,
+  },
+  skeletonChip: {
+    width: 90,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E2E8F0',
+  },
+  skeletonHeroImage: {
+    height: 140,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 16,
+    marginBottom: 20,
+  },
+  skeletonCard: {
+    height: 60,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 12,
+  },
 });
