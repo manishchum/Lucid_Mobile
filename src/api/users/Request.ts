@@ -968,6 +968,7 @@ export const submitQuizForGrading = async (
 
 export interface FormatSubmissionInput {
   taskId: string;
+  childTaskId?: string;
   assignmentId: string;
   userId: string;
   maxScore: number;
@@ -983,6 +984,7 @@ export const submitFormatAnswer = async (
 ): Promise<TaskSubmissionResponse> => {
   const {
     taskId,
+    childTaskId,
     assignmentId,
     userId,
     maxScore,
@@ -1004,6 +1006,10 @@ export const submitFormatAnswer = async (
     score: score,
     submission_type: format,
   };
+
+  if (childTaskId) {
+    body.child_task_id = childTaskId;
+  }
 
   if (format === "text") {
     body.text_response = formatAnswer.text_answer ?? "";
