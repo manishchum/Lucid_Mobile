@@ -20,7 +20,8 @@ export type Addon =
   | "task_management"
   | "kpi"
   | "role_play"
-  | "sprintverse";
+  | "sprintverse"
+  | "reports";
 
 type CompanyInfo = {
   company_id?: string;
@@ -30,6 +31,7 @@ type CompanyInfo = {
   enabled_languages?: string[] | null;
   translation_languages?: string[] | null;
   languages?: string[] | null;
+  learning_style?: boolean | null;
   rawCompany?: any;
 };
 
@@ -56,6 +58,7 @@ const KNOWN_ADDONS: Addon[] = [
   "kpi",
   "role_play",
   "sprintverse",
+  "reports",
 ];
 
 const normalizeAddonKey = (value: string): Addon | null => {

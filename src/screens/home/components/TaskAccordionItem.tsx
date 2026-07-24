@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { friendlyError } from "../../../utils/friendlyError";
 import {
   View,
   Text,
@@ -397,10 +398,7 @@ export default function TaskAccordionItem({
       onSubmitted?.(task);
       setModalOpen(false);
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Something went wrong. Please try again.";
+      const message = friendlyError(err);
       setSubmitError(message);
       Alert.alert("Submission failed", message);
     } finally {

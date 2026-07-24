@@ -1161,3 +1161,43 @@ export const getLeaderboardHighlight = async (
     throw error;
   }
 };
+
+export const getAssessmentsBatch = async (
+  userId: string,
+  assessmentIds: string[],
+): Promise<any | null> => {
+  try {
+    const headers = await getHeaders(userId);
+    const url = `${API_BASE_URL}/assessments/batch`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ assessment_ids: assessmentIds }),
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (err) {
+    console.warn("[Request] getAssessmentsBatch error:", err);
+    return null;
+  }
+};
+
+export const getProcessedModulesBatch = async (
+  userId: string,
+  processedModuleIds: string[],
+): Promise<any | null> => {
+  try {
+    const headers = await getHeaders(userId);
+    const url = `${API_BASE_URL}/processed-modules/batch`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ processed_module_ids: processedModuleIds }),
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (err) {
+    console.warn("[Request] getProcessedModulesBatch error:", err);
+    return null;
+  }
+};

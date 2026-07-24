@@ -14,6 +14,8 @@ export const FEATURES = {
   TASK_MANAGEMENT: "taskManagement",
   KPI: "kpi",
   ROLE_PLAY: "rolePlay",
+  SPRINTVERSE: "sprintverse",
+  REPORTS: "reports",
 } as const;
 
 export type FeatureName = (typeof FEATURES)[keyof typeof FEATURES];
@@ -30,6 +32,8 @@ const FEATURE_CONFIG: Record<FeatureName, { requiredAddons: Addon[] }> = {
   [FEATURES.TASK_MANAGEMENT]: { requiredAddons: ["task_management"] },
   [FEATURES.KPI]: { requiredAddons: ["kpi"] },
   [FEATURES.ROLE_PLAY]: { requiredAddons: ["role_play"] },
+  [FEATURES.SPRINTVERSE]: { requiredAddons: ["sprintverse"] },
+  [FEATURES.REPORTS]: { requiredAddons: ["reports"] },
 };
 
 const deriveFrontendTier = (addons: Addon[]): Tier | null => {

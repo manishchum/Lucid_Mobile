@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { friendlyError } from "../../utils/friendlyError";
 import {
   View,
   Text,
@@ -10,6 +11,7 @@ import {
   BackHandler,
   Keyboard,
   Platform,
+  Animated,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
@@ -149,6 +151,33 @@ export default function StudioScreen({ navigation }: any) {
     refetch,
   } = useGetProcessedModuleById(processedModuleId || null, userId);
 
+  // Skeleton Breathing Animation State
+  const [skeletonOpacity] = useState(new Animated.Value(0.3));
+
+  useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (isLoading) {
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.8,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.3,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    }
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [isLoading, skeletonOpacity]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -229,9 +258,40 @@ export default function StudioScreen({ navigation }: any) {
   // ── Loading ──
   if (isLoading) {
     return (
-      <View style={[styles.loader, { paddingTop: 20 }]}>
-        <ActivityIndicator size="large" color="#4F46E5" />
-        <Text style={styles.loaderText}>Loading content…</Text>
+      <View style={styles.main}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          {/* Header placeholder */}
+          <View style={[styles.topHeaderBar, { paddingHorizontal: 16, paddingTop: 16 }]}>
+            <View style={styles.backBtnRow}>
+              <MaterialCommunityIcons name="chevron-left" size={24} color="#CBD5E1" />
+              <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 80, height: 14 }]} />
+            </View>
+            <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "70%", height: 22, marginTop: 8 }]} />
+          </View>
+
+          {/* Tab buttons placeholder */}
+          <View style={{ paddingHorizontal: 16, marginTop: 12 }}>
+            <Animated.View style={[styles.skeletonTabsContainer, { opacity: skeletonOpacity }]}>
+              <View style={styles.skeletonTab} />
+              <View style={styles.skeletonTab} />
+              <View style={styles.skeletonTab} />
+            </Animated.View>
+          </View>
+
+          {/* Section rows placeholder */}
+          <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <View key={idx} style={styles.skeletonSectionRow}>
+                <Animated.View style={[styles.skeletonIconBox, { opacity: skeletonOpacity }]} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "80%", height: 14, marginBottom: 6 }]} />
+                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: "40%", height: 10 }]} />
+                </View>
+                <Animated.View style={[styles.skeletonCircleSmall, { opacity: skeletonOpacity }]} />
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -246,7 +306,7 @@ export default function StudioScreen({ navigation }: any) {
           color="#EF4444"
         />
         <Text style={styles.errorText}>Failed to load content</Text>
-        <Text style={styles.errorSub}>{error.message}</Text>
+        <Text style={styles.errorSub}>{friendlyError(error)}</Text>
       </View>
     );
   }
@@ -557,5 +617,50 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 15,
     fontWeight: "700",
+  },
+  skeletonLineShort: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 6,
+  },
+  skeletonLineLong: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 8,
+  },
+  skeletonTabsContainer: {
+    flexDirection: "row",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    padding: 4,
+    height: 40,
+    alignItems: "center",
+  },
+  skeletonTab: {
+    flex: 1,
+    height: 32,
+    backgroundColor: "#E2E8F0",
+    borderRadius: 8,
+    marginHorizontal: 2,
+  },
+  skeletonSectionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  skeletonIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: "#E2E8F0",
+  },
+  skeletonCircleSmall: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#E2E8F0",
   },
 });

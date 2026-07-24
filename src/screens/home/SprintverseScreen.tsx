@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
+import { friendlyError } from "../../utils/friendlyError";
 import {
   View,
   Text,
@@ -9,6 +10,7 @@ import {
   ActivityIndicator,
   Dimensions,
   BackHandler,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -226,12 +228,66 @@ export default function SprintverseScreen() {
     );
   };
 
+  // Skeleton Breathing Animation State
+  const [skeletonOpacity] = useState(new Animated.Value(0.3));
+
+  useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (loadingJourneys) {
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.8,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.3,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    }
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [loadingJourneys, skeletonOpacity]);
+
   if (loadingJourneys) {
     return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loaderText}>Loading Sprintverse Paths...</Text>
-      </View>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.listView}>
+          <View style={styles.header}>
+            <View style={styles.backBtnRow}>
+              <MaterialCommunityIcons name="chevron-left" size={24} color="#CBD5E1" />
+              <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 80, height: 14 }]} />
+            </View>
+            <View style={styles.headerTitleContainer}>
+              <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: 140, height: 26, marginBottom: 8 }]} />
+            </View>
+            <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "90%", height: 13 }]} />
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
+            {Array.from({ length: 3 }).map((_, idx) => (
+              <View key={idx} style={styles.journeyCard}>
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+                  <Animated.View style={[styles.skeletonCircleLarge, { opacity: skeletonOpacity }]} />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "70%", height: 16, marginBottom: 6 }]} />
+                    <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: "40%", height: 10 }]} />
+                  </View>
+                </View>
+                <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "95%", height: 12, marginBottom: 8 }]} />
+                <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "80%", height: 12, marginBottom: 16 }]} />
+                <Animated.View style={[styles.skeletonButton, { opacity: skeletonOpacity, height: 36 }]} />
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -240,7 +296,7 @@ export default function SprintverseScreen() {
       <View style={styles.errorContainer}>
         <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#ef4444" />
         <Text style={styles.errorText}>Failed to load Sprintverse</Text>
-        <Text style={styles.errorSubtext}>{journeysError.message}</Text>
+        <Text style={styles.errorSubtext}>{friendlyError(journeysError)}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={() => refetchJourneys()}>
           <Text style={styles.retryButtonText}>Try Again</Text>
         </TouchableOpacity>
@@ -708,5 +764,24 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 12,
     textAlign: "center",
+  },
+  skeletonLineShort: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 6,
+  },
+  skeletonLineLong: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 8,
+  },
+  skeletonCircleLarge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#E2E8F0",
+  },
+  skeletonButton: {
+    borderRadius: 8,
+    backgroundColor: "#E2E8F0",
+    marginTop: 8,
   },
 });
