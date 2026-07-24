@@ -968,6 +968,7 @@ export const submitQuizForGrading = async (
 
 export interface FormatSubmissionInput {
   taskId: string;
+  childTaskId?: string;
   assignmentId: string;
   userId: string;
   maxScore: number;
@@ -983,6 +984,7 @@ export const submitFormatAnswer = async (
 ): Promise<TaskSubmissionResponse> => {
   const {
     taskId,
+    childTaskId,
     assignmentId,
     userId,
     maxScore,
@@ -1004,6 +1006,10 @@ export const submitFormatAnswer = async (
     score: score,
     submission_type: format,
   };
+
+  if (childTaskId) {
+    body.child_task_id = childTaskId;
+  }
 
   if (format === "text") {
     body.text_response = formatAnswer.text_answer ?? "";
@@ -1159,5 +1165,45 @@ export const getLeaderboardHighlight = async (
   } catch (error) {
     console.error("[Request] Error fetching leaderboard highlight:", error);
     throw error;
+  }
+};
+
+export const getAssessmentsBatch = async (
+  userId: string,
+  assessmentIds: string[],
+): Promise<any | null> => {
+  try {
+    const headers = await getHeaders(userId);
+    const url = `${API_BASE_URL}/assessments/batch`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ assessment_ids: assessmentIds }),
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (err) {
+    console.warn("[Request] getAssessmentsBatch error:", err);
+    return null;
+  }
+};
+
+export const getProcessedModulesBatch = async (
+  userId: string,
+  processedModuleIds: string[],
+): Promise<any | null> => {
+  try {
+    const headers = await getHeaders(userId);
+    const url = `${API_BASE_URL}/processed-modules/batch`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ processed_module_ids: processedModuleIds }),
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (err) {
+    console.warn("[Request] getProcessedModulesBatch error:", err);
+    return null;
   }
 };

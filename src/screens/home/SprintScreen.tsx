@@ -12,6 +12,7 @@ import {
 	UIManager,
 	Alert,
 	Linking,
+	Animated,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -57,7 +58,7 @@ export default function SprintScreen({
 
 	const isOnline = useNetworkStatus();
 
-  const { plan: trainingPlan, refetch: refetchTrainingPlan } = useGetTrainingPlan(
+  const { plan: trainingPlan, refetch: refetchTrainingPlan, isLoading: isPlanLoading } = useGetTrainingPlan(
     cachedUser?.userId ?? null,
     moduleId || null,
   );
@@ -193,6 +194,7 @@ export default function SprintScreen({
 				order: number;
 				title: string;
 				recommended_time: number;
+				threshold_value?: number;
 			}>,
 		[rawModules],
 	);
@@ -201,7 +203,7 @@ export default function SprintScreen({
 
 	// Sprint progress: live count of how many of THIS sprint's modules have a
 	// module-progress record
-	const { progress: moduleProgressEntries, refetch: refetchModuleProgress } =
+	const { progress: moduleProgressEntries, refetch: refetchModuleProgress, isLoading: isProgressLoading } =
 		useModuleProgress(cachedUser?.userId ?? null);
 
 	useFocusEffect(
@@ -380,6 +382,77 @@ export default function SprintScreen({
 			passingThreshold: thresholdValue,
 		});
 	};
+
+	// Skeleton Breathing Animation State
+	const [skeletonOpacity] = useState(new Animated.Value(0.3));
+
+	React.useEffect(() => {
+		let anim: Animated.CompositeAnimation | null = null;
+		if (isPlanLoading || isProgressLoading) {
+			anim = Animated.loop(
+				Animated.sequence([
+					Animated.timing(skeletonOpacity, {
+						toValue: 0.8,
+						duration: 850,
+						useNativeDriver: true,
+					}),
+					Animated.timing(skeletonOpacity, {
+						toValue: 0.3,
+						duration: 850,
+						useNativeDriver: true,
+					}),
+				])
+			);
+			anim.start();
+		}
+		return () => {
+			if (anim) anim.stop();
+		};
+	}, [isPlanLoading, isProgressLoading, skeletonOpacity]);
+
+	if (!!moduleId && (isPlanLoading || isProgressLoading) && !trainingPlan) {
+		return (
+			<View style={styles.container}>
+				<StatusBar barStyle="dark-content" />
+				<ScrollView
+					showsVerticalScrollIndicator={false}
+					contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+				>
+					{/* Header placeholder */}
+					<View style={[styles.header, { paddingBottom: 0 }]}>
+						<View style={styles.backBtnRow}>
+							<MaterialCommunityIcons name="chevron-left" size={24} color="#CBD5E1" />
+							<Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 80, height: 14 }]} />
+						</View>
+					</View>
+
+					{/* Hero Card placeholder */}
+					<View style={[styles.sprintCard, { backgroundColor: "#FFFFFF" }]}>
+						<Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "80%", height: 24, marginBottom: 8 }]} />
+						<Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "40%", height: 14 }]} />
+					</View>
+
+					{/* Modules Title placeholder */}
+					<View style={{ paddingHorizontal: 20, marginTop: 24 }}>
+						<Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: 120, height: 18, marginBottom: 16 }]} />
+						
+						{/* Module Cards placeholder */}
+						{Array.from({ length: 3 }).map((_, idx) => (
+							<View key={idx} style={styles.skeletonModuleCard}>
+								<View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+									<Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 60, height: 16 }]} />
+									<Animated.View style={[styles.skeletonCircleSmall, { opacity: skeletonOpacity }]} />
+								</View>
+								<Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "90%", height: 18, marginBottom: 8 }]} />
+								<Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: "40%", height: 12, marginBottom: 12 }]} />
+								<Animated.View style={[styles.skeletonButton, { opacity: skeletonOpacity, height: 40 }]} />
+							</View>
+						))}
+					</View>
+				</ScrollView>
+			</View>
+		);
+	}
 
 	if (!moduleId) {
 		return (
@@ -974,5 +1047,32 @@ const styles = StyleSheet.create({
 		color: "#ffffff",
 		fontSize: 15,
 		fontWeight: "700",
+	},
+	skeletonLineShort: {
+		backgroundColor: "#E2E8F0",
+		borderRadius: 6,
+	},
+	skeletonLineLong: {
+		backgroundColor: "#E2E8F0",
+		borderRadius: 8,
+	},
+	skeletonCircleSmall: {
+		width: 20,
+		height: 20,
+		borderRadius: 10,
+		backgroundColor: "#E2E8F0",
+	},
+	skeletonModuleCard: {
+		backgroundColor: "#FFFFFF",
+		borderRadius: 16,
+		borderWidth: 1,
+		borderColor: "#E2E8F0",
+		padding: 16,
+		marginBottom: 12,
+	},
+	skeletonButton: {
+		borderRadius: 10,
+		backgroundColor: "#E2E8F0",
+		marginTop: 8,
 	},
 });

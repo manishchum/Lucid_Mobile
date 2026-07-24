@@ -23,6 +23,7 @@ import NotificationsScreen from "../screens/home/NotificationsScreen";
 import ContentLibraryScreen from "../screens/home/ContentLibraryScreen";
 import ContentViewerScreen from "../screens/home/ContentViewerScreen";
 import SprintverseScreen from "../screens/home/SprintverseScreen";
+import ReportsScreen from "../screens/home/ReportsScreen";
 
 // Components
 import AppHeader from "../components/navigation/AppHeader";
@@ -187,6 +188,11 @@ function AppNavigatorContent() {
             <Stack.Screen
               name={APP_ROUTES.SPRINTVERSE}
               component={SprintverseScreen}
+              options={{ presentation: "card", animation: "slide_from_right", headerShown: false }}
+            />
+            <Stack.Screen
+              name={APP_ROUTES.REPORTS}
+              component={ReportsScreen}
               options={{ presentation: "card", animation: "slide_from_right", headerShown: false }}
             />
           </>

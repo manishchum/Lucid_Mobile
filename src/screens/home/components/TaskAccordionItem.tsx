@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { friendlyError } from "../../../utils/friendlyError";
 import {
   View,
   Text,
@@ -379,9 +380,12 @@ export default function TaskAccordionItem({
           questions,
           answers,
         );
-        for (const fa of formatAnswers) {
+        const useChildTaskId = formatAnswers.length > 1;
+        for (let idx = 0; idx < formatAnswers.length; idx++) {
+          const fa = formatAnswers[idx];
           await submitFormatAnswer({
             taskId: task.task_id,
+            childTaskId: useChildTaskId ? `${task.task_id}-${idx}` : undefined,
             assignmentId: task.assignment_id,
             userId: effectiveUserId,
             maxScore: resolvedMaxScore,
@@ -397,10 +401,7 @@ export default function TaskAccordionItem({
       onSubmitted?.(task);
       setModalOpen(false);
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Something went wrong. Please try again.";
+      const message = friendlyError(err);
       setSubmitError(message);
       Alert.alert("Submission failed", message);
     } finally {

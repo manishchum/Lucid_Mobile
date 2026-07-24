@@ -227,6 +227,58 @@ const createStyles = () => {
     footerStatBox: { alignItems: 'center' },
     footerStatValue: { fontSize: 20, fontWeight: '800', color: '#1e293b' },
     footerStatLabel: { fontSize: 11, fontWeight: '600', color: '#94a3b8', marginTop: 3 },
+
+    // ── Skeleton Loaders ──────────────────────────────────────────────────
+    skeletonLineShort: {
+      backgroundColor: '#E2E8F0',
+      borderRadius: 6,
+    },
+    skeletonLineLong: {
+      backgroundColor: '#E2E8F0',
+      borderRadius: 8,
+    },
+    skeletonProgressCircle: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      backgroundColor: '#E2E8F0',
+      marginLeft: 16,
+    },
+    skeletonIconBox: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: '#E2E8F0',
+      marginBottom: 12,
+    },
+    skeletonTabsContainer: {
+      flexDirection: 'row',
+      backgroundColor: '#F1F5F9',
+      borderRadius: 14,
+      padding: 4,
+      marginBottom: 16,
+      height: 44,
+      alignItems: 'center',
+    },
+    skeletonTab: {
+      flex: 1,
+      height: 36,
+      backgroundColor: '#E2E8F0',
+      borderRadius: 10,
+      marginHorizontal: 2,
+    },
+    skeletonIconCircle: {
+      width: 46,
+      height: 46,
+      borderRadius: 13,
+      backgroundColor: '#E2E8F0',
+    },
+    skeletonButton: {
+      height: 44,
+      borderRadius: 14,
+      backgroundColor: '#E2E8F0',
+      marginTop: 8,
+    },
   });
 };
 

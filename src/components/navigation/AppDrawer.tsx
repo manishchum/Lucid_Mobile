@@ -19,6 +19,7 @@ import { useDrawer } from "../../contex/DrawerContext";
 import { useAuth } from "../../contex/AuthContext";
 import { getUserByPhone } from "../../api/users/Request";
 import { APP_ROUTES } from "../../navigations/Routes";
+import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 
 const { width } = Dimensions.get("window");
 const DRAWER_WIDTH = width * 0.78;
@@ -37,6 +38,7 @@ export default function AppDrawer() {
   const navigation = useNavigation<any>();
   const { isDrawerOpen, closeDrawer } = useDrawer();
   const { cachedUser, phoneNumber, logout } = useAuth();
+  const { hasFeature } = useFeatureGating();
   
   const confirmLogout = () => {
     Alert.alert(
@@ -143,6 +145,11 @@ export default function AppDrawer() {
     navigation.navigate(APP_ROUTES.SPRINTVERSE);
   };
 
+  const handleReportsPress = () => {
+    closeDrawer();
+    navigation.navigate(APP_ROUTES.REPORTS);
+  };
+
   const getInitials = (name: string) => {
     return name
       ? name
@@ -207,17 +214,33 @@ export default function AppDrawer() {
 
           {/* Navigation Items */}
           <View style={styles.navItemsList}>
-            <TouchableOpacity
-              onPress={handleSprintversePress}
-              activeOpacity={0.7}
-              style={styles.navItem}
-            >
-              <View style={styles.navIconWrapper}>
-                <MaterialCommunityIcons name="orbit" size={24} color="#6366F1" />
-              </View>
-              <Text style={styles.navItemText}>Sprintverse</Text>
-              <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
-            </TouchableOpacity>
+            {hasFeature(FEATURES.SPRINTVERSE) && (
+              <TouchableOpacity
+                onPress={handleSprintversePress}
+                activeOpacity={0.7}
+                style={styles.navItem}
+              >
+                <View style={styles.navIconWrapper}>
+                  <MaterialCommunityIcons name="orbit" size={24} color="#6366F1" />
+                </View>
+                <Text style={styles.navItemText}>Sprintverse</Text>
+                <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+
+            {hasFeature(FEATURES.REPORTS) && (
+              <TouchableOpacity
+                onPress={handleReportsPress}
+                activeOpacity={0.7}
+                style={[styles.navItem, { marginTop: 12 }]}
+              >
+                <View style={styles.navIconWrapper}>
+                  <MaterialCommunityIcons name="clipboard-text-outline" size={24} color="#6366F1" />
+                </View>
+                <Text style={styles.navItemText}>Reports</Text>
+                <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               onPress={handleSupportPress}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { friendlyError } from "../../../utils/friendlyError";
 import {
   View,
   Text,
@@ -75,7 +76,7 @@ export default function AssignedTasksList({
           color="#EF4444"
         />
         <Text style={styles.errorTitle}>Couldn't load tasks</Text>
-        <Text style={styles.errorSubtitle}>{error.message}</Text>
+        <Text style={styles.errorSubtitle}>{friendlyError(error)}</Text>
         {onRetry && (
           <TouchableOpacity
             style={styles.retryBtn}

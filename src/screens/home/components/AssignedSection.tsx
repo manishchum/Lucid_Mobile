@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -58,6 +58,10 @@ export default function AssignedSection({
 }: AssignedSectionProps) {
   const [activeTab, setActiveTab] = useState<TabId>("sprints");
 
+  const [optimisticCompletedIds, setOptimisticCompletedIds] = useState<
+    Set<string>
+  >(new Set());
+
   // ── Search & sort state ───────────────────────────────────────────────
   const [sprintQuery, setSprintQuery] = useState("");
   const [taskQuery, setTaskQuery] = useState("");
@@ -77,8 +81,34 @@ export default function AssignedSection({
     showTaskManagement,
   );
 
+  const effectiveTasks = useMemo(() => {
+    if (optimisticCompletedIds.size === 0) return tasks;
+    return tasks.map((t) =>
+      optimisticCompletedIds.has(t.task_id)
+        ? { ...t, submitted: true, status: "completed" }
+        : t,
+    );
+  }, [tasks, optimisticCompletedIds]);
+
+  useEffect(() => {
+    if (optimisticCompletedIds.size === 0) return;
+    const stillNeeded = new Set(
+      tasks
+        .filter(
+          (t) =>
+            optimisticCompletedIds.has(t.task_id) &&
+            !(t.submitted === true || t.status === "completed"),
+        )
+        .map((t) => t.task_id),
+    );
+    if (stillNeeded.size !== optimisticCompletedIds.size) {
+      setOptimisticCompletedIds(stillNeeded);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks]);
+
   const sprintCount = planCards.length;
-  const taskCount = total > 0 ? total : tasks.length;
+  const taskCount = total > 0 ? total : effectiveTasks.length;
 
   const effectiveTab: TabId =
     activeTab === "tasks" && !showTaskManagement ? "sprints" : activeTab;
@@ -122,12 +152,12 @@ export default function AssignedSection({
   const filteredTasks = useMemo(() => {
     const q = taskQuery.trim().toLowerCase();
     const filtered = q
-      ? tasks.filter(
+      ? effectiveTasks.filter(
           (task) =>
             task.title?.toLowerCase().includes(q) ||
             task.description?.toLowerCase().includes(q),
         )
-      : tasks;
+      : effectiveTasks;
 
     const sorted = [...filtered].sort((a, b) => {
       switch (taskSort) {
@@ -152,7 +182,7 @@ export default function AssignedSection({
     });
 
     return sorted;
-  }, [tasks, taskQuery, taskSort]);
+  }, [effectiveTasks, taskQuery, taskSort]);
 
   const activeSprintSortOption = SPRINT_SORT_OPTIONS.find(
     (opt) => opt.id === sprintSort,
@@ -341,7 +371,12 @@ export default function AssignedSection({
           onRetry={refetch}
           userId={userId}
           isFiltered={taskQuery.trim().length > 0}
-          onTaskSubmitted={() => {
+          onTaskSubmitted={(task) => {
+            setOptimisticCompletedIds((prev) => {
+              const next = new Set(prev);
+              next.add(task.task_id);
+              return next;
+            });
             refetch();
           }}
         />

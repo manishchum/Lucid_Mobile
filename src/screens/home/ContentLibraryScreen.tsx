@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   BackHandler,
+  Animated,
+  ScrollView,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -50,6 +52,33 @@ export default function ContentLibraryScreen() {
   const { data: categories = [], isLoading: loadingCats, refetch: refetchCats } = useContentCategories(companyId);
   // Fetch ALL items to count them by category
   const { data: allItems = [], isLoading: loadingItems, refetch: refetchItems } = useContentItems(undefined, companyId);
+
+  // Skeleton Breathing Animation State
+  const [skeletonOpacity] = useState(new Animated.Value(0.3));
+
+  useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (loadingCats || loadingItems) {
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.8,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.3,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    }
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [loadingCats, loadingItems, skeletonOpacity]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -341,9 +370,27 @@ export default function ContentLibraryScreen() {
       </View>
 
       {(loadingCats || loadingItems) ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3b82f6" />
-        </View>
+        <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16 }}>
+          {/* Horizontal scroll chips skeleton */}
+          <View style={{ flexDirection: "row", marginBottom: 20 }}>
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <Animated.View key={idx} style={[styles.skeletonChip, { opacity: skeletonOpacity }]} />
+            ))}
+          </View>
+
+          {/* List items / grid items skeleton */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <View key={idx} style={styles.skeletonGridItem}>
+                <Animated.View style={[styles.skeletonImagePlaceholder, { opacity: skeletonOpacity }]} />
+                <View style={{ padding: 12 }}>
+                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "80%", height: 14, marginBottom: 8 }]} />
+                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: "50%", height: 10 }]} />
+                </View>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       ) : (
         selectedCategory ? renderItemList() : renderFolderList()
       )}
@@ -645,5 +692,33 @@ const styles = StyleSheet.create({
   itemGridSubtitle: {
     fontSize: 11,
     color: "#64748b",
+  },
+  skeletonLineShort: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 6,
+  },
+  skeletonLineLong: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 8,
+  },
+  skeletonChip: {
+    width: 80,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#E2E8F0",
+    marginRight: 8,
+  },
+  skeletonGridItem: {
+    width: "48%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginBottom: 12,
+    overflow: "hidden",
+  },
+  skeletonImagePlaceholder: {
+    height: 100,
+    backgroundColor: "#E2E8F0",
   },
 });
