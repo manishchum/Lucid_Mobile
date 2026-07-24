@@ -379,9 +379,12 @@ export default function TaskAccordionItem({
           questions,
           answers,
         );
-        for (const fa of formatAnswers) {
+        const useChildTaskId = formatAnswers.length > 1;
+        for (let idx = 0; idx < formatAnswers.length; idx++) {
+          const fa = formatAnswers[idx];
           await submitFormatAnswer({
             taskId: task.task_id,
+            childTaskId: useChildTaskId ? `${task.task_id}-${idx}` : undefined,
             assignmentId: task.assignment_id,
             userId: effectiveUserId,
             maxScore: resolvedMaxScore,
