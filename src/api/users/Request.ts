@@ -3,6 +3,8 @@ import {
   onAuthStateChanged,
   getIdToken,
 } from "@react-native-firebase/auth";
+import { logger } from "../../utils/UnifiedLogger";
+import { emitSessionInvalid, SessionInvalidReason } from "../sessionEvents";
 import {
   UserResponse,
   UserRolesResponse,
@@ -80,17 +82,13 @@ export interface ModuleChatResponse {
 export const postModuleChat = async (
   data: PostModuleChatDto,
 ): Promise<PostModuleChatResponseDto> => {
-  console.info("[Request] postModuleChat", {
+  logger.info("[Request] postModuleChat", {
     processed_module_id: data.processed_module_id,
   });
 
-  const chatToken = await getFirebaseToken();
-  const response = await fetch(MODULE_CHAT_URL, {
+  const result = await apiFetch<PostModuleChatResponseDto>(MODULE_CHAT_URL, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(chatToken ? { Authorization: `Bearer ${chatToken}` } : {}),
-    },
+    userId: data.user_id,
     body: JSON.stringify({
       processed_module_id: data.processed_module_id,
       user_message: data.user_message,
@@ -100,14 +98,7 @@ export const postModuleChat = async (
     }),
   });
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    console.error("[Request] Error posting module chat:", errorText);
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
-  const result = (await response.json()) as PostModuleChatResponseDto;
-  console.info("[Request] postModuleChat success");
+  logger.info("[Request] postModuleChat success");
   return result;
 };
 
@@ -129,9 +120,9 @@ const getHeaders = async (
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   // ─── DEBUG ───────────────────────────────────────────────────────────────
-  console.log("[DEBUG] getHeaders called with userId:", userId);
-  console.log("[DEBUG] Authorization present:", !!token);
-  console.log("[DEBUG] X-User-ID value:", userId ?? "NOT SET ⚠️");
+  logger.debug("[DEBUG] getHeaders called with userId:", userId);
+  logger.debug("[DEBUG] Authorization present:", !!token);
+  logger.debug("[DEBUG] X-User-ID value:", userId ?? "NOT SET ⚠️");
   // ─────────────────────────────────────────────────────────────────────────
 
   return headers;
@@ -146,32 +137,119 @@ const getPublicHeaders = (userId?: string): Record<string, string> => {
   return headers;
 };
 
+// ==================== CENTRALIZED FETCH WRAPPER ====================
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+interface ApiFetchOptions extends RequestInit {
+  userId?: string;
+  noCache?: boolean;
+  /** Skip auth headers entirely */
+  public?: boolean;
+}
+
+async function apiFetch<T = any>(
+  url: string,
+  options: ApiFetchOptions = {},
+): Promise<T> {
+  const {
+    userId,
+    noCache,
+    public: isPublic,
+    headers: extraHeaders,
+    ...rest
+  } = options;
+
+  const baseHeaders = isPublic
+    ? getPublicHeaders(userId)
+    : await getHeaders(userId, { noCache });
+
+  const headers = {
+    ...baseHeaders,
+    ...(extraHeaders as Record<string, string> | undefined),
+  };
+
+  logger.debug(`[apiFetch] ${rest.method ?? "GET"} → ${url}`);
+
+  let response: Response;
+  try {
+    response = await fetch(url, { ...rest, headers });
+  } catch (networkErr) {
+    logger.error(`[apiFetch] network error for ${url}:`, networkErr);
+    throw new ApiError("Network request failed", 0, "NETWORK_ERROR");
+  }
+
+  let body: any = null;
+  try {
+    body = await response.json();
+  } catch {}
+
+  // Session/account-validity codes --- sessionEvents.ts. Handled here
+  // once, rather than at every individual call site.
+  const code = body?.code as SessionInvalidReason | undefined;
+  if (
+    response.status === 401 &&
+    (code === "SESSION_TERMINATED" ||
+      code === "ACCOUNT_DEACTIVATED" ||
+      code === "COMPANY_DEACTIVATED")
+  ) {
+    logger.warn(
+      `[apiFetch] session invalid (${code}) — emitting sessionEvents`,
+    );
+    emitSessionInvalid(code);
+    throw new ApiError(
+      body?.message ?? "Session invalid",
+      response.status,
+      code,
+    );
+  }
+
+  if (!response.ok) {
+    logger.error(`[apiFetch] ${response.status} for ${url}:`, body);
+    throw new ApiError(
+      body?.message ?? `HTTP error! status: ${response.status}`,
+      response.status,
+      code,
+    );
+  }
+
+  return body as T;
+}
+
 // 1. Get user by email
 export const getUserByEmail = async (email: string): Promise<UserResponse> => {
   try {
     const url = `${API_BASE_URL}/users/by-email/${encodeURIComponent(email)}`;
-    console.log("[Request] getUserByEmail →", url);
+    logger.debug("[Request] getUserByEmail →", url);
     const response = await fetch(url, {
       method: "GET",
       headers: getPublicHeaders(),
     });
     if (!response.ok) {
       const body = await response.text();
-      console.error(`[Request] getUserByEmail ${response.status}:`, body);
+      logger.error(`[Request] getUserByEmail ${response.status}:`, body);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     const json = await response.json();
     if (json.user) {
-      console.log("[Request] getUserByEmail ✅ user_id:", json.user.user_id);
+      logger.debug("[Request] getUserByEmail ✅ user_id:", json.user.user_id);
     } else {
-      console.error(
+      logger.error(
         "[Request] getUserByEmail — user is null:",
         JSON.stringify(json),
       );
     }
     return json;
   } catch (error) {
-    console.error("[Request] Error fetching user by email:", error);
+    logger.error("[Request] Error fetching user by email:", error);
     throw error;
   }
 };
@@ -180,51 +258,56 @@ export const getUserByEmail = async (email: string): Promise<UserResponse> => {
 export const getUserByPhone = async (phone: string): Promise<UserResponse> => {
   try {
     const url = `${API_BASE_URL}/users/by-phone/${encodeURIComponent(phone)}`;
-    console.log("[Request] getUserByPhone →", url);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: getPublicHeaders(),
-    });
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(`[Request] getUserByPhone ${response.status}:`, body);
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const json = await response.json();
+    logger.debug("[Request] getUserByPhone →", url);
+    const json = await apiFetch<any>(url, { method: "GET", public: true });
     if (json.user) {
-      console.log("[Request] getUserByPhone ✅ user_id:", json.user.user_id);
+      logger.debug("[Request] getUserByPhone ✅ user_id:", json.user.user_id);
     } else {
-      console.warn(
-        "[Request] getUserByPhone — no user found for phone:",
-        phone,
-      );
+      logger.warn("[Request] getUserByPhone — no user found for phone:", phone);
     }
     return json;
   } catch (error) {
-    console.error("[Request] Error fetching user by phone:", error);
+    logger.error("[Request] Error fetching user by phone:", error);
     throw error;
+  }
+};
+
+// 1b. Check whether a company is still active
+export const getCompanyActiveStatus = async (
+  companyId: string,
+): Promise<boolean | null> => {
+  try {
+    const url = `${API_BASE_URL}/companies/`;
+    const json = await apiFetch<any>(url, { method: "GET" });
+    const companies: any[] = json?.data?.companies ?? [];
+    const match = companies.find((c) => c.company_id === companyId);
+    if (!match) {
+      logger.warn(
+        "[Request] getCompanyActiveStatus — company not found in list:",
+        companyId,
+      );
+      return null;
+    }
+    return !!match.is_company_active;
+  } catch (error) {
+    logger.error("[Request] Error fetching company active status:", error);
+    return null; // network error — treat as unknown, not as "inactive"
   }
 };
 
 // 1c. Record user login metadata
 export const recordUserLogin = async (userId: string): Promise<any> => {
   try {
-    const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/users/record-login`;
-    console.log("[Request] recordUserLogin →", url);
-    const response = await fetch(url, {
+    logger.debug("[Request] recordUserLogin →", url);
+    const result = await apiFetch<any>(url, {
       method: "POST",
-      headers,
+      userId,
       body: JSON.stringify({ user_id: userId }),
     });
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(`[Request] recordUserLogin ${response.status}:`, body);
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return await response.json();
+    return result;
   } catch (error) {
-    console.error("[Request] Error recording user login:", error);
+    logger.error("[Request] Error recording user login:", error);
     throw error;
   }
 };
@@ -233,17 +316,14 @@ export const getModuleProgress = async (
   userId: string,
 ): Promise<ModuleProgress> => {
   try {
-    const headers = await getHeaders(userId, { noCache: true });
     const url = `${API_BASE_URL}/module-progress/user/${userId}`;
-    console.log("[Request] getModuleProgress →", url);
-    const response = await fetch(url, { method: "GET", headers });
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(`[Request] getModuleProgress ${response.status}:`, body);
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const json = await response.json();
-    console.log(
+    logger.debug("[Request] getModuleProgress →", url);
+    const json = await apiFetch<any>(url, {
+      method: "GET",
+      userId,
+      noCache: true,
+    });
+    logger.debug(
       "[Request] getModuleProgress ✅ count:",
       json?.count,
       "entries:",
@@ -251,7 +331,7 @@ export const getModuleProgress = async (
     );
     return json;
   } catch (error) {
-    console.error("[Request] Error fetching module progress:", error);
+    logger.error("[Request] Error fetching module progress:", error);
     throw error;
   }
 };
@@ -272,7 +352,7 @@ export const getLearningStyle = async (
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error("[Request] Error fetching learning style:", error);
+    logger.error("[Request] Error fetching learning style:", error);
     throw error;
   }
 };
@@ -290,7 +370,7 @@ export const getUserRoles = async (
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error("[Request] Error fetching user roles:", error);
+    logger.error("[Request] Error fetching user roles:", error);
     throw error;
   }
 };
@@ -312,7 +392,7 @@ export const getTrainingModules = async (
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error("[Request] Error fetching training modules:", error);
+    logger.error("[Request] Error fetching training modules:", error);
     throw error;
   }
 };
@@ -334,7 +414,7 @@ export const getTrainingModuleDetail = async (
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error("[Request] Error fetching training module detail:", error);
+    logger.error("[Request] Error fetching training module detail:", error);
     throw error;
   }
 };
@@ -353,7 +433,7 @@ export const getCompany = async (
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error("[Request] Error fetching company:", error);
+    logger.error("[Request] Error fetching company:", error);
     throw error;
   }
 };
@@ -372,7 +452,7 @@ export const getCompanyUsers = async (
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error("[Request] Error fetching company users:", error);
+    logger.error("[Request] Error fetching company users:", error);
     throw error;
   }
 };
@@ -395,12 +475,12 @@ export const getTrainingPlan = async (
 
     if (!response.ok) {
       const body = await response.text();
-      console.error(`[Request] POST /training-plan ${response.status}:`, body);
+      logger.error(`[Request] POST /training-plan ${response.status}:`, body);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     return await response.json();
   } catch (error) {
-    console.error("[Request] Error fetching training plan:", error);
+    logger.error("[Request] Error fetching training plan:", error);
     throw error;
   }
 };
@@ -418,12 +498,12 @@ export const getProcessedModules = async (
     );
     if (!response.ok) {
       const body = await response.text();
-      console.error(`[Request] getProcessedModules ${response.status}:`, body);
+      logger.error(`[Request] getProcessedModules ${response.status}:`, body);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     return await response.json();
   } catch (error) {
-    console.error("[Request] Error fetching processed modules:", error);
+    logger.error("[Request] Error fetching processed modules:", error);
     throw error;
   }
 };
@@ -454,10 +534,10 @@ export const getExistingAssessment = async (
       : "processed_module_id";
 
     const url = `${API_BASE_URL}/assessments/filter/search?type=module&${paramName}=${primaryId}&learning_style=${encodeURIComponent(learningStyle)}&user_id_filter=${userId}`;
-    console.log("[Quiz] Checking existing assessment →", url);
+    logger.debug("[Quiz] Checking existing assessment →", url);
     const response = await fetch(url, { method: "GET", headers });
     if (!response.ok) {
-      console.warn("[Quiz] getExistingAssessment HTTP", response.status);
+      logger.warn("[Quiz] getExistingAssessment HTTP", response.status);
       return null;
     }
     const json = await response.json();
@@ -467,10 +547,15 @@ export const getExistingAssessment = async (
     const raw = assessments[0]?.questions;
     if (!raw) return null;
     const questions = typeof raw === "string" ? JSON.parse(raw) : raw;
-    const thresholdValue = assessments[0]?.threshold_value ?? assessments[0]?.threshold ?? null;
-    return { questions, assessmentId: assessments[0]?.assessment_id, thresholdValue };
+    const thresholdValue =
+      assessments[0]?.threshold_value ?? assessments[0]?.threshold ?? null;
+    return {
+      questions,
+      assessmentId: assessments[0]?.assessment_id,
+      thresholdValue,
+    };
   } catch (err) {
-    console.warn("[Quiz] getExistingAssessment error:", err);
+    logger.warn("[Quiz] getExistingAssessment error:", err);
     return null;
   }
 };
@@ -480,11 +565,15 @@ export const generateModuleQuiz = async (
   learningStyle: string,
   userId: string,
   companyId: string,
-): Promise<{ questions: any[]; assessmentId?: string; thresholdValue?: number } | null> => {
+): Promise<{
+  questions: any[];
+  assessmentId?: string;
+  thresholdValue?: number;
+} | null> => {
   try {
     const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/gpt-mcq-quiz`;
-    console.log("[Quiz] Generating quiz →", url);
+    logger.debug("[Quiz] Generating quiz →", url);
     const response = await fetch(url, {
       method: "POST",
       headers,
@@ -497,11 +586,11 @@ export const generateModuleQuiz = async (
     });
     if (!response.ok) {
       const body = await response.text();
-      console.error("[Quiz] submitQuizForGrading HTTP", response.status, body);
+      logger.error("[Quiz] submitQuizForGrading HTTP", response.status, body);
       // ─── DEBUG: log all response headers ─────────────────────────────────
-      console.error("[DEBUG] Response headers:");
+      logger.error("[DEBUG] Response headers:");
       response.headers.forEach((value, key) => {
-        console.error(`[DEBUG]   ${key}: ${value}`);
+        logger.error(`[DEBUG]   ${key}: ${value}`);
       });
       // ─────────────────────────────────────────────────────────────────────
       return null;
@@ -521,7 +610,8 @@ export const generateModuleQuiz = async (
 
     let questions: any[] | null = null;
     let assessmentId: string | undefined;
-    let thresholdValue: number | undefined = json?.threshold_value ?? json?.thresholdValue ?? json?.threshold;
+    let thresholdValue: number | undefined =
+      json?.threshold_value ?? json?.thresholdValue ?? json?.threshold;
 
     // Shape A
     if (Array.isArray(json?.quizMapping) && json.quizMapping.length > 0) {
@@ -530,7 +620,7 @@ export const generateModuleQuiz = async (
       if (raw) {
         questions = typeof raw === "string" ? JSON.parse(raw) : raw;
         assessmentId = entry?.assessment_id;
-        console.log(
+        logger.debug(
           "[Quiz] generateModuleQuiz — shape A (quizMapping), q count:",
           questions?.length,
         );
@@ -541,7 +631,7 @@ export const generateModuleQuiz = async (
     if (!questions && Array.isArray(json?.quiz) && json.quiz.length > 0) {
       questions = json.quiz;
       assessmentId = json?.assessmentId;
-      console.log(
+      logger.debug(
         "[Quiz] generateModuleQuiz — shape B (quiz array), q count:",
         questions?.length,
       );
@@ -555,7 +645,7 @@ export const generateModuleQuiz = async (
         if (raw) {
           questions = typeof raw === "string" ? JSON.parse(raw) : raw;
           assessmentId = assessments[0]?.assessment_id;
-          console.log(
+          logger.debug(
             "[Quiz] generateModuleQuiz — shape C (data.assessments), q count:",
             questions?.length,
           );
@@ -564,7 +654,7 @@ export const generateModuleQuiz = async (
     }
 
     if (!questions || questions.length === 0) {
-      console.error(
+      logger.error(
         "[Quiz] generateModuleQuiz — no questions in response. Raw:",
         JSON.stringify(json).slice(0, 400),
       );
@@ -573,7 +663,7 @@ export const generateModuleQuiz = async (
 
     // If assessmentId still missing, fall back to GET (mirrors web behaviour)
     if (!assessmentId) {
-      console.log(
+      logger.debug(
         "[Quiz] generateModuleQuiz — no assessmentId in POST response, fetching via GET...",
       );
       try {
@@ -584,13 +674,13 @@ export const generateModuleQuiz = async (
           const list: any[] =
             searchJson?.data?.assessments ?? searchJson?.assessments ?? [];
           assessmentId = list[0]?.assessment_id;
-          console.log(
+          logger.debug(
             "[Quiz] generateModuleQuiz — assessmentId from GET fallback:",
             assessmentId,
           );
         }
       } catch (fallbackErr) {
-        console.warn(
+        logger.warn(
           "[Quiz] generateModuleQuiz — GET fallback failed (non-blocking):",
           fallbackErr,
         );
@@ -599,7 +689,7 @@ export const generateModuleQuiz = async (
 
     return { questions, assessmentId, thresholdValue };
   } catch (err) {
-    console.error("[Quiz] generateModuleQuiz error:", err);
+    logger.error("[Quiz] generateModuleQuiz error:", err);
     return null;
   }
 };
@@ -612,7 +702,7 @@ export const getProcessedModuleById = async (
   try {
     const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/processed-modules/${processedModuleId}`;
-    console.log("[v0] [Request] Fetching processed module:", {
+    logger.debug("[v0] [Request] Fetching processed module:", {
       url,
       processedModuleId,
     });
@@ -621,7 +711,7 @@ export const getProcessedModuleById = async (
 
     if (!response.ok) {
       const body = await response.text();
-      console.error(
+      logger.error(
         `[v0] [Request] ❌ getProcessedModuleById HTTP ${response.status}:`,
         body.substring(0, 200),
       );
@@ -634,13 +724,13 @@ export const getProcessedModuleById = async (
       throw new Error('API response missing "data" field');
     }
 
-    console.log(
+    logger.debug(
       "[v0] [Request] ✅ Processed module fetched:",
       json.data?.title,
     );
     return json;
   } catch (error) {
-    console.error("[v0] [Request] ❌ Error fetching processed module:", error);
+    logger.error("[v0] [Request] ❌ Error fetching processed module:", error);
     throw error;
   }
 };
@@ -651,17 +741,14 @@ export const getDashboardSummary = async (
   companyId: string,
 ): Promise<DashboardSummaryResponse> => {
   try {
-    const headers = await getHeaders(userId, { noCache: true });
-    headers["X-Company-ID"] = companyId;
     const url = `${API_BASE_URL}/employee/dashboard_summary/${encodeURIComponent(userId)}`;
-    console.log("[Request] getDashboardSummary →", url);
-    const response = await fetch(url, { method: "GET", headers });
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(`[Request] getDashboardSummary ${response.status}:`, body);
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const json = await response.json();
+    logger.debug("[Request] getDashboardSummary →", url);
+    const json = await apiFetch<any>(url, {
+      method: "GET",
+      userId,
+      noCache: true,
+      headers: { "X-Company-ID": companyId },
+    });
 
     if (Array.isArray(json?.plans)) {
       json.plans = json.plans.map((p: any) => {
@@ -669,7 +756,7 @@ export const getDashboardSummary = async (
           try {
             return { ...p, plan_json: JSON.parse(p.plan_json) };
           } catch (e) {
-            console.warn(
+            logger.warn(
               `[Request] Failed to parse plan_json string for plan ${p?.learning_plan_id}`,
               e,
             );
@@ -680,33 +767,14 @@ export const getDashboardSummary = async (
       });
     }
 
-    console.log(
-      "[Request] ══════════════════════════════════════════════════════",
-    );
-    console.log(
+    logger.debug(
       "[Request] getDashboardSummary raw response — plans:",
       json?.plans?.length,
-    );
-    (json?.plans ?? []).forEach((p: any, i: number) => {
-      console.log(
-        `[Request] Raw Plan[${i}] learning_plan_id=${p?.learning_plan_id}, module_id=${p?.module_id}`,
-      );
-      console.log(
-        `[Request] Raw Plan[${i}] processed_module_ids=`,
-        JSON.stringify(p?.processed_module_ids),
-      );
-      console.log(
-        `[Request] Raw Plan[${i}] plan_json.modules=`,
-        JSON.stringify((p?.plan_json?.modules ?? []).map((m: any) => m?.title)),
-      );
-    });
-    console.log(
-      "[Request] ══════════════════════════════════════════════════════",
     );
 
     return json;
   } catch (error) {
-    console.error("[Request] Error fetching dashboard summary:", error);
+    logger.error("[Request] Error fetching dashboard summary:", error);
     throw error;
   }
 };
@@ -718,18 +786,15 @@ export const getTasks = async (
   companyId: string,
 ): Promise<TasksResponse> => {
   try {
-    const headers = await getHeaders(userId, { noCache: true });
-    headers["X-Company-ID"] = companyId;
     const url = `${API_BASE_URL}/task-manager/tasks/user/${userId}`;
-    console.log("[Request] getTasks →", url);
-    const response = await fetch(url, { method: "GET", headers });
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(`[Request] getTasks ${response.status}:`, body);
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const json = await response.json();
-    console.log(
+    logger.debug("[Request] getTasks →", url);
+    const json = await apiFetch<any>(url, {
+      method: "GET",
+      userId,
+      noCache: true,
+      headers: { "X-Company-ID": companyId },
+    });
+    logger.debug(
       "[Request] getTasks ✅ total:",
       json?.total,
       "tasks:",
@@ -737,7 +802,7 @@ export const getTasks = async (
     );
     return json;
   } catch (error) {
-    console.error("[Request] Error fetching tasks:", error);
+    logger.error("[Request] Error fetching tasks:", error);
     throw error;
   }
 };
@@ -756,7 +821,7 @@ export const getUserByEmailForQuiz = async (
     const json = await response.json();
     return json?.user ?? null;
   } catch (err) {
-    console.warn("[Quiz] getUserByEmailForQuiz error:", err);
+    logger.warn("[Quiz] getUserByEmailForQuiz error:", err);
     return null;
   }
 };
@@ -778,7 +843,7 @@ export const postModuleProgress = async (
   try {
     const headers = await getHeaders(dbUserId);
     const url = `${API_BASE_URL}/module-progress`;
-    console.log("[Quiz] POST /module-progress →", url, {
+    logger.debug("[Quiz] POST /module-progress →", url, {
       module_id: payload.module_id,
       processed_module_id: payload.processed_module_id,
       quiz_score: payload.quiz_score,
@@ -799,12 +864,12 @@ export const postModuleProgress = async (
     });
     if (!response.ok) {
       const body = await response.text();
-      console.warn("[Quiz] POST /module-progress HTTP", response.status, body);
+      logger.warn("[Quiz] POST /module-progress HTTP", response.status, body);
     } else {
-      console.log("[Quiz] POST /module-progress ✅");
+      logger.debug("[Quiz] POST /module-progress ✅");
     }
   } catch (err) {
-    console.warn("[Quiz] postModuleProgress error (non-blocking):", err);
+    logger.warn("[Quiz] postModuleProgress error (non-blocking):", err);
   }
 };
 
@@ -851,9 +916,9 @@ export const submitQuizForGrading = async (
           headers,
         },
       )
-        .then((r) => console.log("[Quiz] Step 1 by-email HTTP", r.status))
+        .then((r) => logger.debug("[Quiz] Step 1 by-email HTTP", r.status))
         .catch((e) =>
-          console.warn("[Quiz] Step 1 by-email failed (non-blocking):", e),
+          logger.warn("[Quiz] Step 1 by-email failed (non-blocking):", e),
         );
     }
 
@@ -871,7 +936,7 @@ export const submitQuizForGrading = async (
     });
 
     const url = `${API_BASE_URL}/gpt-feedback`;
-    console.log("[Quiz] Step 2 — submitting →", url, {
+    logger.debug("[Quiz] Step 2 — submitting →", url, {
       assessmentId,
       answersCount: userAnswers.length,
       modulesCount: moduleObjects?.length ?? 0,
@@ -894,7 +959,7 @@ export const submitQuizForGrading = async (
 
     if (!response.ok) {
       const body = await response.text();
-      console.error("[Quiz] submitQuizForGrading HTTP", response.status, body);
+      logger.error("[Quiz] submitQuizForGrading HTTP", response.status, body);
       let detail = body;
       try {
         const parsedBody = JSON.parse(body);
@@ -914,7 +979,7 @@ export const submitQuizForGrading = async (
     }
 
     const json = await response.json();
-    console.log("[Quiz] Step 2 ✅ score:", json?.score, "/", json?.maxScore);
+    logger.debug("[Quiz] Step 2 ✅ score:", json?.score, "/", json?.maxScore);
 
     const score =
       typeof json?.score === "number"
@@ -935,10 +1000,10 @@ export const submitQuizForGrading = async (
           completed_at: new Date().toISOString(),
         });
       } catch (e) {
-        console.warn("[Quiz] Step 3 module-progress error (non-blocking):", e);
+        logger.warn("[Quiz] Step 3 module-progress error (non-blocking):", e);
       }
     } else {
-      console.warn(
+      logger.warn(
         "[Quiz] Step 3 module-progress SKIPPED — missing moduleId or processedModuleId",
         { moduleId, processedModuleId },
       );
@@ -950,10 +1015,10 @@ export const submitQuizForGrading = async (
       headers,
     })
       .then((r) =>
-        console.log("[Quiz] Step 4 assessments refresh HTTP", r.status),
+        logger.debug("[Quiz] Step 4 assessments refresh HTTP", r.status),
       )
       .catch((e) =>
-        console.warn(
+        logger.warn(
           "[Quiz] Step 4 assessments refresh failed (non-blocking):",
           e,
         ),
@@ -961,7 +1026,7 @@ export const submitQuizForGrading = async (
 
     return json;
   } catch (err) {
-    console.error("[Quiz] submitQuizForGrading error:", err);
+    logger.error("[Quiz] submitQuizForGrading error:", err);
     throw err;
   }
 };
@@ -1025,7 +1090,7 @@ export const submitFormatAnswer = async (
 
   try {
     const headers = await getHeaders(userId);
-    console.log("[Request] submitFormatAnswer →", url, {
+    logger.debug("[Request] submitFormatAnswer →", url, {
       task_id: taskId,
       format,
     });
@@ -1038,7 +1103,7 @@ export const submitFormatAnswer = async (
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
-      console.error(
+      logger.error(
         `[Request] submitFormathhAnswer(${format}) ${response.status}:`,
         errText,
       );
@@ -1046,13 +1111,13 @@ export const submitFormatAnswer = async (
     }
 
     const json = (await response.json()) as TaskSubmissionResponse;
-    console.log(
+    logger.debug(
       `[Request] submitFormatAnswer(${format}) ✅`,
       json?.submission_id,
     );
     return json;
   } catch (error) {
-    console.error(
+    logger.error(
       `[Request] Error submitting ${format} answer for task ${taskId}:`,
       error,
     );
@@ -1098,7 +1163,7 @@ export const submitTaskAnswer = async (
         }));
     }
 
-    console.log("[Request] submitTaskAnswer →", url, {
+    logger.debug("[Request] submitTaskAnswer →", url, {
       task_id: payload.task_id,
       submission_type: payload.submission_type,
     });
@@ -1111,15 +1176,15 @@ export const submitTaskAnswer = async (
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
-      console.error(`[Request] submitTaskAnswer ${response.status}:`, errText);
+      logger.error(`[Request] submitTaskAnswer ${response.status}:`, errText);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const json = (await response.json()) as TaskSubmissionResponse;
-    console.log("[Request] submitTaskAnswer", json?.submission_id);
+    logger.debug("[Request] submitTaskAnswer", json?.submission_id);
     return json;
   } catch (error) {
-    console.error("[Request] Error submitting task answer:", error);
+    logger.error("[Request] Error submitting task answer:", error);
     throw error;
   }
 };
@@ -1134,7 +1199,7 @@ export const getEmployeeAssessments = async (
     if (!response.ok) return null;
     return await response.json();
   } catch (err) {
-    console.warn("[Quiz] getEmployeeAssessments error:", err);
+    logger.warn("[Quiz] getEmployeeAssessments error:", err);
     return null;
   }
 };
@@ -1146,24 +1211,15 @@ export const getLeaderboardHighlight = async (
 ): Promise<LeaderboardHighlightResponse> => {
   try {
     const url = `${API_BASE_URL}/analytics/leaderboard/${companyId}/highlight?top_limit=${topLimit}`;
-    console.log("[Request] getLeaderboardHighlight →", url);
-    const headers = await getHeaders(userId, { noCache: true });
-    const response = await fetch(url, {
+    logger.debug("[Request] getLeaderboardHighlight →", url);
+    const json = await apiFetch<any>(url, {
       method: "GET",
-      headers,
+      userId,
+      noCache: true,
     });
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(
-        `[Request] getLeaderboardHighlight ${response.status}:`,
-        body,
-      );
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const json = await response.json();
     return json;
   } catch (error) {
-    console.error("[Request] Error fetching leaderboard highlight:", error);
+    logger.error("[Request] Error fetching leaderboard highlight:", error);
     throw error;
   }
 };
@@ -1183,7 +1239,7 @@ export const getAssessmentsBatch = async (
     if (!response.ok) return null;
     return await response.json();
   } catch (err) {
-    console.warn("[Request] getAssessmentsBatch error:", err);
+    logger.warn("[Request] getAssessmentsBatch error:", err);
     return null;
   }
 };
@@ -1203,7 +1259,7 @@ export const getProcessedModulesBatch = async (
     if (!response.ok) return null;
     return await response.json();
   } catch (err) {
-    console.warn("[Request] getProcessedModulesBatch error:", err);
+    logger.warn("[Request] getProcessedModulesBatch error:", err);
     return null;
   }
 };

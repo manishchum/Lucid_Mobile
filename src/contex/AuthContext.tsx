@@ -1,5 +1,12 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppState, AppStateStatus } from "react-native";
 import {
   getAuth,
   signInWithPhoneNumber,
@@ -7,7 +14,13 @@ import {
   signOut,
   FirebaseAuthTypes,
 } from "@react-native-firebase/auth";
-import { getUserByPhone, recordUserLogin } from "../api/users/Request";
+import {
+  getUserByPhone,
+  recordUserLogin,
+  getCompanyActiveStatus,
+} from "../api/users/Request";
+import { onSessionInvalid, SessionInvalidReason } from "../api/sessionEvents";
+import { logger } from "../utils/UnifiedLogger";
 
 export interface CachedUser {
   userId: string;
@@ -33,6 +46,12 @@ interface AuthContextType {
   otpStep: boolean;
   confirmation: any;
   cachedUser: CachedUser | null;
+  forcedLogoutReason:
+    | "user_deactivated"
+    | "company_deactivated"
+    | "session_terminated"
+    | null;
+  clearForcedLogoutReason: () => void;
   setPhoneNumber: (phone: string) => void;
   checkUserExists: (phone: string) => Promise<CheckUserResult>;
   sendOTP: () => Promise<boolean>;
@@ -91,6 +110,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [otpStep, setOtpStep] = useState(false);
   const [confirmation, setConfirmation] = useState<any>(null);
   const [cachedUser, setCachedUser] = useState<CachedUser | null>(null);
+  const [forcedLogoutReason, setForcedLogoutReason] = useState<
+    "user_deactivated" | "company_deactivated" | "session_terminated" | null
+  >(null);
+
+  const ACCOUNT_STATUS_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+  const lastCheckedAtRef = useRef<number>(0);
+  const isCheckingRef = useRef(false);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -129,8 +155,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             if (firebaseUser) {
               setIsLoggedIn(true);
               if (firebaseUser.phoneNumber && !phoneNumber) {
-              // firebaseUser.phoneNumber is always E.164 e.g. +919811006045
-              // phoneNumber state must stay as the raw 10-digit number (used by UI + sendOTP)
+                // firebaseUser.phoneNumber is always E.164 e.g. +919811006045
+                // phoneNumber state must stay as the raw 10-digit number (used by UI + sendOTP)
                 const raw = firebaseUser.phoneNumber.replace(/^\+91/, "");
                 setPhoneNumber(raw);
                 await AsyncStorage.setItem(PHONE_NUMBER_KEY, raw);
@@ -279,6 +305,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           "@module_progress_",
           "@processed_module_",
           "@company_data_",
+          "@auth_modules_",
+          "@leaderboard_highlight_",
+          "@content_categories_",
+          "@content_items_",
+          "@career_journeys_",
+          "lucid_module_unified_trans_v3_",
         ];
         const keysToRemove = allKeys.filter(
           (key) =>
@@ -301,6 +333,107 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  // ==================== PERIODIC ACCOUNT-STATUS VERIFICATION ====================
+  const verifyAccountStatus = async (force = false) => {
+    if (!cachedUser) return;
+    if (isCheckingRef.current) return;
+
+    const now = Date.now();
+    if (
+      !force &&
+      now - lastCheckedAtRef.current < ACCOUNT_STATUS_CHECK_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    isCheckingRef.current = true;
+    lastCheckedAtRef.current = now;
+
+    try {
+      // 1. Re-check the user's own active status (reuses the existing by-phone lookup).
+      const userResponse = await getUserByPhone(cachedUser.phone);
+      if (!userResponse?.user) {
+        // User record vanished entirely — treat like deactivation.
+        console.warn("[Auth] verifyAccountStatus — user no longer found");
+        setForcedLogoutReason("user_deactivated");
+        await logout();
+        return;
+      }
+      if (!userResponse.user.is_active) {
+        console.warn("[Auth] verifyAccountStatus — user is now inactive");
+        setForcedLogoutReason("user_deactivated");
+        await logout();
+        return;
+      }
+
+      // 2. Check the company's active status.
+      const companyActive = await getCompanyActiveStatus(cachedUser.companyId);
+      if (companyActive === false) {
+        console.warn("[Auth] verifyAccountStatus — company is now inactive");
+        setForcedLogoutReason("company_deactivated");
+        await logout();
+        return;
+      }
+    } catch (err) {
+      // Network/API failure — fail open, don't punish the user for a
+      // flaky connection. Just try again on the next check.
+      console.warn(
+        "[Auth] verifyAccountStatus check failed, will retry later:",
+        err,
+      );
+    } finally {
+      isCheckingRef.current = false;
+    }
+  };
+
+  const clearForcedLogoutReason = () => setForcedLogoutReason(null);
+
+  useEffect(() => {
+    const unsubscribe = onSessionInvalid((reason: SessionInvalidReason) => {
+      logger.warn("[Auth] sessionEvents — received invalid session:", reason);
+      const mapped =
+        reason === "COMPANY_DEACTIVATED"
+          ? "company_deactivated"
+          : reason === "SESSION_TERMINATED"
+            ? "session_terminated"
+            : "user_deactivated"; // covers ACCOUNT_DEACTIVATED + UNKNOWN
+      setForcedLogoutReason(mapped);
+      logout();
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!cachedUser) return;
+
+    // Check once shortly after login/restore.
+    verifyAccountStatus(true);
+
+    // Re-check whenever the app comes back to the foreground.
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === "active") {
+        verifyAccountStatus();
+      }
+    };
+    const appStateSub = AppState.addEventListener(
+      "change",
+      handleAppStateChange,
+    );
+
+    // Also re-check periodically while the app stays open in the foreground.
+    const interval = setInterval(() => {
+      if (AppState.currentState === "active") {
+        verifyAccountStatus();
+      }
+    }, ACCOUNT_STATUS_CHECK_INTERVAL_MS);
+
+    return () => {
+      appStateSub.remove();
+      clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cachedUser?.userId]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -310,6 +443,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         otpStep,
         confirmation,
         cachedUser,
+        forcedLogoutReason,
+        clearForcedLogoutReason,
         setPhoneNumber,
         checkUserExists,
         sendOTP,
