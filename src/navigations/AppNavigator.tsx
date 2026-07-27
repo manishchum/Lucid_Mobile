@@ -1,5 +1,5 @@
-import React from "react";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import React, { useEffect } from "react";
+import { View, ActivityIndicator, StyleSheet, Alert } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -8,7 +8,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../contex/AuthContext";
 import { TenantProvider, useTenant } from "../contex/TenantContext";
 import { DrawerProvider, useDrawer } from "../contex/DrawerContext";
-import { ActiveSprintProvider, useActiveSprint } from "../contex/ActiveSprintContext";
+import {
+  ActiveSprintProvider,
+  useActiveSprint,
+} from "../contex/ActiveSprintContext";
 import { APP_ROUTES, STACK_ROUTES } from "./Routes";
 
 // Screens
@@ -30,7 +33,10 @@ import AppHeader from "../components/navigation/AppHeader";
 import AppDrawer from "../components/navigation/AppDrawer";
 import LeaderboardModal from "../components/leaderboard/LeaderboardModal";
 import NotificationsModal from "../components/notifications/NotificationsModal";
-import { useGetDashboardSummary, useGetLeaderboardHighlight } from "../api/users";
+import {
+  useGetDashboardSummary,
+  useGetLeaderboardHighlight,
+} from "../api/users";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -58,7 +64,9 @@ function BottomTabNavigator() {
           marginTop: 4,
         },
         tabBarIcon: ({ color, size }: any) => {
-          let iconName: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
+          let iconName: React.ComponentProps<
+            typeof MaterialCommunityIcons
+          >["name"];
 
           switch (route.name) {
             case APP_ROUTES.HOME:
@@ -126,8 +134,32 @@ function AuthNavigator() {
 }
 
 function AppNavigatorContent() {
-  const { isLoggedIn, isInitializing, cachedUser } = useAuth();
-  const { isLeaderboardOpen, setIsLeaderboardOpen, isNotificationsOpen, setIsNotificationsOpen } = useDrawer();
+  const {
+    isLoggedIn,
+    isInitializing,
+    cachedUser,
+    forcedLogoutReason,
+    clearForcedLogoutReason,
+  } = useAuth();
+  const {
+    isLeaderboardOpen,
+    setIsLeaderboardOpen,
+    isNotificationsOpen,
+    setIsNotificationsOpen,
+  } = useDrawer();
+
+  useEffect(() => {
+    if (!forcedLogoutReason) return;
+    const message =
+      forcedLogoutReason === "company_deactivated"
+        ? "Your company's access has been suspended. Please contact your administrator."
+        : forcedLogoutReason === "session_terminated"
+          ? "You were logged out because you signed in on another device."
+          : "Your account has been deactivated. Please contact your administrator.";
+    Alert.alert("Signed out", message, [
+      { text: "OK", onPress: clearForcedLogoutReason },
+    ]);
+  }, [forcedLogoutReason]);
 
   const userId = cachedUser?.userId ?? null;
   const companyId = cachedUser?.companyId ?? null;
@@ -142,12 +174,12 @@ function AppNavigatorContent() {
     isLoggedIn ? companyId : null,
     isLoggedIn ? userId : null,
     10,
-    isLeaderboardOpen
+    isLeaderboardOpen,
   );
 
   const { stats } = useGetDashboardSummary(
     isLoggedIn ? userId : null,
-    isLoggedIn ? companyId : null
+    isLoggedIn ? companyId : null,
   );
   const progressPercentage = stats?.progressPercentage ?? 0;
 
@@ -183,17 +215,29 @@ function AppNavigatorContent() {
             <Stack.Screen
               name={STACK_ROUTES.CONTENT_VIEWER}
               component={ContentViewerScreen}
-              options={{ presentation: "card", animation: "slide_from_right", headerShown: false }}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
+                headerShown: false,
+              }}
             />
             <Stack.Screen
               name={APP_ROUTES.SPRINTVERSE}
               component={SprintverseScreen}
-              options={{ presentation: "card", animation: "slide_from_right", headerShown: false }}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
+                headerShown: false,
+              }}
             />
             <Stack.Screen
               name={APP_ROUTES.REPORTS}
               component={ReportsScreen}
-              options={{ presentation: "card", animation: "slide_from_right", headerShown: false }}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
+                headerShown: false,
+              }}
             />
           </>
         ) : (

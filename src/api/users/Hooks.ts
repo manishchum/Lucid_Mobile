@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { eventBus } from "../../utils/EventBus";
+import { logger } from "../../utils/UnifiedLogger";
 import { useTenant } from "../../contex/TenantContext";
 import {
   getUserByEmail,
@@ -112,7 +113,7 @@ async function reconcilePlaceholderTitles(
         }
         return { ...card, modules: patched };
       } catch (err) {
-        console.warn(
+        logger.warn(
           `[reconcilePlaceholderTitles] Failed to fetch titles for plan "${card.planKey}":`,
           err,
         );
@@ -321,7 +322,7 @@ export const useGetProcessedModuleById = (
         err instanceof Error
           ? err
           : new Error("Failed to fetch processed module");
-      console.error("[Hook] fetchModuleData error:", error.message);
+      logger.error("[Hook] fetchModuleData error:", error.message);
       throw error;
     } finally {
       if (showSpinner) setIsLoading(false);
@@ -347,7 +348,7 @@ export const useGetProcessedModuleById = (
         if (cachedJson) {
           const cachedData = JSON.parse(cachedJson);
           setModule(cachedData);
-          console.log(
+          logger.debug(
             "[Hook] ✅ Loaded processed module from cache:",
             processedModuleId,
           );
@@ -355,7 +356,7 @@ export const useGetProcessedModuleById = (
           setIsLoading(false);
         }
       } catch (err) {
-        console.warn("[Hook] Failed to load cached processed module:", err);
+        logger.warn("[Hook] Failed to load cached processed module:", err);
       }
 
       // 2. Fetch fresh data from network
@@ -498,7 +499,7 @@ export const useGetCompany = (
     } catch (err) {
       const error =
         err instanceof Error ? err : new Error("Failed to fetch company");
-      console.error("[Hook] fetchCompanyData error:", error.message);
+      logger.error("[Hook] fetchCompanyData error:", error.message);
       throw error;
     } finally {
       if (showSpinner) setIsLoading(false);
@@ -521,12 +522,12 @@ export const useGetCompany = (
         if (cachedJson) {
           const cachedData = JSON.parse(cachedJson) as Company;
           setCompany(cachedData);
-          console.log("[Hook] ✅ Loaded company data from cache:", companyId);
+          logger.debug("[Hook] ✅ Loaded company data from cache:", companyId);
           hasCache = true;
           setIsLoading(false);
         }
       } catch (err) {
-        console.warn("[Hook] Failed to load cached company data:", err);
+        logger.warn("[Hook] Failed to load cached company data:", err);
       }
 
       // 2. Fetch fresh data from network
@@ -737,7 +738,7 @@ async function fetchAuthoritativeModules(
       return parsed;
     }
   } catch (err) {
-    console.warn(
+    logger.warn(
       `[resolveIds] Failed to read auth modules cache for ${originalModuleId}:`,
       err,
     );
@@ -762,7 +763,7 @@ async function fetchAuthoritativeModules(
 
     return authModules;
   } catch (err) {
-    console.error(
+    logger.error(
       `[resolveIds] Failed to fetch authoritative /training-plan for original_module_id="${originalModuleId}":`,
       err,
     );
@@ -803,7 +804,7 @@ async function resolveProcessedModuleIdsForPlan(
       }
     }
 
-    console.warn(
+    logger.warn(
       `[resolveIds] Plan "${plan.learning_plan_id}" has no plan_json.modules and no IDs`,
     );
     return [];
@@ -815,7 +816,7 @@ async function resolveProcessedModuleIdsForPlan(
     .filter(Boolean);
 
   if (embedded.length === planModules.length) {
-    console.log(
+    logger.debug(
       `[resolveIds] ✅ Plan "${plan.learning_plan_id}" — Strategy 1: embedded IDs (${embedded.length})`,
     );
     return embedded;
@@ -826,7 +827,7 @@ async function resolveProcessedModuleIdsForPlan(
     Array.isArray(plan?.processed_module_ids) &&
     plan.processed_module_ids.length === planModules.length
   ) {
-    console.log(
+    logger.debug(
       `[resolveIds] ✅ Plan "${plan.learning_plan_id}" — Strategy 1.5: root-level IDs (${plan.processed_module_ids.length})`,
     );
     return plan.processed_module_ids;
@@ -834,7 +835,7 @@ async function resolveProcessedModuleIdsForPlan(
 
   // ── Strategy 2:
   if (originalModuleId) {
-    console.log(
+    logger.debug(
       `[resolveIds] Plan "${plan.learning_plan_id}" — Strategy 2: fetching ` +
         `authoritative /training-plan for original_module_id="${originalModuleId}"`,
     );
@@ -856,12 +857,12 @@ async function resolveProcessedModuleIdsForPlan(
         const key = m?.title?.trim().toLowerCase() ?? "";
         const byTitle = titleToId.get(key);
         if (byTitle) {
-          console.log(
+          logger.debug(
             `[resolveIds] ✅ Module[${i}] "${m.title}" → title match → "${byTitle}"`,
           );
           return byTitle;
         }
-        console.error(
+        logger.error(
           `[resolveIds] ❌ Module[${i}] "${m.title}" — no title match in ` +
             `authoritative /training-plan response. Leaving unresolved ` +
             `(no positional guess) to avoid mismatched completion state.`,
@@ -873,7 +874,7 @@ async function resolveProcessedModuleIdsForPlan(
     }
   }
 
-  console.error(
+  logger.error(
     `[resolveIds] ❌ Plan "${plan.learning_plan_id}" — all strategies exhausted, no IDs resolved`,
   );
   return [];
@@ -913,14 +914,14 @@ export async function resolvePlanModules(
     : [];
 
   if (topLevelIds.length === 0) {
-    console.error(
+    logger.error(
       `Plan "${plan.learning_plan_id}" — plan_json is empty/null AND ` +
         `no top-level processed_module_ids either. This plan genuinely has no modules to show.`,
     );
     return { modules: [], processedModuleIds: [] };
   }
 
-  console.log(
+  logger.debug(
     `[resolveIds] Plan "${plan.learning_plan_id}" — plan_json is null. Using ` +
       `top-level processed_module_ids (${topLevelIds.length} ids), titles from ` +
       `progress data where available (no network calls).`,
@@ -932,7 +933,7 @@ export async function resolvePlanModules(
     recommended_time: 0,
   }));
 
-  console.log(
+  logger.debug(
     `Plan "${plan.learning_plan_id}" — resolved ${modules.length} ` +
       `modules via plan_json-null fallback (no fetches):`,
     modules.map((m) => m.title),
@@ -958,7 +959,7 @@ async function processDashboardResponse(
   (data.modules ?? []).forEach((m: any) => {
     if (m?.module_id) moduleMap.set(m.module_id, m);
   });
-  console.log(
+  logger.debug(
     "[Hook] Module map built —",
     moduleMap.size,
     "entries:",
@@ -968,7 +969,7 @@ async function processDashboardResponse(
   );
 
   const allPlans: any[] = data?.plans ?? [];
-  console.log("[Hook] Total plans received:", allPlans.length);
+  logger.debug("[Hook] Total plans received:", allPlans.length);
 
   // Only render ASSIGNED / IN_PROGRESS / COMPLETED sprints on the home screen
   const activePlans = allPlans.filter((p: any) =>
@@ -978,14 +979,14 @@ async function processDashboardResponse(
         .toUpperCase(),
     ),
   );
-  console.log("[Hook] Active plans:", activePlans.length);
+  logger.debug("[Hook] Active plans:", activePlans.length);
 
   const completedProcessedModuleIds = new Set(
     (data?.progress ?? [])
       .filter((p: any) => !!p?.processed_module_id && p?.quiz_score !== null)
       .map((p: any) => p.processed_module_id),
   );
-  console.log(
+  logger.debug(
     "[Hook] Quiz-completed processed-module IDs:",
     completedProcessedModuleIds.size,
   );
@@ -1036,23 +1037,23 @@ async function processDashboardResponse(
 
       // Fallback: If modules list is empty but we have processed module IDs
       if (modules.length === 0 && processedModuleIds.length > 0) {
-        console.log(
+        logger.debug(
           `[DEBUG_FALLBACK] plan_id: ${plan.learning_plan_id}, original_module_id: ${plan.module_id}, processedIds:`,
           processedModuleIds,
         );
         const missingIds = processedModuleIds.filter(
           (id) => !processedModuleMetadata.has(id),
         );
-        console.log(
+        logger.debug(
           `[DEBUG_FALLBACK] missingIds count: ${missingIds.length}, cache size: ${processedModuleMetadata.size}`,
         );
         if (missingIds.length > 0 && plan.module_id) {
           try {
-            console.log(
+            logger.debug(
               `[Hook] Fetching processed modules metadata fallback for: ${plan.module_id}`,
             );
             const response = await getProcessedModules(plan.module_id, userId);
-            console.log(
+            logger.debug(
               `[DEBUG_FALLBACK] API response keys:`,
               Object.keys(response ?? {}),
               `data is array:`,
@@ -1070,7 +1071,7 @@ async function processDashboardResponse(
               }
             });
           } catch (err) {
-            console.error(
+            logger.error(
               "[Hook] Failed to fetch processed modules metadata fallback:",
               err,
             );
@@ -1088,11 +1089,11 @@ async function processDashboardResponse(
         });
       }
 
-      console.log(
+      logger.debug(
         `[Hook] Plan "${planKey}" → sprint="${title}" steps=${modules.length} resolvedIds=${processedModuleIds.length}`,
       );
       modules.forEach((m, i) => {
-        console.log(
+        logger.debug(
           `[Hook]   Step[${i + 1}] "${m.title}" → processedId="${
             processedModuleIds[i] ?? "❌ MISSING"
           }"`,
@@ -1113,7 +1114,7 @@ async function processDashboardResponse(
         status = serverStatus === "COMPLETED" ? "COMPLETED" : "NOT_STARTED";
       }
 
-      console.log(
+      logger.debug(
         `[Hook]   → status="${status}" (server="${serverStatus}", completed=${completedModulesCount}/${modules.length})`,
       );
 
@@ -1154,7 +1155,7 @@ export const useGetDashboardSummary = (
       if (!userId || !companyId) return;
 
       if (fetchPromiseRef.current) {
-        console.log(
+        logger.debug(
           "[Hook] fetchDashboardData already in progress, awaiting existing promise...",
         );
         if (showSpinner) setIsLoading(true);
@@ -1172,7 +1173,7 @@ export const useGetDashboardSummary = (
       const fetchTask = (async () => {
         try {
           const startTime = Date.now();
-          console.log(
+          logger.debug(
             "[Hook] GET /employee/dashboard_summary/ →",
             userId,
             "companyId:",
@@ -1182,7 +1183,7 @@ export const useGetDashboardSummary = (
           const apiStart = Date.now();
           const data = await getDashboardSummary(userId, companyId);
           const apiEnd = Date.now();
-          console.log(
+          logger.debug(
             `[Timing] getDashboardSummary API took ${apiEnd - apiStart}ms`,
           );
 
@@ -1193,7 +1194,7 @@ export const useGetDashboardSummary = (
           (data.modules ?? []).forEach((m: any) => {
             if (m?.module_id) moduleMap.set(m.module_id, m);
           });
-          console.log(
+          logger.debug(
             "[Hook] Module map built —",
             moduleMap.size,
             "entries:",
@@ -1203,7 +1204,7 @@ export const useGetDashboardSummary = (
           );
 
           const allPlans: any[] = data?.plans ?? [];
-          console.log("[Hook] Total plans received:", allPlans.length);
+          logger.debug("[Hook] Total plans received:", allPlans.length);
 
           // Only render ASSIGNED / IN_PROGRESS / COMPLETED sprints on the home screen
           const statusFilteredPlans = allPlans.filter((p: any) =>
@@ -1226,20 +1227,20 @@ export const useGetDashboardSummary = (
               baselineEvidenceByModuleId[moduleId].length > 0;
 
             if (hasBaselineEvidence) {
-              console.log(
+              logger.debug(
                 `[Hook] ✅ Plan "${p?.learning_plan_id}" — baseline_assessment=true but ` +
                   `baseline evidence found for module "${moduleId}" (completed via web) → showing`,
               );
               return true;
             }
 
-            console.log(
+            logger.debug(
               `[Hook] ⏭️ Skipping plan "${p?.learning_plan_id}" — baseline_assessment=true, ` +
                 `no baseline evidence for module "${moduleId}" yet (mobile has no baseline-test flow)`,
             );
             return false;
           });
-          console.log(
+          logger.debug(
             "[Hook] Active plans:",
             activePlans.length,
             `(${statusFilteredPlans.length - activePlans.length} baseline-assessment plans hidden)`,
@@ -1252,7 +1253,7 @@ export const useGetDashboardSummary = (
               )
               .map((p: any) => p.processed_module_id),
           );
-          console.log(
+          logger.debug(
             "[Hook] Quiz-completed processed-module IDs:",
             completedProcessedModuleIds.size,
           );
@@ -1297,11 +1298,11 @@ export const useGetDashboardSummary = (
 
               const tips: string = plan.plan_json?.tips ?? "";
 
-              console.log(
+              logger.debug(
                 `[Hook] Plan "${planKey}" → sprint="${title}" steps=${modules.length} resolvedIds=${processedModuleIds.length}`,
               );
               modules.forEach((m, i) => {
-                console.log(
+                logger.debug(
                   `[Hook]   Step[${i + 1}] "${m.title}" → processedId="${
                     processedModuleIds[i] ?? "❌ MISSING"
                   }"`,
@@ -1326,7 +1327,7 @@ export const useGetDashboardSummary = (
                   serverStatus === "COMPLETED" ? "COMPLETED" : "NOT_STARTED";
               }
 
-              console.log(
+              logger.debug(
                 `[Hook]   → status="${status}" (server="${serverStatus}", completed=${completedModulesCount}/${modules.length})`,
               );
 
@@ -1346,7 +1347,7 @@ export const useGetDashboardSummary = (
           );
 
           setResolvedPlanCards(cards);
-          console.log(
+          logger.debug(
             "[Hook] ✅ Fresh dashboard summary resolved:",
             cards.length,
           );
@@ -1360,17 +1361,17 @@ export const useGetDashboardSummary = (
               .then(({ cards: reconciled, changed }) => {
                 if (changed) {
                   setResolvedPlanCards(reconciled);
-                  console.log(
+                  logger.debug(
                     "Reconciled placeholder module titles in background",
                   );
                 }
               })
               .catch((err) =>
-                console.warn("[Hook] Title reconciliation failed:", err),
+                logger.warn("[Hook] Title reconciliation failed:", err),
               );
           }
 
-          console.log(
+          logger.debug(
             `[Timing] Total fetchDashboardData took ${Date.now() - startTime}ms`,
           );
           return data;
@@ -1379,7 +1380,7 @@ export const useGetDashboardSummary = (
             err instanceof Error
               ? err
               : new Error("Failed to fetch dashboard summary");
-          console.error("[Hook] fetchDashboardData error:", error.message);
+          logger.error("[Hook] fetchDashboardData error:", error.message);
           throw error;
         }
       })();
@@ -1414,7 +1415,7 @@ export const useGetDashboardSummary = (
           setDashboardData(cachedData);
           const cards = await processDashboardResponse(cachedData, userId);
           setResolvedPlanCards(cards);
-          console.log(
+          logger.debug(
             "[Hook] ✅ Loaded dashboard data from cache:",
             cards.length,
           );
@@ -1425,7 +1426,7 @@ export const useGetDashboardSummary = (
                 if (changed) setResolvedPlanCards(reconciled);
               })
               .catch((err) =>
-                console.warn(
+                logger.warn(
                   "[Hook] Cached-card title reconciliation failed:",
                   err,
                 ),
@@ -1437,7 +1438,7 @@ export const useGetDashboardSummary = (
           setIsLoading(false);
         }
       } catch (err) {
-        console.warn("[Hook] Failed to load cached dashboard data:", err);
+        logger.warn("[Hook] Failed to load cached dashboard data:", err);
       }
 
       // 2. Fetch fresh data from network
@@ -1460,7 +1461,7 @@ export const useGetDashboardSummary = (
 
   useEffect(() => {
     const handleRefresh = () => {
-      console.log(
+      logger.debug(
         "[Hook] EventBus triggered refresh_dashboard. Refreshing silently...",
       );
       fetchDashboardData(false).catch(() => {});
@@ -1568,10 +1569,7 @@ export const useModuleProgress = (
           const cacheKey = `@module_progress_${userId}`;
           AsyncStorage.setItem(cacheKey, JSON.stringify(mergedData)).catch(
             (err) =>
-              console.warn(
-                "[Hook] Error saving merged progress to cache:",
-                err,
-              ),
+              logger.warn("[Hook] Error saving merged progress to cache:", err),
           );
 
           return mergedData;
@@ -1583,7 +1581,7 @@ export const useModuleProgress = (
           err instanceof Error
             ? err
             : new Error("Failed to fetch module progress");
-        console.error("[Hook] fetchProgressData error:", error.message);
+        logger.error("[Hook] fetchProgressData error:", error.message);
         throw error;
       } finally {
         if (showSpinner) setIsLoading(false);
@@ -1608,7 +1606,7 @@ export const useModuleProgress = (
         if (cachedJson) {
           const cachedData = JSON.parse(cachedJson) as ModuleProgressEntry[];
           setProgress(cachedData);
-          console.log(
+          logger.debug(
             "[Hook] ✅ Loaded module progress from cache:",
             cachedData.length,
           );
@@ -1616,7 +1614,7 @@ export const useModuleProgress = (
           setIsLoading(false);
         }
       } catch (err) {
-        console.warn("[Hook] Failed to load cached module progress:", err);
+        logger.warn("[Hook] Failed to load cached module progress:", err);
       }
 
       // 2. Fetch fresh data from network
@@ -1638,7 +1636,7 @@ export const useModuleProgress = (
 
   useEffect(() => {
     const handleRefresh = () => {
-      console.log(
+      logger.debug(
         "[Hook] EventBus triggered refresh_dashboard in useModuleProgress. Refreshing silently...",
       );
       fetchProgressData(false).catch(() => {});
@@ -1652,7 +1650,7 @@ export const useModuleProgress = (
       quizScore: number;
     }) => {
       if (!userId) return;
-      console.log(
+      logger.debug(
         "[Hook] EventBus triggered quiz_completed in useModuleProgress:",
         eventData,
       );
@@ -1682,7 +1680,7 @@ export const useModuleProgress = (
         const cacheKey = `@module_progress_${userId}`;
         AsyncStorage.setItem(cacheKey, JSON.stringify(updatedProgress)).catch(
           (err: any) => {
-            console.warn(
+            logger.warn(
               "[Hook] Failed to write updated progress to cache:",
               err,
             );
@@ -1816,7 +1814,7 @@ export const useGetLeaderboardHighlight = (
           throw new Error(response.error);
         }
       } catch (err) {
-        console.error("[Hook] useGetLeaderboardHighlight error:", err);
+        logger.error("[Hook] useGetLeaderboardHighlight error:", err);
         setError(
           err instanceof Error ? err : new Error("Failed to fetch leaderboard"),
         );
@@ -1845,12 +1843,12 @@ export const useGetLeaderboardHighlight = (
         if (cachedJson) {
           const cachedData = JSON.parse(cachedJson) as LeaderboardHighlightData;
           setLeaderboardData(cachedData);
-          console.log("[Hook] ✅ Loaded leaderboard from cache");
+          logger.debug("[Hook] ✅ Loaded leaderboard from cache");
           hasCache = true;
           setIsLoading(false); // Cache found, stop spinner early
         }
       } catch (err) {
-        console.warn("[Hook] Failed to load cached leaderboard:", err);
+        logger.warn("[Hook] Failed to load cached leaderboard:", err);
       }
 
       // 2. Fetch fresh data from network
