@@ -25,6 +25,8 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showNotRegisteredModal, setShowNotRegisteredModal] = useState(false);
+  const [showAccessDeniedModal, setShowAccessDeniedModal] = useState(false);
+  const [accessDeniedMessage, setAccessDeniedMessage] = useState("");
   const [showNoInternet, setShowNoInternet] = useState(false);
   const insets = useSafeAreaInsets();
   const isOnline = useNetworkStatus();
@@ -44,18 +46,34 @@ export default function LoginScreen() {
 
     setIsLoading(true);
 
-    // Step 1: Verify the phone number exists in the backend AND is active
-    const user = await checkUserExists(phoneNumber);
+    // Step 1: Verify user registration, active status, and company validity
+    const result = await checkUserExists(phoneNumber);
 
-    if (!user) {
-      // Show modal instead of inline error — makes it clear this is an
-      // admin-side issue, not a typo
+    if (result.status === "not_registered") {
       setShowNotRegisteredModal(true);
       setIsLoading(false);
       return;
     }
 
-    // Step 2: User is verified and active — safe to send OTP
+    if (result.status === "inactive") {
+      setAccessDeniedMessage(
+        "Access Denied. Your account is deactivated. Please contact your administrator."
+      );
+      setShowAccessDeniedModal(true);
+      setIsLoading(false);
+      return;
+    }
+
+    if (result.status === "company_invalid") {
+      setAccessDeniedMessage(
+        "Access Denied. Your company account is not registered or inactive. Please contact your administrator."
+      );
+      setShowAccessDeniedModal(true);
+      setIsLoading(false);
+      return;
+    }
+
+    // Step 2: User is verified, active, and company exists — safe to send OTP
     const success = await sendOTP();
     if (!success) {
       setError("Failed to send OTP. Please try again.");
@@ -114,6 +132,7 @@ export default function LoginScreen() {
                 }
                 maxLength={10}
                 placeholder="Enter phone number"
+                placeholderTextColor="#64748B"
               />
             </View>
 
@@ -170,6 +189,36 @@ export default function LoginScreen() {
             <TouchableOpacity
               style={modalStyles.button}
               onPress={() => setShowNotRegisteredModal(false)}
+            >
+              <Text style={modalStyles.buttonText}>OK, Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Access Denied Modal */}
+      <Modal
+        visible={showAccessDeniedModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAccessDeniedModal(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.card}>
+            <View style={modalStyles.iconContainer}>
+              <MaterialCommunityIcons
+                name="shield-alert-outline"
+                size={40}
+                color="#EF4444"
+              />
+            </View>
+
+            <Text style={modalStyles.title}>Access Denied</Text>
+            <Text style={modalStyles.message}>{accessDeniedMessage}</Text>
+
+            <TouchableOpacity
+              style={modalStyles.button}
+              onPress={() => setShowAccessDeniedModal(false)}
             >
               <Text style={modalStyles.buttonText}>OK, Got it</Text>
             </TouchableOpacity>

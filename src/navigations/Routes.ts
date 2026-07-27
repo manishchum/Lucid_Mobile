@@ -6,15 +6,20 @@ export const AUTH_ROUTES = {
 // App Routes (Bottom Tab Navigation)
 export const APP_ROUTES = {
   HOME: "Home",
-  SPRINT: "Sprint",
-  STUDIO: "Studio",
+  CONTENT_LIBRARY: "ContentLibrary",
+  SPRINTVERSE: "Sprintverse",
   PROFILE: "Profile",
+  REPORTS: "Reports",
 } as const;
 
 // Stack Routes (modal screens)
 export const STACK_ROUTES = {
+  SPRINT: "Sprint",
+  STUDIO: "Studio",
   CONTENT_DETAIL: "ContentDetail",
   MODULE_QUIZ: "ModuleQuiz",
+  NOTIFICATIONS: "Notifications",
+  CONTENT_VIEWER: "ContentViewer",
 } as const;
 
 // Type exports

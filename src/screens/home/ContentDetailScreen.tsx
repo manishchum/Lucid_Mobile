@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { friendlyError } from '../../utils/friendlyError';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator,
+  TouchableOpacity, ActivityIndicator, Keyboard, Platform, Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,10 +15,36 @@ import FlashcardsSection from '../../components/content/FlashcardsSection';
 import MindmapSection from '../../components/content/MindmapSection';
 import VideoSection from '../../components/content/VideoSection';
 import AIAssistantSection from '../../components/content/AIAssistantSection';
+import { useModuleTranslation } from '../../hooks/useModuleTranslation';
+import ModuleLanguageSelector from '../../components/content/ModuleLanguageSelector';
 
 export default function ContentDetailScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const mainScrollRef = useRef<ScrollView>(null);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>('core');
+  const [lang, setLang] = useState<string>('en');
+
+  // Keyboard offset listener
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardOffset(e.endCoordinates.height);
+        setTimeout(() => {
+          mainScrollRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardOffset(0)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Get the authenticated user directly — no email lookup needed
   const { cachedUser } = useAuth();
@@ -31,8 +58,43 @@ export default function ContentDetailScreen({ route, navigation }: any) {
     userId,
   );
 
-  // Use first processed module variant for content (order_index 0)
+  // Skeleton Breathing Animation State
+  const [skeletonOpacity] = useState(new Animated.Value(0.3));
+
+  useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (isLoading) {
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.8,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.3,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    }
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [isLoading, skeletonOpacity]);
+
   const primaryModule = modules?.[0] ?? null;
+
+  const { isTranslating, translatedSections, translatedFlashcards } = useModuleTranslation(
+    originalModuleId || null,
+    primaryModule?.content ?? null,
+    primaryModule?.flashcard_data ?? null,
+    lang,
+  );
+
+
 
   const toggle = (key: string) =>
     setExpanded((prev) => (prev === key ? null : key));
@@ -45,23 +107,43 @@ export default function ContentDetailScreen({ route, navigation }: any) {
           <MaterialCommunityIcons name="chevron-left" size={28} color="#4F46E5" />
           <Text style={styles.backLabel}>Back</Text>
         </TouchableOpacity>
+
+        <ModuleLanguageSelector selectedLang={lang} onSelectLang={setLang} />
       </View>
 
       {isLoading ? (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#4F46E5" />
-          <Text style={styles.loaderText}>Loading content...</Text>
+        <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16 }}>
+          {/* Main Module Content / Hero Section Skeleton */}
+          <Animated.View style={[styles.skeletonHeroImage, { opacity: skeletonOpacity }]} />
+          
+          <View style={{ marginBottom: 24 }}>
+            <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "90%", height: 24, marginBottom: 8 }]} />
+            <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "60%", height: 16, marginBottom: 14 }]} />
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Animated.View style={[styles.skeletonChip, { opacity: skeletonOpacity }]} />
+              <Animated.View style={[styles.skeletonChip, { opacity: skeletonOpacity }]} />
+            </View>
+          </View>
+
+          {/* Accordion List Skeleton */}
+          <View style={{ marginTop: 8 }}>
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <Animated.View key={idx} style={[styles.skeletonCard, { opacity: skeletonOpacity }]} />
+            ))}
+          </View>
         </View>
       ) : error ? (
         <View style={styles.loader}>
           <MaterialCommunityIcons name="alert-circle-outline" size={40} color="#EF4444" />
           <Text style={styles.errorText}>Failed to load content</Text>
-          <Text style={styles.errorSub}>{error.message}</Text>
+          <Text style={styles.errorSub}>{friendlyError(error)}</Text>
         </View>
       ) : (
         <ScrollView
+          ref={mainScrollRef}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: insets.bottom + 20 + keyboardOffset }}
         >
           {/* Hero */}
           <View style={styles.hero}>
@@ -91,7 +173,7 @@ export default function ContentDetailScreen({ route, navigation }: any) {
                     <Text style={styles.metaText}>Video</Text>
                   </View>
                 )}
-                {primaryModule.flashcard_data && (
+                {primaryModule.flashcard_data && primaryModule.flashcard_data.length > 0 && (
                   <View style={styles.metaBadge}>
                     <MaterialCommunityIcons name="cards-outline" size={14} color="#4F46E5" />
                     <Text style={styles.metaText}>Flashcards</Text>
@@ -107,12 +189,20 @@ export default function ContentDetailScreen({ route, navigation }: any) {
               isExpanded={expanded === 'core'}
               onToggle={() => toggle('core')}
               htmlContent={primaryModule?.content ?? null}
+              moduleId={originalModuleId}
+              lang={lang}
+              onLangChange={setLang}
+              sections={translatedSections}
+              isTranslating={isTranslating}
             />
 
             <FlashcardsSection
               isExpanded={expanded === 'flashcards'}
               onToggle={() => toggle('flashcards')}
-              flashcardData={primaryModule?.flashcard_data ?? null}
+              flashcardData={translatedFlashcards}
+              moduleId={originalModuleId}
+              lang={lang}
+              isTranslating={isTranslating}
             />
 
             <MindmapSection
@@ -124,6 +214,7 @@ export default function ContentDetailScreen({ route, navigation }: any) {
             <PodcastSection
               isExpanded={expanded === 'podcast'}
               onToggle={() => toggle('podcast')}
+              lang={lang}
               audioUrl={primaryModule?.audio_url ?? null}
               audioUrlHinglish={primaryModule?.audio_url_hinglish ?? null}
               podcastTimeline={primaryModule?.podcast_timeline ?? null}
@@ -134,12 +225,23 @@ export default function ContentDetailScreen({ route, navigation }: any) {
             <VideoSection
               isExpanded={expanded === 'video'}
               onToggle={() => toggle('video')}
+              lang={lang}
               videoUrl={primaryModule?.video_url ?? null}
             />
 
             <AIAssistantSection
               isExpanded={expanded === 'ai'}
               onToggle={() => toggle('ai')}
+              processedModuleId={primaryModule?.processed_module_id ?? ""}
+              moduleTitle={primaryModule?.title ?? moduleTitle}
+              userId={userId ?? ""}
+              companyId={cachedUser?.companyId ?? ""}
+              lang={lang}
+              onInputFocus={() => {
+                setTimeout(() => {
+                  mainScrollRef.current?.scrollToEnd({ animated: true });
+                }, 150);
+              }}
             />
           </View>
         </ScrollView>
@@ -150,7 +252,13 @@ export default function ContentDetailScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   main: { flex: 1, backgroundColor: '#F8FAFC' },
-  navBar: { height: 50, justifyContent: 'center', paddingHorizontal: 10 },
+  navBar: {
+    height: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+  },
   backBtn: { flexDirection: 'row', alignItems: 'center' },
   backLabel: { fontSize: 16, fontWeight: '600', color: '#4F46E5' },
 
@@ -171,4 +279,32 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 12, fontWeight: '600', color: '#4F46E5' },
 
   accordionList: { paddingHorizontal: 16, gap: 12 },
+  skeletonLineShort: {
+    backgroundColor: '#E2E8F0',
+    borderRadius: 6,
+  },
+  skeletonLineLong: {
+    backgroundColor: '#E2E8F0',
+    borderRadius: 8,
+  },
+  skeletonChip: {
+    width: 90,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E2E8F0',
+  },
+  skeletonHeroImage: {
+    height: 140,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 16,
+    marginBottom: 20,
+  },
+  skeletonCard: {
+    height: 60,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 12,
+  },
 });

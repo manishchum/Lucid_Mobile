@@ -1,11 +1,26 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppState, AppStateStatus } from "react-native";
 import {
   getAuth,
-  onAuthStateChanged,
   signInWithPhoneNumber,
+  onAuthStateChanged,
+  signOut,
+  FirebaseAuthTypes,
 } from "@react-native-firebase/auth";
-import { getUserByPhone } from "../api";
+import {
+  getUserByPhone,
+  recordUserLogin,
+  getCompanyActiveStatus,
+} from "../api/users/Request";
+import { onSessionInvalid, SessionInvalidReason } from "../api/sessionEvents";
+import { logger } from "../utils/UnifiedLogger";
 
 export interface CachedUser {
   userId: string;
@@ -19,6 +34,11 @@ export interface CachedUser {
   isActive: boolean;
 }
 
+export interface CheckUserResult {
+  status: "active" | "inactive" | "not_registered" | "company_invalid";
+  user?: CachedUser;
+}
+
 interface AuthContextType {
   isLoggedIn: boolean;
   isInitializing: boolean;
@@ -26,8 +46,14 @@ interface AuthContextType {
   otpStep: boolean;
   confirmation: any;
   cachedUser: CachedUser | null;
+  forcedLogoutReason:
+    | "user_deactivated"
+    | "company_deactivated"
+    | "session_terminated"
+    | null;
+  clearForcedLogoutReason: () => void;
   setPhoneNumber: (phone: string) => void;
-  checkUserExists: (phone: string) => Promise<CachedUser | null>;
+  checkUserExists: (phone: string) => Promise<CheckUserResult>;
   sendOTP: () => Promise<boolean>;
   verifyOTP: (otp: string) => Promise<boolean>;
   logout: () => Promise<void>;
@@ -84,86 +110,82 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [otpStep, setOtpStep] = useState(false);
   const [confirmation, setConfirmation] = useState<any>(null);
   const [cachedUser, setCachedUser] = useState<CachedUser | null>(null);
+  const [forcedLogoutReason, setForcedLogoutReason] = useState<
+    "user_deactivated" | "company_deactivated" | "session_terminated" | null
+  >(null);
 
-  // ─── PERSISTENT STORAGE RESTORATION ──────────────────────────────────────
-  // On app startup, restore cachedUser from AsyncStorage if Firebase session exists
+  const ACCOUNT_STATUS_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+  const lastCheckedAtRef = useRef<number>(0);
+  const isCheckingRef = useRef(false);
+
   useEffect(() => {
-    const initializeAuth = async () => {
-      const auth = getAuth();
-
-      // Bypass Play Integrity / reCAPTCHA during development.
-      if (DISABLE_APP_VERIFICATION_FOR_TESTING) {
-        auth.settings.appVerificationDisabledForTesting = true;
-        console.log(
-          "[Auth] ⚠️  appVerificationDisabledForTesting = true (DEV only)",
-        );
-      }
-
-      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-        try {
-          if (firebaseUser) {
-            setIsLoggedIn(true);
-            if (firebaseUser.phoneNumber && !phoneNumber) {
-              // firebaseUser.phoneNumber is always E.164 e.g. +919811006045
-              // phoneNumber state must stay as the raw 10-digit number (used by UI + sendOTP)
-              const raw = firebaseUser.phoneNumber.replace(/^\+91/, "");
-              setPhoneNumber(raw);
-              await AsyncStorage.setItem(PHONE_NUMBER_KEY, raw);
-            }
-
-            // ✅ KEY FIX: Restore cachedUser from AsyncStorage on app startup
-            // This ensures userId is available even after refresh
-            try {
-              const storedUserJson =
-                await AsyncStorage.getItem(CACHED_USER_KEY);
-              if (storedUserJson) {
-                const storedUser = JSON.parse(storedUserJson) as CachedUser;
-                setCachedUser(storedUser);
-                console.log(
-                  "[Auth] ✅ Restored cachedUser from AsyncStorage:",
-                  storedUser.userId,
-                );
-              } else {
-                console.log(
-                  "[Auth] ⚠️  No cachedUser in AsyncStorage. Will fetch on next login.",
-                );
-              }
-            } catch (error) {
-              console.error(
-                "[Auth] Error restoring cachedUser from AsyncStorage:",
-                error,
-              );
-            }
-          } else {
-            setIsLoggedIn(false);
-            setCachedUser(null);
-            setPhoneNumber("");
-            // Clear persistent storage on logout
-            await AsyncStorage.removeItem(CACHED_USER_KEY);
-            await AsyncStorage.removeItem(PHONE_NUMBER_KEY);
+    let unsubscribe: (() => void) | undefined;
+    const initAuth = async () => {
+      try {
+        const storedUserJson = await AsyncStorage.getItem(CACHED_USER_KEY);
+        if (storedUserJson) {
+          try {
+            const user: CachedUser = JSON.parse(storedUserJson);
+            setCachedUser(user);
+            console.log(
+              "[Auth] Restored cachedUser from AsyncStorage:",
+              user.userId,
+            );
+          } catch (e) {
+            console.error("[Auth] Error parsing cachedUser:", e);
           }
-        } finally {
-          setIsInitializing(false);
         }
-      });
 
-      return unsubscribe;
+        const auth = getAuth();
+
+        // Bypass Play Integrity / reCAPTCHA during development
+        if (DISABLE_APP_VERIFICATION_FOR_TESTING) {
+          auth.settings.appVerificationDisabledForTesting = true;
+          console.log(
+            "[Auth] ⚠️  appVerificationDisabledForTesting = true (DEV only)",
+          );
+        }
+
+        unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+          try {
+            console.log(
+              "[Auth] Firebase auth state changed:",
+              firebaseUser?.uid ?? "null",
+            );
+            if (firebaseUser) {
+              setIsLoggedIn(true);
+              if (firebaseUser.phoneNumber && !phoneNumber) {
+                // firebaseUser.phoneNumber is always E.164 e.g. +919811006045
+                // phoneNumber state must stay as the raw 10-digit number (used by UI + sendOTP)
+                const raw = firebaseUser.phoneNumber.replace(/^\+91/, "");
+                setPhoneNumber(raw);
+                await AsyncStorage.setItem(PHONE_NUMBER_KEY, raw);
+              }
+            } else {
+              setIsLoggedIn(false);
+              setCachedUser(null);
+              setPhoneNumber("");
+              await AsyncStorage.removeItem(CACHED_USER_KEY);
+              await AsyncStorage.removeItem(PHONE_NUMBER_KEY);
+            }
+          } finally {
+            setIsInitializing(false);
+          }
+        });
+      } catch (err) {
+        console.error("[Auth] initAuth error:", err);
+        setIsInitializing(false);
+      }
     };
-
-    let unsubscribe: (() => void) | null = null;
-    initializeAuth().then((unsub) => {
-      unsubscribe = unsub;
-    });
+    initAuth();
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
   }, []);
 
-  const checkUserExists = async (phone: string): Promise<CachedUser | null> => {
+  const checkUserExists = async (phone: string): Promise<CheckUserResult> => {
     try {
-      // Backend now stores phone strictly as +91XXXXXXXXXX.
-      // `phone` arrives here as the raw 10-digit input from the screen — normalize before lookup.
       const normalizedPhone = toE164(phone);
       const response = await getUserByPhone(normalizedPhone);
       if (!response?.user) {
@@ -171,18 +193,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           "[Auth] checkUserExists — no user found for phone:",
           normalizedPhone,
         );
-        return null;
+        return { status: "not_registered" };
       }
       if (!response.user.is_active) {
         console.log(
           "[Auth] checkUserExists — user is inactive:",
           response.user.user_id,
         );
-        return null;
+        return { status: "inactive" };
       }
+      if (
+        !response.user.company_id ||
+        (response.user as any).company_name === null ||
+        (response.user as any).company_name === ""
+      ) {
+        console.log(
+          "[Auth] checkUserExists — company is invalid/not found for user:",
+          response.user.user_id,
+        );
+        return { status: "company_invalid" };
+      }
+
       const user: CachedUser = {
         userId: response.user.user_id,
-        firebaseUid: response.user.firebase_uid ?? "", // store for training-plan and other endpoints
+        firebaseUid: response.user.firebase_uid ?? "",
         name: response.user.name,
         email: response.user.email,
         phone: response.user.phone,
@@ -193,8 +227,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       };
       setCachedUser(user);
 
-      // ✅ KEY FIX: Persist cachedUser to AsyncStorage immediately after fetching
-      // This ensures it survives app refresh/restart
       try {
         await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(user));
         console.log("[Auth] ✅ Saved cachedUser to AsyncStorage:", user.userId);
@@ -206,19 +238,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       console.log("[Auth] checkUserExists ✅ cached user:", user.userId);
-      return user;
+      recordUserLogin(user.userId).catch((e) =>
+        console.warn("[Auth] recordUserLogin warning:", e),
+      );
+      return { status: "active", user };
     } catch (error) {
       console.error("[Auth] checkUserExists error:", error);
-      return null;
+      return { status: "not_registered" };
     }
   };
 
   const sendOTP = async (): Promise<boolean> => {
     try {
-      const phone = `+91${phoneNumber}`; // phoneNumber is always the raw 10-digit input
+      const phone = `+91${phoneNumber}`;
       console.log("[Auth] Sending OTP to:", phone);
       const confirmationResult = await signInWithPhoneNumber(getAuth(), phone);
-      setConfirmation(confirmationResult);
+      setConfirmation(
+        confirmationResult as FirebaseAuthTypes.ConfirmationResult,
+      );
       setOtpStep(true);
       return true;
     } catch (error: any) {
@@ -229,39 +266,173 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const verifyOTP = async (otp: string): Promise<boolean> => {
     try {
-      if (!confirmation) return false;
+      if (!confirmation) throw new Error("No confirmation result available");
+      console.log("[Auth] Verifying OTP...");
       await confirmation.confirm(otp);
-      console.log("[Auth] OTP Verified — session persisted by Firebase");
       setOtpStep(false);
+      setConfirmation(null);
+
+      if (phoneNumber) {
+        try {
+          await AsyncStorage.setItem(PHONE_NUMBER_KEY, phoneNumber);
+        } catch (storageErr) {
+          console.error("[Auth] Error saving phone number:", storageErr);
+        }
+      }
+
       return true;
-    } catch (error) {
-      console.error("[Auth] OTP Verify Error:", error);
+    } catch (error: any) {
+      console.error("[Auth] OTP Verification Error:", error);
       return false;
     }
   };
 
-  const logout = async (): Promise<void> => {
+  const logout = async () => {
     try {
-      await getAuth().signOut();
-      console.log("[Auth] User signed out");
-    } catch (error) {
-      console.error("[Auth] Sign-out error:", error);
-    } finally {
+      console.log("[Auth] Logging out...");
+      await signOut(getAuth());
       setIsLoggedIn(false);
+      setCachedUser(null);
       setPhoneNumber("");
       setOtpStep(false);
       setConfirmation(null);
-      setCachedUser(null);
-      // Clear persistent storage on logout
+
+      // Clear persistent storage on logout — both auth keys AND every app-data cache
       try {
-        await AsyncStorage.removeItem(CACHED_USER_KEY);
-        await AsyncStorage.removeItem(PHONE_NUMBER_KEY);
-        console.log("[Auth] Cleared AsyncStorage on logout");
+        const allKeys = await AsyncStorage.getAllKeys();
+        const appDataKeyPrefixes = [
+          "@dashboard_data_",
+          "@module_progress_",
+          "@processed_module_",
+          "@company_data_",
+          "@auth_modules_",
+          "@leaderboard_highlight_",
+          "@content_categories_",
+          "@content_items_",
+          "@career_journeys_",
+          "lucid_module_unified_trans_v3_",
+        ];
+        const keysToRemove = allKeys.filter(
+          (key) =>
+            key === CACHED_USER_KEY ||
+            key === PHONE_NUMBER_KEY ||
+            appDataKeyPrefixes.some((prefix) => key.startsWith(prefix)),
+        );
+        if (keysToRemove.length > 0) {
+          await AsyncStorage.multiRemove(keysToRemove);
+        }
+        console.log(
+          `[Auth] Cleared ${keysToRemove.length} AsyncStorage key(s) on logout:`,
+          keysToRemove,
+        );
       } catch (error) {
-        console.error("[Auth] Error clearing AsyncStorage:", error);
+        console.error("[Auth] Error clearing AsyncStorage on logout:", error);
       }
+    } catch (error) {
+      console.error("[Auth] Logout Error:", error);
     }
   };
+
+  // ==================== PERIODIC ACCOUNT-STATUS VERIFICATION ====================
+  const verifyAccountStatus = async (force = false) => {
+    if (!cachedUser) return;
+    if (isCheckingRef.current) return;
+
+    const now = Date.now();
+    if (
+      !force &&
+      now - lastCheckedAtRef.current < ACCOUNT_STATUS_CHECK_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    isCheckingRef.current = true;
+    lastCheckedAtRef.current = now;
+
+    try {
+      // 1. Re-check the user's own active status (reuses the existing by-phone lookup).
+      const userResponse = await getUserByPhone(cachedUser.phone);
+      if (!userResponse?.user) {
+        // User record vanished entirely — treat like deactivation.
+        console.warn("[Auth] verifyAccountStatus — user no longer found");
+        setForcedLogoutReason("user_deactivated");
+        await logout();
+        return;
+      }
+      if (!userResponse.user.is_active) {
+        console.warn("[Auth] verifyAccountStatus — user is now inactive");
+        setForcedLogoutReason("user_deactivated");
+        await logout();
+        return;
+      }
+
+      // 2. Check the company's active status.
+      const companyActive = await getCompanyActiveStatus(cachedUser.companyId);
+      if (companyActive === false) {
+        console.warn("[Auth] verifyAccountStatus — company is now inactive");
+        setForcedLogoutReason("company_deactivated");
+        await logout();
+        return;
+      }
+    } catch (err) {
+      // Network/API failure — fail open, don't punish the user for a
+      // flaky connection. Just try again on the next check.
+      console.warn(
+        "[Auth] verifyAccountStatus check failed, will retry later:",
+        err,
+      );
+    } finally {
+      isCheckingRef.current = false;
+    }
+  };
+
+  const clearForcedLogoutReason = () => setForcedLogoutReason(null);
+
+  useEffect(() => {
+    const unsubscribe = onSessionInvalid((reason: SessionInvalidReason) => {
+      logger.warn("[Auth] sessionEvents — received invalid session:", reason);
+      const mapped =
+        reason === "COMPANY_DEACTIVATED"
+          ? "company_deactivated"
+          : reason === "SESSION_TERMINATED"
+            ? "session_terminated"
+            : "user_deactivated"; // covers ACCOUNT_DEACTIVATED + UNKNOWN
+      setForcedLogoutReason(mapped);
+      logout();
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!cachedUser) return;
+
+    // Check once shortly after login/restore.
+    verifyAccountStatus(true);
+
+    // Re-check whenever the app comes back to the foreground.
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === "active") {
+        verifyAccountStatus();
+      }
+    };
+    const appStateSub = AppState.addEventListener(
+      "change",
+      handleAppStateChange,
+    );
+
+    // Also re-check periodically while the app stays open in the foreground.
+    const interval = setInterval(() => {
+      if (AppState.currentState === "active") {
+        verifyAccountStatus();
+      }
+    }, ACCOUNT_STATUS_CHECK_INTERVAL_MS);
+
+    return () => {
+      appStateSub.remove();
+      clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cachedUser?.userId]);
 
   return (
     <AuthContext.Provider
@@ -272,6 +443,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         otpStep,
         confirmation,
         cachedUser,
+        forcedLogoutReason,
+        clearForcedLogoutReason,
         setPhoneNumber,
         checkUserExists,
         sendOTP,
@@ -286,6 +459,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used within AuthProvider");
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
   return context;
 };

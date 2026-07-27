@@ -1,4 +1,5 @@
 import React from "react";
+import { friendlyError } from "../../../utils/friendlyError";
 import {
   View,
   Text,
@@ -6,35 +7,47 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
+  KeyboardAvoidingView,
+  Platform,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "../../../contex/AuthContext";
+import { useActiveSprint } from "../../../contex/ActiveSprintContext";
 import { useGetUserByPhone, useGetDashboardSummary } from "../../../api/users";
 import createStyles from "./style";
-import { APP_ROUTES } from "../../../navigations/Routes";
+import { useScreenProtection } from "../../../hooks/security/useScreenProtection";
+import ScreenRecordingGuard from "../../../components/security/ScreenRecordingGuard";
+import AssignedSection from "../components/AssignedSection";
+import RefreshSpinner from "../../../components/pullToRefresh/RefreshSpinner";
 
-const styles = createStyles();
-
-// ── Progress circle ────────────────────────────────────────────────────────────
-const ProgressCircle = ({ percentage }: { percentage: number }) => {
-  const size = 88;
+const ProgressRing = ({ percentage }: { percentage: number }) => {
+  const size = 72;
   const strokeWidth = 7;
   const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const clamped = Math.min(Math.max(percentage, 0), 100);
-  const strokeDashoffset = circumference - (clamped / 100) * circumference;
-  const isComplete = clamped >= 100;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset =
+    circumference -
+    (circumference * Math.min(Math.max(percentage, 0), 100)) / 100;
 
   return (
-    <View style={styles.progressCircleContainer}>
+    <View
+      style={{
+        width: size,
+        height: size,
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    >
       <Svg width={size} height={size}>
         <Circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={isComplete ? "#DCFCE7" : "#EFF6FF"}
+          stroke="#F1F5F9"
           strokeWidth={strokeWidth}
           fill="none"
         />
@@ -42,7 +55,7 @@ const ProgressCircle = ({ percentage }: { percentage: number }) => {
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={isComplete ? "#16A34A" : "#2563EB"}
+          stroke="#10B981"
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
@@ -51,23 +64,29 @@ const ProgressCircle = ({ percentage }: { percentage: number }) => {
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </Svg>
-      <View style={styles.progressCircleInner}>
-        <Text
-          style={[
-            styles.progressCirclePercent,
-            isComplete && { color: "#16A34A" },
-          ]}
-        >
-          {clamped.toFixed(1)}%
+      <View
+        style={{
+          position: "absolute",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <Text style={{ fontSize: 13, fontWeight: "800", color: "#0F172A" }}>
+          {Math.round(percentage)}%
         </Text>
       </View>
     </View>
   );
 };
 
+const styles = createStyles();
+
 // ── Main screen ────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }: { navigation: any }) {
-  const { logout, cachedUser, phoneNumber } = useAuth();
+  const { cachedUser, phoneNumber } = useAuth();
+
+  // ── Screen capture protection (blocks screenshots + recording) ──────────────
+  const { isRecording } = useScreenProtection({ tag: "HomeScreen" });
 
   const resolvedUserId = cachedUser?.userId ?? null;
   const resolvedPhone = cachedUser?.phone ?? phoneNumber ?? null;
@@ -90,30 +109,139 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       }
     : fetchedUser;
 
-  const position = fetchedUser?.position ?? null;
   const userId = user?.user_id ?? resolvedUserId;
   const companyId = user?.company_id ?? cachedUser?.companyId ?? null;
 
-  // ✅ resolvedPlanCards comes pre-built from the hook with correctly aligned
-  //    processedModuleIds — no further mapping needed here.
   const {
-    dashboardData,
     resolvedPlanCards,
     stats,
     isLoading: dashboardLoading,
     error: dashboardError,
+    refetch,
   } = useGetDashboardSummary(userId ?? null, companyId ?? null);
+
+  // Keep the Sprint screen's snapshot in sync
+  const { activeSprint, setActiveSprint } = useActiveSprint();
+  React.useEffect(() => {
+    if (!activeSprint) return;
+    const matchingCard = resolvedPlanCards.find(
+      (c) => c.planKey === activeSprint.planId,
+    );
+    if (!matchingCard) return;
+
+    const titlesChanged = matchingCard.modules.some(
+      (m, i) => m.title !== activeSprint.modules[i]?.title,
+    );
+    if (titlesChanged) {
+      setActiveSprint({
+        ...activeSprint,
+        modules: matchingCard.modules,
+        processedModuleIds: matchingCard.processedModuleIds,
+      });
+    }
+  }, [resolvedPlanCards, activeSprint, setActiveSprint]);
+
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch(true);
+    } catch (err) {
+      console.error("[HomeScreen] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch(false); // Silent background update on screen focus
+    }, [refetch]),
+  );
 
   const isLoading = (userLoading && !cachedUser) || dashboardLoading;
 
+  // Skeleton Breathing Animation State
+  const [skeletonOpacity] = React.useState(new Animated.Value(0.3));
+
+  React.useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (isLoading) {
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.8,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.3,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    }
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [isLoading, skeletonOpacity]);
+
   if (isLoading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={{ marginTop: 12, color: "#64748B", fontSize: 14 }}>
-          Loading your dashboard…
-        </Text>
-      </View>
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        <StatusBar barStyle="dark-content" />
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          {/* WELCOME SKELETON */}
+          <View style={styles.welcomeContainer}>
+            <View style={styles.welcomeHeaderRow}>
+              <View style={styles.welcomeTextColumn}>
+                <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 80, height: 12, marginBottom: 8 }]} />
+                <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: 150, height: 24, marginBottom: 8 }]} />
+                <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: 120, height: 10 }]} />
+              </View>
+              <Animated.View style={[styles.skeletonProgressCircle, { opacity: skeletonOpacity }]} />
+            </View>
+          </View>
+
+          {/* STATS GRID SKELETON */}
+          <View style={styles.sectionWrapper}>
+            <View style={styles.statsGrid}>
+              {Array.from({ length: 3 }).map((_, idx) => (
+                <View key={idx} style={styles.statCard}>
+                  <Animated.View style={[styles.skeletonIconBox, { opacity: skeletonOpacity }]} />
+                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 30, height: 14, marginBottom: 6 }]} />
+                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 50, height: 10 }]} />
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* CONTENT SECTION SKELETON */}
+          <View style={[styles.sectionWrapper, { marginTop: 24 }]}>
+            {/* Tabs placeholder */}
+            <Animated.View style={[styles.skeletonTabsContainer, { opacity: skeletonOpacity }]}>
+              <View style={styles.skeletonTab} />
+              <View style={styles.skeletonTab} />
+            </Animated.View>
+
+            {/* Sprint Card placeholder */}
+            <View style={styles.planCard}>
+              <View style={styles.planContentRow}>
+                <Animated.View style={[styles.skeletonIconCircle, { opacity: skeletonOpacity }]} />
+                <View style={{ flex: 1 }}>
+                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "70%", height: 16, marginBottom: 8 }]} />
+                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "40%", height: 12, marginBottom: 8 }]} />
+                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "30%", height: 18 }]} />
+                </View>
+              </View>
+              <Animated.View style={[styles.skeletonButton, { opacity: skeletonOpacity }]} />
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
     );
   }
 
@@ -144,223 +272,90 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             paddingHorizontal: 20,
           }}
         >
-          {dashboardError.message}
+          {friendlyError(dashboardError)}
         </Text>
       </View>
     );
   }
 
-  const { completedCount, totalAssigned, progressPercentage, nudgeMessage } =
-    stats;
-  const firstName = user?.name?.split(" ")[0] || "";
+  const { completedCount, totalAssigned, progressPercentage } = stats;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
+    <View style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* ── HEADER ──────────────────────────────────────────────────────── */}
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.greetingText}>
-              Welcome, {firstName || "there"}
-            </Text>
-            <Text style={styles.emailText}>
-              {position || user?.email || ""}
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.logoutBtn} onPress={() => logout()}>
-            <MaterialCommunityIcons name="power" size={22} color="#EF4444" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── YOUR PROGRESS CARD ──────────────────────────────────────────── */}
-        <View style={styles.sectionWrapper}>
-          <View style={styles.progressCard}>
-            <View style={styles.progressLeft}>
-              <View style={styles.progressIconBox}>
-                <MaterialCommunityIcons
-                  name={progressPercentage >= 100 ? "trophy" : "lightning-bolt"}
-                  size={22}
-                  color="#2563EB"
-                />
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 40 }}
+          refreshControl={RefreshSpinner(refreshing, onRefresh)}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+        >
+          {/* ── CONSOLIDATED HERO ──────────────────────────────────────────── */}
+          <View style={styles.welcomeContainer}>
+            <View style={styles.welcomeHeaderRow}>
+              <View style={styles.welcomeTextColumn}>
+                <Text style={styles.welcomeSub}>Welcome back,</Text>
+                <Text style={styles.welcomeName}>
+                  {(user?.name || "Learner").split(" ")[0]}!
+                </Text>
+                <Text style={styles.welcomeTagline}>
+                  Keep learning, keep growing.
+                </Text>
               </View>
-              <View style={styles.progressTextBlock}>
-                <Text style={styles.progressCardTitle}>Your Progress</Text>
-                <Text style={styles.progressNudge}>{nudgeMessage}</Text>
-                <View style={styles.completedBadge}>
-                  <Text style={styles.completedBadgeText}>
-                    {completedCount} COMPLETED
-                  </Text>
-                </View>
+              <View style={styles.ringWrapper}>
+                <ProgressRing percentage={progressPercentage} />
               </View>
             </View>
-            <View style={styles.progressRight}>
-              <ProgressCircle percentage={progressPercentage} />
-              <Text style={styles.progressOfText}>
-                {completedCount} of {totalAssigned}
-              </Text>
-            </View>
           </View>
-        </View>
 
-        {/* ── QUICK STATS ─────────────────────────────────────────────────── */}
-        <View style={styles.sectionWrapper}>
-          <Text style={styles.sectionTitle}>Overview</Text>
-          <View style={styles.statsGrid}>
-            <StatCard
-              icon="book-multiple"
-              color="#EEF2FF"
-              iconColor="#4F46E5"
-              val={String(resolvedPlanCards.length)}
-              label="Plans"
-            />
-            <StatCard
-              icon="check-decagram"
-              color="#ECFDF5"
-              iconColor="#10B981"
-              val={String(completedCount)}
-              label="Completed"
-            />
-            <StatCard
-              icon="lightning-bolt"
-              color="#FFF7ED"
-              iconColor="#F59E0B"
-              val={String(
-                resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS")
-                  .length,
-              )}
-              label="In Progress"
-            />
-          </View>
-        </View>
-
-        {/* ── ASSIGNED SPRINTS ────────────────────────────────────────────── */}
-        <View style={styles.sectionWrapper}>
-          <Text style={styles.sectionTitle}>Assigned Sprints</Text>
-
-          {resolvedPlanCards.length === 0 ? (
-            <View style={styles.emptyState}>
-              <MaterialCommunityIcons
-                name="book-open-outline"
-                size={40}
-                color="#CBD5E1"
+          {/* ── QUICK STATS ─────────────────────────────────────────── */}
+          <View style={styles.sectionWrapper}>
+            <View style={styles.statsGrid}>
+              <StatCard
+                icon="book-multiple"
+                color="#EEF2FF"
+                iconColor="#4F46E5"
+                val={String(resolvedPlanCards.length)}
+                label="Sprints"
               />
-              <Text style={styles.emptyStateText}>No sprints assigned yet</Text>
+              <StatCard
+                icon="check-decagram"
+                color="#ECFDF5"
+                iconColor="#10B981"
+                val={String(completedCount)}
+                label="Completed"
+              />
+              <StatCard
+                icon="clock-time-eight-outline"
+                color="#FFF7ED"
+                iconColor="#F59E0B"
+                val={String(
+                  resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS")
+                    .length,
+                )}
+                label="In Progress"
+              />
             </View>
-          ) : (
-            resolvedPlanCards.map((plan) => {
-              const isCompleted = plan.status === "COMPLETED";
-              const isInProgress = plan.status === "IN_PROGRESS";
+          </View>
 
-              return (
-                <View key={plan.planKey} style={styles.planCard}>
-                  <View style={styles.planHeaderRow}>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        isCompleted
-                          ? styles.statusBadgeCompleted
-                          : isInProgress
-                            ? styles.statusBadgeInProgress
-                            : styles.statusBadgeNotStarted,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusBadgeText,
-                          isCompleted
-                            ? styles.statusTextCompleted
-                            : isInProgress
-                              ? styles.statusTextInProgress
-                              : styles.statusTextNotStarted,
-                        ]}
-                      >
-                        {isCompleted
-                          ? "Completed"
-                          : isInProgress
-                            ? "In Progress"
-                            : "Not Started"}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.planContentRow}>
-                    <View style={styles.planIconCircle}>
-                      <MaterialCommunityIcons
-                        name="school-outline"
-                        size={24}
-                        color="#64748B"
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.planTitleText}>{plan.title}</Text>
-                      <Text style={styles.planSubText} numberOfLines={2}>
-                        {plan.totalModules} module
-                        {plan.totalModules !== 1 ? "s" : ""}
-                        {plan.tips ? ` · ${plan.tips.substring(0, 55)}…` : ""}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.sprintButton,
-                      isCompleted
-                        ? styles.sprintButtonReview
-                        : isInProgress
-                          ? styles.sprintButtonContinue
-                          : styles.sprintButtonStart,
-                    ]}
-                    activeOpacity={0.8}
-                    onPress={() =>
-                      navigation.navigate(APP_ROUTES.SPRINT, {
-                        moduleId: plan.moduleId,
-                        planId: plan.planKey,
-                        planTitle: plan.title,
-                        modules: plan.modules,
-                        tips: plan.tips,
-                        processedModuleIds: plan.processedModuleIds,
-                      })
-                    }
-                  >
-                    <Text
-                      style={[
-                        styles.sprintButtonText,
-                        isCompleted
-                          ? styles.sprintButtonTextReview
-                          : isInProgress
-                            ? styles.sprintButtonTextContinue
-                            : styles.sprintButtonTextStart,
-                      ]}
-                    >
-                      {isCompleted
-                        ? "Review Sprint"
-                        : isInProgress
-                          ? "Continue"
-                          : "Start your sprint"}
-                    </Text>
-                    <MaterialCommunityIcons
-                      name="arrow-right"
-                      size={16}
-                      color={
-                        isCompleted
-                          ? "#475569"
-                          : isInProgress
-                            ? "#2563EB"
-                            : "#fff"
-                      }
-                    />
-                  </TouchableOpacity>
-                </View>
-              );
-            })
-          )}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+          {/* ── ASSIGNED SECTION (sprints + tasks tabbed) ───────────────── */}
+          <AssignedSection
+            planCards={resolvedPlanCards}
+            navigation={navigation}
+            userId={userId ?? null}
+            companyId={companyId ?? null}
+            userName={user?.name ?? null}
+          />
+        </ScrollView>
+      </KeyboardAvoidingView>
+      {/* iOS screen-recording overlay — invisible on Android */}
+      <ScreenRecordingGuard isRecording={isRecording} />
+    </View>
   );
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   PanResponder,
   Dimensions,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -19,21 +20,35 @@ interface Flashcard {
   points: string[];
 }
 
+type SupportedLang = string;
+
 interface Props {
   isExpanded: boolean;
   onToggle: () => void;
   flashcardData: Flashcard[] | null;
+  moduleId?: string | null;
+  lang?: SupportedLang;
+  isTranslating?: boolean;
 }
 
 export default function FlashcardsSection({
   isExpanded,
   onToggle,
   flashcardData,
+  moduleId = null,
+  lang = "en",
+  isTranslating = false,
 }: Props) {
   const [cardIdx, setCardIdx] = useState(0);
-  const cards: Flashcard[] = flashcardData ?? [];
+
+  const cards = flashcardData ?? [];
   const total = cards.length;
   const current = cards[cardIdx];
+
+  // Reset card index when module or card list changes
+  useEffect(() => {
+    setCardIdx(0);
+  }, [moduleId, flashcardData]);
 
   // ── Refs so PanResponder always reads the LIVE value, never a stale closure ──
   const cardIdxRef = useRef(0);
@@ -159,7 +174,12 @@ export default function FlashcardsSection({
 
       {isExpanded && (
         <View style={styles.body}>
-          {total === 0 ? (
+          {isTranslating ? (
+            <View style={[styles.emptyState, { minHeight: 200, justifyContent: 'center', alignItems: 'center' }]}>
+              <ActivityIndicator size="large" color="#10B981" />
+              <Text style={[styles.emptyText, { marginTop: 12 }]}>Translating flashcards...</Text>
+            </View>
+          ) : total === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyText}>No flashcards available.</Text>
             </View>

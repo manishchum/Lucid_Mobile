@@ -1,19 +1,30 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { friendlyError } from "../../utils/friendlyError";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  TouchableOpacity,
+  StatusBar,
+  BackHandler,
+  Keyboard,
+  Platform,
+  Animated,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 
 import { useAuth } from "../../contex/AuthContext";
 import { useGetProcessedModuleById } from "../../api/users";
+import { useActiveSprint } from "../../contex/ActiveSprintContext";
+import { APP_ROUTES, STACK_ROUTES } from "../../navigations/Routes";
 import CoreContentSection from "./sections/CoreContentSection";
 import PodcastSection from "./sections/PodcastSection";
 import FlashcardsSection from "../../components/content/FlashcardsSection";
+import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
 // ─── Phase 2: Mind Map ────────────────────────────────────────────────────────
 // MindmapSection will be implemented in Phase 2 using a proper graph/SVG renderer.
@@ -24,6 +35,9 @@ import FlashcardsSection from "../../components/content/FlashcardsSection";
 
 import VideoSection from "../../components/content/VideoSection";
 import AIAssistantSection from "../../components/content/AIAssistantSection";
+import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
+import { useModuleTranslation } from "../../hooks/useModuleTranslation";
+import ModuleLanguageSelector from "../../components/content/ModuleLanguageSelector";
 
 /**
  * StudioScreen
@@ -46,18 +60,64 @@ import AIAssistantSection from "../../components/content/AIAssistantSection";
  *   Mind Map     → data.mindmap_data   (Phase 2: { nodes, edges })
  * ─────────────────────────────────────────────────────────────────────────────
  */
-export default function StudioScreen({ route }: any) {
+export default function StudioScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const mainScrollRef = useRef<ScrollView>(null);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>("core");
   const { cachedUser } = useAuth();
-
-  // Params from SprintScreen "View Content" — each module tap passes its own processedModuleId
-  const processedModuleId: string = route?.params?.processedModuleId ?? "";
-  const moduleTitle: string = route?.params?.moduleTitle ?? "";
-  const sprintTitle: string = route?.params?.sprintTitle ?? "";
-
+  const { hasFeature } = useFeatureGating();
+  const showTextual = true;
+  const showFlashcards = hasFeature(FEATURES.FLASHCARD);
+  const showPodcast = hasFeature(FEATURES.PODCAST);
+  const showVideo = hasFeature(FEATURES.VIDEO);
+  const showAiAssistant = hasFeature(FEATURES.CHAT_IN_STUDIO);
   const userId = cachedUser?.userId ?? null;
   const companyId = cachedUser?.companyId ?? "";
+
+  // Intercept physical back press to redirect to Sprint tab
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+
+      return () => subscription.remove();
+    }, [navigation])
+  );
+
+  const { activeModule } = useActiveSprint();
+
+  // Params from ActiveSprintContext — each module tap passes its own processedModuleId
+  const processedModuleId: string = activeModule?.processedModuleId ?? "";
+  const moduleTitle: string = activeModule?.moduleTitle ?? "";
+  const sprintTitle: string = activeModule?.sprintTitle ?? "";
+
+  const [lang, setLang] = useState<string>('en');
+
+  // ── Keyboard height listener ──
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => {
+        setKeyboardOffset(e.endCoordinates.height);
+        setTimeout(() => {
+          mainScrollRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardOffset(0)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // ─── Debug logging: Validate incoming params ──────────────────────────────
   useEffect(() => {
@@ -80,13 +140,61 @@ export default function StudioScreen({ route }: any) {
     }
   }, [processedModuleId, moduleTitle, sprintTitle, userId]);
 
+  const [refreshing, setRefreshing] = useState(false);
+
   // Fetch processed module by ID — endpoint: GET /processed-modules/{processedModuleId}
   // This is the single source of truth for all Studio sections below.
   const {
     module: processedModule,
     isLoading,
     error,
+    refetch,
   } = useGetProcessedModuleById(processedModuleId || null, userId);
+
+  // Skeleton Breathing Animation State
+  const [skeletonOpacity] = useState(new Animated.Value(0.3));
+
+  useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (isLoading) {
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.8,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonOpacity, {
+            toValue: 0.3,
+            duration: 850,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    }
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [isLoading, skeletonOpacity]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } catch (err) {
+      console.error("[StudioScreen] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
+
+  const { isTranslating, translatedSections, translatedFlashcards } = useModuleTranslation(
+    processedModuleId || null,
+    processedModule?.content ?? null,
+    processedModule?.flashcard_data ?? null,
+    lang,
+  );
 
   // ─── Debug logging: Track module data loading ─────────────────────────────
   useEffect(() => {
@@ -126,16 +234,23 @@ export default function StudioScreen({ route }: any) {
   // ── Empty state: tab opened directly without a module selected ──
   if (!processedModuleId) {
     return (
-      <View style={[styles.emptyContainer, { paddingTop: insets.top }]}>
+      <View style={[styles.emptyContainer, { paddingTop: 20 }]}>
         <View style={styles.emptyIconWrap}>
           <MaterialCommunityIcons name="brush" size={44} color="#A5B4FC" />
         </View>
-        <Text style={styles.emptyTitle}>Studio</Text>
+        <Text style={styles.emptyTitle}>Studio Empty</Text>
         <Text style={styles.emptySubtitle}>
           Tap <Text style={styles.emptyHighlight}>View Content</Text> on any
           Sprint module to explore core content, podcasts, flashcards, videos
           and AI assistance here.
         </Text>
+        <TouchableOpacity
+          style={styles.emptyBtn}
+          onPress={() => navigation.navigate(APP_ROUTES.HOME)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.emptyBtnText}>Go to Home</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -143,9 +258,40 @@ export default function StudioScreen({ route }: any) {
   // ── Loading ──
   if (isLoading) {
     return (
-      <View style={[styles.loader, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color="#4F46E5" />
-        <Text style={styles.loaderText}>Loading content…</Text>
+      <View style={styles.main}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          {/* Header placeholder */}
+          <View style={[styles.topHeaderBar, { paddingHorizontal: 16, paddingTop: 16 }]}>
+            <View style={styles.backBtnRow}>
+              <MaterialCommunityIcons name="chevron-left" size={24} color="#CBD5E1" />
+              <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 80, height: 14 }]} />
+            </View>
+            <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "70%", height: 22, marginTop: 8 }]} />
+          </View>
+
+          {/* Tab buttons placeholder */}
+          <View style={{ paddingHorizontal: 16, marginTop: 12 }}>
+            <Animated.View style={[styles.skeletonTabsContainer, { opacity: skeletonOpacity }]}>
+              <View style={styles.skeletonTab} />
+              <View style={styles.skeletonTab} />
+              <View style={styles.skeletonTab} />
+            </Animated.View>
+          </View>
+
+          {/* Section rows placeholder */}
+          <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <View key={idx} style={styles.skeletonSectionRow}>
+                <Animated.View style={[styles.skeletonIconBox, { opacity: skeletonOpacity }]} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "80%", height: 14, marginBottom: 6 }]} />
+                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: "40%", height: 10 }]} />
+                </View>
+                <Animated.View style={[styles.skeletonCircleSmall, { opacity: skeletonOpacity }]} />
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -153,31 +299,49 @@ export default function StudioScreen({ route }: any) {
   // ── Error ──
   if (error) {
     return (
-      <View style={[styles.loader, { paddingTop: insets.top }]}>
+      <View style={[styles.loader, { paddingTop: 20 }]}>
         <MaterialCommunityIcons
           name="alert-circle-outline"
           size={40}
           color="#EF4444"
         />
         <Text style={styles.errorText}>Failed to load content</Text>
-        <Text style={styles.errorSub}>{error.message}</Text>
+        <Text style={styles.errorSub}>{friendlyError(error)}</Text>
       </View>
     );
   }
 
   // ── Full content view ──
   return (
-    <View style={[styles.main, { paddingTop: insets.top }]}>
+    <View style={styles.main}>
       <ScrollView
+        ref={mainScrollRef}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 + keyboardOffset }}
+        refreshControl={
+          RefreshSpinner(refreshing, onRefresh)
+        }
       >
         {/* ── Hero ── */}
         <View style={styles.hero}>
-          <View style={styles.studioBadge}>
+          <View style={styles.topHeaderBar}>
+            <TouchableOpacity
+              style={styles.backBtnRow}
+              onPress={() => navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT })}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="chevron-left" size={24} color="#6366F1" />
+              <Text style={styles.backBtnText}>Back to Sprint</Text>
+            </TouchableOpacity>
+
+            <ModuleLanguageSelector selectedLang={lang} onSelectLang={setLang} />
+          </View>
+
+          {/* <View style={styles.studioBadge}>
             <MaterialCommunityIcons name="brush" size={14} color="#4F46E5" />
             <Text style={styles.studioBadgeText}>Studio</Text>
-          </View>
+          </View> */}
           {/* {sprintTitle ? (
             <Text style={styles.sprintLabel}>{sprintTitle}</Text>
           ) : null} */}
@@ -231,22 +395,35 @@ export default function StudioScreen({ route }: any) {
         {/* ── Accordion Sections ── */}
         <View style={styles.accordionList}>
           {/* Core Content — parses processedModule.content (HTML) into sections */}
-          <CoreContentSection
-            isExpanded={expanded === "core"}
-            onToggle={() => toggle("core")}
-            htmlContent={processedModule?.content ?? null}
-          />
+          {showTextual && (
+            <CoreContentSection
+              isExpanded={expanded === "core"}
+              onToggle={() => toggle("core")}
+              htmlContent={processedModule?.content ?? null}
+              moduleId={processedModuleId}
+              lang={lang}
+              onLangChange={setLang}
+              sections={translatedSections}
+              isTranslating={isTranslating}
+            />
+          )}
 
           {/* Flashcards — from processedModule.flashcard_data array */}
-          <FlashcardsSection
-            isExpanded={expanded === "flashcards"}
-            onToggle={() => toggle("flashcards")}
-            flashcardData={processedModule?.flashcard_data ?? null}
-          />
+          {showFlashcards && (
+            <FlashcardsSection
+              isExpanded={expanded === "flashcards"}
+              onToggle={() => toggle("flashcards")}
+              flashcardData={translatedFlashcards}
+              moduleId={processedModuleId}
+              lang={lang}
+              isTranslating={isTranslating}
+            />
+          )}
 
           {/* ── Phase 2: Mind Map ──────────────────────────────────────────────
             Will be implemented in Phase 2.
             processedModule.mindmap_data contains { nodes: [...], edges: [...] }
+            Gate behind hasFeature(FEATURES.MINDMAP) once wired in.
             <MindmapSection
               isExpanded={expanded === 'mindmap'}
               onToggle={() => toggle('mindmap')}
@@ -255,34 +432,68 @@ export default function StudioScreen({ route }: any) {
           ──────────────────────────────────────────────────────────────────── */}
 
           {/* Podcast — audio URLs and timelines all from API response */}
-          <PodcastSection
-            isExpanded={expanded === "podcast"}
-            onToggle={() => toggle("podcast")}
-            audioUrl={processedModule?.audio_url ?? null}
-            audioUrlHinglish={processedModule?.audio_url_hinglish ?? null}
-            podcastTimeline={processedModule?.podcast_timeline ?? null}
-            podcastTimelineHinglish={
-              processedModule?.podcast_timeline_hinglish ?? null
-            }
-            transcript={processedModule?.podcast_transcript ?? null}
-          />
+          {showPodcast && (
+            <PodcastSection
+              isExpanded={expanded === "podcast"}
+              onToggle={() => toggle("podcast")}
+              lang={lang}
+              audioUrl={processedModule?.audio_url ?? null}
+              audioUrlHinglish={processedModule?.audio_url_hinglish ?? null}
+              podcastTimeline={processedModule?.podcast_timeline ?? null}
+              podcastTimelineHinglish={
+                processedModule?.podcast_timeline_hinglish ?? null
+              }
+              transcript={processedModule?.podcast_transcript ?? null}
+            />
+          )}
 
-          {/* Video — from processedModule.video_url */}
-          <VideoSection
-            isExpanded={expanded === "video"}
-            onToggle={() => toggle("video")}
-            videoUrl={processedModule?.video_url ?? null}
-          />
+          {/* Video — from processedModule.video_url + regional variants */}
+          {showVideo && (
+            <VideoSection
+              isExpanded={expanded === "video"}
+              onToggle={() => toggle("video")}
+              lang={lang}
+              videoUrl={processedModule?.video_url ?? null}
+              videoUrlHinglish={
+                processedModule?.video_url_hinglish ||
+                (processedModule?.audio_url_hinglish ? processedModule?.video_url : null)
+              }
+              videoUrlBengali={
+                processedModule?.video_url_bengali ||
+                (processedModule?.audio_url_bengali ? processedModule?.video_url : null)
+              }
+              videoUrlTamil={
+                processedModule?.video_url_tamil ||
+                (processedModule?.audio_url_tamil ? processedModule?.video_url : null)
+              }
+              videoUrlTelugu={
+                processedModule?.video_url_telugu ||
+                (processedModule?.audio_url_telugu ? processedModule?.video_url : null)
+              }
+              videoUrlMarathi={
+                processedModule?.video_url_marathi ||
+                (processedModule?.audio_url_marathi ? processedModule?.video_url : null)
+              }
+            />
+          )}
 
-          {/* AI Assistant */}
-          <AIAssistantSection
-            isExpanded={expanded === "ai"}
-            onToggle={() => toggle("ai")}
-            processedModuleId={processedModuleId}
-            moduleTitle={moduleTitle}
-            userId={userId ?? ""}
-            companyId={companyId}
-          />
+          {/* AI Assistant — gated behind the chat_in_studio add-on */}
+          {showAiAssistant && (
+            <AIAssistantSection
+              isExpanded={expanded === "ai"}
+              onToggle={() => toggle("ai")}
+              processedModuleId={processedModuleId}
+              moduleTitle={moduleTitle}
+              userId={userId ?? ""}
+              companyId={companyId}
+              lang={lang}
+              onInputFocus={() => {
+                setTimeout(() => {
+                  mainScrollRef.current?.scrollToEnd({ animated: true });
+                }, 150);
+              }}
+            />
+          )}
         </View>
       </ScrollView>
     </View>
@@ -290,12 +501,12 @@ export default function StudioScreen({ route }: any) {
 }
 
 const styles = StyleSheet.create({
-  main: { flex: 1, backgroundColor: "#F8FAFC" },
+  main: { flex: 1, backgroundColor: "#FFF" },
 
   // ── Empty state ──
   emptyContainer: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFF",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 36,
@@ -330,7 +541,7 @@ const styles = StyleSheet.create({
   errorSub: { fontSize: 13, color: "#94A3B8" },
 
   // ── Hero ──
-  hero: { padding: 24, paddingBottom: 16 },
+  hero: { paddingHorizontal: 24, paddingVertical: 16 },
   studioBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -367,4 +578,89 @@ const styles = StyleSheet.create({
   metaTextHi: { fontSize: 12, fontWeight: "600", color: "#C2410C" },
 
   accordionList: { paddingHorizontal: 16, gap: 12 },
+  topHeaderBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  backBtnRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  backBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6366F1",
+    marginLeft: 2,
+  },
+  backBtn: {
+    marginBottom: 12,
+    alignSelf: "flex-start",
+    padding: 4,
+  },
+  backBtnAbsolute: {
+    position: "absolute",
+    left: 20,
+    top: 20,
+    padding: 4,
+    zIndex: 10,
+  },
+  emptyBtn: {
+    backgroundColor: "#6366F1",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  emptyBtnText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  skeletonLineShort: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 6,
+  },
+  skeletonLineLong: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 8,
+  },
+  skeletonTabsContainer: {
+    flexDirection: "row",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    padding: 4,
+    height: 40,
+    alignItems: "center",
+  },
+  skeletonTab: {
+    flex: 1,
+    height: 32,
+    backgroundColor: "#E2E8F0",
+    borderRadius: 8,
+    marginHorizontal: 2,
+  },
+  skeletonSectionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  skeletonIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: "#E2E8F0",
+  },
+  skeletonCircleSmall: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#E2E8F0",
+  },
 });

@@ -2,7 +2,7 @@
   "expo": {
     "name": "LucidX",
     "slug": "lucid-mobile",
-    "version": "1.0.2",
+    "version": "1.0.9",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -18,7 +18,7 @@
       "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
-      "versionCode": 3,
+      "versionCode": 5,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#000000"
@@ -27,7 +27,12 @@
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "blockedPermissions": ["android.permission.ACTIVITY_RECOGNITION"]
+      "permissions": ["android.permission.POST_NOTIFICATIONS"],
+      "blockedPermissions": [
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -35,7 +40,18 @@
     "plugins": [
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
-      "expo-screen-orientation"
+      "expo-screen-orientation",
+      "expo-image-picker",
+      "@react-native-firebase/messaging",
+      "expo-font",
+      "expo-video",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow LucidX to access your microphone for speech recognition.",
+          "speechRecognitionPermission": "Allow LucidX to recognize your speech."
+        }
+      ]
     ]
   }
 }
