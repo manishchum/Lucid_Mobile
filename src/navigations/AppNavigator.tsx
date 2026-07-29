@@ -13,6 +13,7 @@ import {
   useActiveSprint,
 } from "../contex/ActiveSprintContext";
 import { APP_ROUTES, STACK_ROUTES } from "./Routes";
+import { initMobileErrorReporting } from "../utils/errorReporter";
 
 // Screens
 import LoginScreen from "../screens/auth/loginScreen/LoginScreen";
@@ -163,6 +164,13 @@ function AppNavigatorContent() {
 
   const userId = cachedUser?.userId ?? null;
   const companyId = cachedUser?.companyId ?? null;
+
+  // Start production crash/error reporting to the same /api/logs endpoint web points to
+  const cachedEmailRef = React.useRef<string | null>(null);
+  cachedEmailRef.current = cachedUser?.email ?? null;
+  useEffect(() => {
+    initMobileErrorReporting(() => cachedEmailRef.current);
+  }, []);
 
   // Global leaderboard state and fetching
   const {
