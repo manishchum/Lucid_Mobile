@@ -16,6 +16,7 @@ import AssignedSprintsList, {
 } from "./AssignedSprintsList";
 import AssignedTasksList from "./AssignedTasksList";
 import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
+import { useRealtimeSubscription } from "../../../hooks/useRealtimeSubscription";
 
 type TabId = "sprints" | "tasks";
 type SprintSortOption = "title" | "dueDate" | "progress";
@@ -80,6 +81,28 @@ export default function AssignedSection({
     companyId,
     showTaskManagement,
   );
+
+  // ── Real-time task change listeners ─────────────────────────────────
+  useRealtimeSubscription({
+    table: "tasks",
+    onPayload: () => {
+      refetch();
+    },
+  });
+
+  useRealtimeSubscription({
+    table: "task_assignments",
+    onPayload: () => {
+      refetch();
+    },
+  });
+
+  useRealtimeSubscription({
+    table: "task_submissions",
+    onPayload: () => {
+      refetch();
+    },
+  });
 
   const effectiveTasks = useMemo(() => {
     if (optimisticCompletedIds.size === 0) return tasks;

@@ -367,7 +367,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       // 2. Check the company's active status.
-      const companyActive = await getCompanyActiveStatus(cachedUser.companyId);
+      const companyActive = await getCompanyActiveStatus(
+        cachedUser.companyId,
+        cachedUser.userId,
+      );
       if (companyActive === false) {
         console.warn("[Auth] verifyAccountStatus — company is now inactive");
         setForcedLogoutReason("company_deactivated");

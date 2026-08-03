@@ -1466,19 +1466,57 @@ export const useGetDashboardSummary = (
       );
       fetchDashboardData(false).catch(() => {});
     };
-    return eventBus.on("refresh_dashboard", handleRefresh);
+
+    const handleModuleCompleted = (data?: { processedModuleId?: string; quizScore?: number; taskId?: string }) => {
+      logger.debug("[Hook] Realtime module/task completed event received:", data);
+      const targetId = data?.processedModuleId || data?.taskId;
+
+      setResolvedPlanCards((prevCards) => {
+        return prevCards.map((card) => {
+          const isMatch =
+            (targetId && card.processedModuleIds?.includes(targetId)) ||
+            card.moduleId === targetId ||
+            card.planKey === targetId;
+
+          if (isMatch) {
+            const currentCompleted = card.completedModulesCount ?? 0;
+            const newCompleted = Math.min(card.totalModules, currentCompleted + 1);
+            const newStatus = newCompleted >= card.totalModules ? "COMPLETED" : "IN_PROGRESS";
+            return {
+              ...card,
+              completedModulesCount: newCompleted,
+              status: newStatus,
+            };
+          }
+          return card;
+        });
+      });
+    };
+
+    const unsub1 = eventBus.on("refresh_dashboard", handleRefresh);
+    const unsub2 = eventBus.on("quiz_completed", handleModuleCompleted);
+    const unsub3 = eventBus.on("MODULE_COMPLETED", handleModuleCompleted);
+    const unsub4 = eventBus.on("TASK_UPDATED", handleModuleCompleted);
+    return () => {
+      unsub1();
+      unsub2();
+      unsub3();
+      unsub4();
+    };
   }, [fetchDashboardData]);
 
-  // ── Stats derived from resolved plan cards ────────────────────────────────
+  // ── Stats derived from resolved plan cards (matches Web & Leaderboard) ──
   const stats: DashboardStats = (() => {
     const totalAssigned = resolvedPlanCards.length;
     const completedCount = resolvedPlanCards.filter(
       (c) => c.status === "COMPLETED",
     ).length;
+
     const progressPercentage =
       totalAssigned > 0
-        ? Number(((completedCount / totalAssigned) * 100).toFixed(1))
+        ? Math.round((completedCount / totalAssigned) * 100)
         : 0;
+
     const nudgeMessage =
       progressPercentage >= 100
         ? "🎉 Congratulations! You've completed your Performance Sprint!"
