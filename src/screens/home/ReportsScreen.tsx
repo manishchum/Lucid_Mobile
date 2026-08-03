@@ -28,8 +28,10 @@ import {
   getAssessmentsBatch,
   getProcessedModulesBatch,
   getLearningStyle,
+  getDashboardSummary,
 } from "../../api/users/Request";
 import { eventBus } from "../../utils/EventBus";
+import { useRealtimeSubscription } from "../../hooks/useRealtimeSubscription";
 
 const { width } = Dimensions.get("window");
 
@@ -688,10 +690,13 @@ export default function ReportsScreen() {
       }
 
       try {
-        // 1. Fetch raw user employee assessments and learning style report
-        const [rawAssessments, styleReport] = await Promise.all([
+        // 1. Fetch raw user employee assessments, learning style report, and active dashboard summary
+        const [rawAssessments, styleReport, dashboardData] = await Promise.all([
           getEmployeeAssessments(userId),
           companyUsesLearningStyle ? getLearningStyle(userId) : null,
+          company?.company_id
+            ? getDashboardSummary(userId, company.company_id).catch(() => null)
+            : Promise.resolve(null),
         ]);
 
         const assessmentsList: AssessmentAttempt[] =
@@ -708,25 +713,13 @@ export default function ReportsScreen() {
           return;
         }
 
-        // 2. Resolve unique assessment IDs and unique processed module IDs in parallel
+        // 2. Fetch assessment details batch first
         const assessmentIds = Array.from(
           new Set(assessmentsList.map((a) => a.assessment_id).filter(Boolean)),
         );
-
-        const processedModuleIds = Array.from(
-          new Set(
-            assessmentsList
-              .map((a) => a.assessments?.processed_module_id)
-              .filter(Boolean)
-              .map((id) => String(id)),
-          ),
-        );
-
-        // Fetch details and modules in parallel
-        const [batchRes, batchModulesRes] = await Promise.all([
-          assessmentIds.length > 0 ? getAssessmentsBatch(userId, assessmentIds) : null,
-          processedModuleIds.length > 0 ? getProcessedModulesBatch(userId, processedModuleIds) : null,
-        ]);
+        const batchRes = assessmentIds.length > 0 
+          ? await getAssessmentsBatch(userId, assessmentIds) 
+          : null;
 
         let assessmentDetailsMap: Record<string, any> = {};
         if (batchRes) {
@@ -739,6 +732,22 @@ export default function ReportsScreen() {
             }
           });
         }
+
+        // 3. Resolve all unique processed module IDs from both initial list and details
+        const processedModuleIdsSet = new Set<string>();
+        assessmentsList.forEach((a) => {
+          const detail = assessmentDetailsMap[String(a.assessment_id)];
+          const pid = detail?.processed_module_id || a.assessments?.processed_module_id;
+          if (pid) {
+            processedModuleIdsSet.add(String(pid));
+          }
+        });
+        const processedModuleIds = Array.from(processedModuleIdsSet);
+
+        // 4. Fetch processed modules batch using the complete set of IDs
+        const batchModulesRes = processedModuleIds.length > 0 
+          ? await getProcessedModulesBatch(userId, processedModuleIds) 
+          : null;
 
         let modulesMap: Record<string, any> = {};
         if (batchModulesRes) {
@@ -793,14 +802,37 @@ export default function ReportsScreen() {
           };
         });
 
+        const activePlans = dashboardData?.plans || [];
+        const assignedOrigIds = new Set(
+          activePlans.map((p: any) => String(p?.module_id)).filter(Boolean)
+        );
+        const assignedProcIds = new Set(
+          activePlans
+            .flatMap((p: any) => p?.processed_module_ids || [])
+            .map(String)
+            .filter(Boolean)
+        );
+        const hasActivePlans = activePlans.length > 0;
+
         const grouped = enrichedAssessments.reduce(
           (acc: Record<string, GroupedModule>, item) => {
-            const moduleId =
-              item.assessments?.original_module_id ||
-              item.assessments?.processed_module_id ||
-              item.assessment_id;
+            const origId = item.assessments?.original_module_id
+              ? String(item.assessments.original_module_id)
+              : null;
+            const procId = item.assessments?.processed_module_id
+              ? String(item.assessments.processed_module_id)
+              : null;
+            const moduleId = origId || procId || item.assessment_id;
 
             if (!moduleId) return acc;
+
+            // If user has active plans, filter out reports for unassigned/deleted modules
+            if (hasActivePlans) {
+              const isAssigned =
+                (origId && assignedOrigIds.has(origId)) ||
+                (procId && assignedProcIds.has(procId));
+              if (!isAssigned) return acc;
+            }
 
             if (!acc[moduleId]) {
               acc[moduleId] = {
@@ -867,6 +899,14 @@ export default function ReportsScreen() {
       eventBus.off("refresh_reports", handleRefresh);
     };
   }, [loadData]);
+
+  // Real-time Supabase WebSocket listener for employee assessments & AI reports
+  useRealtimeSubscription({
+    table: "employee_assessments",
+    onPayload: () => {
+      loadData(false);
+    },
+  });
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

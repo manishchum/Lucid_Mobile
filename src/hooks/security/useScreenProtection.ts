@@ -28,8 +28,7 @@ export function useScreenProtection(
   });
 
   useEffect(() => {
-    let subscription: ReturnType<typeof ScreenCapture.addScreenRecordingListener> | null =
-      null;
+    let subscription: { remove: () => void } | null = null;
 
     const activate = async () => {
       try {
@@ -40,14 +39,15 @@ export function useScreenProtection(
       }
 
       // iOS-only: listen for screen-recording status changes.
-      if (Platform.OS === "ios") {
-        subscription = ScreenCapture.addScreenRecordingListener((event) => {
-          const recording = event.isRecording ?? false;
+      if (Platform.OS === "ios" && typeof (ScreenCapture as any).addScreenRecordingListener === "function") {
+        subscription = (ScreenCapture as any).addScreenRecordingListener((event: { isRecording?: boolean }) => {
+          const recording = event?.isRecording ?? false;
           setIsRecording(recording);
           onRecordingChangeRef.current?.(recording);
         });
       }
     };
+
 
     activate();
 

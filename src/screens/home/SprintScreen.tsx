@@ -25,6 +25,11 @@ import { useModuleProgress, useGetTrainingPlan } from "../../api/users/Hooks";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 import { useActiveSprint } from "../../contex/ActiveSprintContext";
 import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
+import { eventBus } from "../../utils/EventBus";
+import { useRealtimeSubscription } from "../../hooks/useRealtimeSubscription";
+import { logger } from "../../utils/UnifiedLogger";
+
+
 
 if (
 	Platform.OS === "android" &&
@@ -213,6 +218,38 @@ export default function SprintScreen({
 		}, [cachedUser?.userId]),
 	);
 
+	React.useEffect(() => {
+		const handleRefresh = () => {
+			refetchModuleProgress();
+			refetchTrainingPlan();
+		};
+		const unsub1 = eventBus.on("refresh_dashboard", handleRefresh);
+		const unsub2 = eventBus.on("TASK_UPDATED", handleRefresh);
+		const unsub3 = eventBus.on("PROGRESS_NEEDS_RECALCULATION", handleRefresh);
+		return () => {
+			unsub1();
+			unsub2();
+			unsub3();
+		};
+	}, [refetchModuleProgress, refetchTrainingPlan]);
+
+	useRealtimeSubscription({
+		table: "module_progress",
+		onPayload: () => {
+			refetchModuleProgress();
+			refetchTrainingPlan();
+		},
+	});
+
+	useRealtimeSubscription({
+		table: "employee_assessments",
+		onPayload: () => {
+			refetchModuleProgress();
+			refetchTrainingPlan();
+		},
+	});
+
+
 	const onRefresh = useCallback(async () => {
 		setRefreshing(true);
 		try {
@@ -240,12 +277,10 @@ export default function SprintScreen({
 					entryOriginalModuleId &&
 					entryOriginalModuleId !== moduleId
 				) {
-					console.warn(
-						` Rejected foreign progress record: ` +
+					logger.debug(
+						`[SprintScreen] Filtered foreign progress record: ` +
 							`processed_module_id="${entry.processed_module_id}" ` +
-							`title="${entry.processed_modules?.title}" belongs to ` +
-							`original_module_id="${entryOriginalModuleId}", not this ` +
-							`sprint's moduleId="${moduleId}".`,
+							`title="${entry.processed_modules?.title}"`,
 					);
 					return;
 				}

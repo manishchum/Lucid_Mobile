@@ -36,6 +36,8 @@ import TaskSubmissionBlock, {
   toFormatList,
 } from "../../../components/tasks/TaskSubmissionBlock";
 import { useAuth } from "../../../contex/AuthContext";
+import { eventBus } from "../../../utils/EventBus";
+
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -399,6 +401,9 @@ export default function TaskAccordionItem({
       setJustCompleted(true);
       resetAllAnswers();
       onSubmitted?.(task);
+      eventBus.emit("TASK_UPDATED", { taskId: task.task_id, status: "completed" });
+      eventBus.emit("PROGRESS_NEEDS_RECALCULATION");
+      eventBus.emit("refresh_dashboard");
       setModalOpen(false);
     } catch (err) {
       const message = friendlyError(err);
