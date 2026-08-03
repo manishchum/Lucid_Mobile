@@ -549,6 +549,9 @@ export default function ModuleQuizScreen({
             ...prev,
             feedback: serverResult.feedback ?? prev.feedback,
           }));
+          // Emit events again now that the database and Redis cache are updated
+          eventBus.emit("refresh_dashboard");
+          eventBus.emit("refresh_reports");
         }
       } catch (err: any) {
         console.warn("[Quiz Submit] Background grading failed or rate limited:", err);
@@ -1071,7 +1074,6 @@ export default function ModuleQuizScreen({
                                   styles.optionText,
                                   isSelected && styles.optionTextSelected,
                                 ]}
-                                numberOfLines={4}
                               >
                                 {option}
                               </Text>

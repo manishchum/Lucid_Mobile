@@ -26,6 +26,8 @@ import { navigate } from "../navigations/NavigationService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { STACK_ROUTES } from "../navigations/Routes";
 import { logger } from "../utils/UnifiedLogger";
+import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
+
 
 let isMessagingSupported = false;
 try {
@@ -94,6 +96,24 @@ export const NotificationProvider = ({
     },
     [],
   );
+
+  // Supabase Realtime subscription for notifications table
+  useRealtimeSubscription<Notification>({
+    table: "notifications",
+    event: "INSERT",
+    filter: cachedUser?.userId ? `user_id=eq.${cachedUser.userId}` : undefined,
+    onPayload: (payload) => {
+      const newNotif = payload.new as Notification;
+      if (newNotif && newNotif.id && newNotif.title) {
+        setNotifications((prev) => [newNotif, ...prev]);
+        setUnreadCount((count) => count + 1);
+        showToast(newNotif.title, newNotif.message || "");
+        eventBus.emit("refresh_dashboard");
+      }
+    },
+  });
+
+
 
   const handleSprintNotificationClick = useCallback(
     async (sprintId?: string, assignmentTitle?: string) => {

@@ -413,11 +413,11 @@ export default function AssignedSprintsList({
         </View>
       )}
 
-      {/* ── 2. NEW RECOMMENDATIONS (NOT STARTED DROPDOWN) ──────────────── */}
+      {/* ── 2. New Sprints (NOT STARTED DROPDOWN) ──────────────── */}
       {notStartedSprints.length > 0 && (
         <View style={styles.sectionContainer}>
           <DropdownSectionHeader
-            title="New Recommendations"
+            title="New Sprints"
             count={notStartedSprints.length}
             isExpanded={recommendationsExpanded}
             onToggle={() => setRecommendationsExpanded(!recommendationsExpanded)}
