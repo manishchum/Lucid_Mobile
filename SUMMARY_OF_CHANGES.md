@@ -8,7 +8,19 @@
 
 ## 📋 Executive Overview
 
-Following a comprehensive audit of the full-stack architecture, **16 core improvements and UI/UX refinements** were planned and implemented across **3 distinct phases**. All native dependencies were aligned strictly with Expo SDK 54, and native dialogs were upgraded to custom components.
+Following a comprehensive audit of the full-stack architecture, **17 core improvements, UI/UX refinements, and feature integrations** were planned and implemented across **3 distinct phases**. All native dependencies were aligned strictly with Expo SDK 54, native dialogs were upgraded to custom components, and the full Baseline Evaluation flow was enabled on mobile.
+
+---
+
+## 🎯 Baseline Evaluation Feature (Mobile)
+
+### 17. Baseline Assessment Flow
+- **Files**: `Lucid_Mobile/src/api/users/Request.ts`, `Lucid_Mobile/src/api/users/Hooks.ts`, `Lucid_Mobile/src/screens/home/components/AssignedSprintsList.tsx`, `Lucid_Mobile/src/screens/home/ModuleQuizScreen.tsx`
+- **Impact**:
+  - **Hooks (`useGetDashboardSummary`)**: Updated to include `baseline_assessment = true` plans in `resolvedPlanCards` instead of hiding them, exposing `hasBaseline` and `baselineCompleted` flags.
+  - **Sprint Cards (`AssignedSprintsList.tsx`)**: Displays an amber **"Baseline Required"** badge and a **"Take Baseline"** button for sprints with pending baseline evaluations. Blocks main sprint module entry until baseline completion.
+  - **Quiz Screen (`ModuleQuizScreen.tsx`)**: Integrates `isBaseline` and `assessmentType === "baseline"` route parameters. Fetches baseline MCQ quizzes from `/api/gpt-mcq-quiz` via `generateBaselineQuiz`, submits answers with `assessment_type: "baseline"`, updates backend learning plan status, and invalidates caches.
+  - **API Requests (`Request.ts`)**: Added `generateBaselineQuiz` helper function supporting shape A, shape B, and shape C responses.
 
 ---
 

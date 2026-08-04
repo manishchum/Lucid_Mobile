@@ -804,6 +804,74 @@ export const generateModuleQuiz = async (
   }
 };
 
+export const generateBaselineQuiz = async (
+  moduleId: string,
+  learningStyle: string,
+  userId: string,
+  companyId: string,
+): Promise<{
+  questions: any[];
+  assessmentId?: string;
+  thresholdValue?: number;
+} | null> => {
+  try {
+    const headers = await getHeaders(userId);
+    const url = `${API_BASE_URL}/gpt-mcq-quiz`;
+    logger.debug("[Quiz] Generating baseline quiz →", url);
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        moduleIds: [moduleId],
+        learningStyle,
+        userId,
+        user_id: userId,
+        companyId,
+        isBaseline: true,
+        assessmentType: "baseline",
+      }),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      logger.error("[Quiz] generateBaselineQuiz HTTP", response.status, body);
+      return null;
+    }
+    const json = await response.json();
+
+    let questions: any[] | null = null;
+    let assessmentId: string | undefined;
+    let thresholdValue: number | undefined =
+      json?.threshold_value ?? json?.thresholdValue ?? json?.threshold;
+
+    if (Array.isArray(json?.quizMapping) && json.quizMapping.length > 0) {
+      const entry = json.quizMapping[0];
+      const raw = entry?.questions;
+      if (raw) {
+        questions = typeof raw === "string" ? JSON.parse(raw) : raw;
+        assessmentId = entry?.assessment_id;
+      }
+    } else if (Array.isArray(json?.quiz)) {
+      questions = json.quiz;
+      assessmentId = json?.assessmentId ?? json?.assessment_id;
+    } else if (json?.data?.assessments?.length > 0) {
+      const entry = json.data.assessments[0];
+      const raw = entry?.questions;
+      if (raw) {
+        questions = typeof raw === "string" ? JSON.parse(raw) : raw;
+        assessmentId = entry?.assessment_id;
+      }
+    }
+
+    if (questions && questions.length > 0) {
+      return { questions, assessmentId, thresholdValue };
+    }
+    return null;
+  } catch (err) {
+    logger.error("[Quiz] generateBaselineQuiz error:", err);
+    return null;
+  }
+};
+
 // 12. Get a single processed module by its specific processed_module_id
 export const getProcessedModuleById = async (
   processedModuleId: string,
