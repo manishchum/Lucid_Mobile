@@ -1,8 +1,3 @@
-import {
-  getAuth,
-  onAuthStateChanged,
-  getIdToken,
-} from "@react-native-firebase/auth";
 import { logger } from "../../utils/UnifiedLogger";
 import { emitSessionInvalid, SessionInvalidReason } from "../sessionEvents";
 import {
@@ -25,40 +20,74 @@ import {
   FormatAnswer,
 } from "./Dto";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 const EXPO_API_URL =
   process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
 const API_BASE_URL = `${EXPO_API_URL}/api`;
 const MODULE_CHAT_URL = `${API_BASE_URL}/module-chat`;
 
-export const getFirebaseToken = (): Promise<string | null> => {
-  return new Promise((resolve) => {
-    const authInstance = getAuth();
-    const currentUser = authInstance.currentUser;
+export const JWT_TOKEN_KEY = "@auth_jwt_token";
 
-    if (currentUser) {
-      getIdToken(currentUser)
-        .then(resolve)
-        .catch(() => resolve(null));
-      return;
-    }
-
-    const timeout = setTimeout(() => {
-      unsubscribe();
-      resolve(null);
-    }, 5000);
-    const unsubscribe = onAuthStateChanged(authInstance, (user) => {
-      clearTimeout(timeout);
-      unsubscribe();
-      if (user) {
-        getIdToken(user)
-          .then(resolve)
-          .catch(() => resolve(null));
-      } else {
-        resolve(null);
-      }
-    });
-  });
+export const getFirebaseToken = async (): Promise<string | null> => {
+  try {
+    const token = await AsyncStorage.getItem(JWT_TOKEN_KEY);
+    if (token) return token;
+  } catch (e) {
+    logger.error("[Request] Error reading JWT token from AsyncStorage:", e);
+  }
+  return null;
 };
+
+export const sendOtpApi = async (
+  phone: string
+): Promise<{ success: boolean; message?: string; retry_after?: number }> => {
+  const url = `${API_BASE_URL}/auth/send-otp`;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new ApiError(
+        data.detail || data.message || "Failed to send OTP",
+        response.status
+      );
+    }
+    return data;
+  } catch (err: any) {
+    logger.error("[Request] sendOtpApi error:", err);
+    throw err;
+  }
+};
+
+export const verifyOtpApi = async (
+  phone: string,
+  otp: string
+): Promise<{ success: boolean; token: string; user: any }> => {
+  const url = `${API_BASE_URL}/auth/verify-otp`;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, otp }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new ApiError(
+        data.detail || data.message || "Failed to verify OTP",
+        response.status
+      );
+    }
+    return data;
+  } catch (err: any) {
+    logger.error("[Request] verifyOtpApi error:", err);
+    throw err;
+  }
+};
+
 
 export interface ModuleChatMessage {
   role: "user" | "assistant";
@@ -927,8 +956,7 @@ export const submitQuizForGrading = async (
   moduleId?: string,
 ): Promise<any | null> => {
   try {
-    const currentUser = getAuth().currentUser;
-    if (!currentUser) throw new Error("No authenticated Firebase user");
+    if (!dbUserId) throw new Error("No authenticated user ID provided");
 
     const headers = await getHeaders(dbUserId);
 
