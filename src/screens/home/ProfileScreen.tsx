@@ -13,12 +13,14 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import { useAuth } from "../../contex/AuthContext";
 import { getUserByPhone } from "../../api/users/Request";
 import { useGetCompany } from "../../api/users/Hooks";
 import { User } from "../../api/users/Dto";
 import FeedbackCard from "../../components/feedback/FeedbackCard";
 import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
+import SignOutModal from "../../components/modals/SignOutModal";
 
 function toE164(rawPhone: string): string {
   const digits = rawPhone.replace(/[^\d]/g, "");
@@ -30,8 +32,9 @@ function toE164(rawPhone: string): string {
 }
 
 export default function ProfileScreen() {
-  const { phoneNumber, cachedUser } = useAuth();
+  const { phoneNumber, cachedUser, logout } = useAuth();
   const navigation = useNavigation<any>();
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
 
   const [user, setUser] = useState<User | null>(
     cachedUser
@@ -295,6 +298,16 @@ export default function ProfileScreen() {
           <FeedbackCard />
         </View>
 
+        {/* SIGN OUT BUTTON */}
+        <TouchableOpacity
+          style={styles.profileSignOutButton}
+          onPress={() => setShowSignOutModal(true)}
+          activeOpacity={0.85}
+        >
+          <MaterialCommunityIcons name="logout" size={20} color="#EF4444" style={{ marginRight: 8 }} />
+          <Text style={styles.profileSignOutText}>Sign Out</Text>
+        </TouchableOpacity>
+
         {/* ADMIN NOTICE */}
         <View style={styles.adminNotice}>
           <MaterialCommunityIcons
@@ -307,7 +320,23 @@ export default function ProfileScreen() {
             update information.
           </Text>
         </View>
+
+        {/* Version Footer */}
+        <View style={styles.versionFooter}>
+          <Text style={styles.versionText}>
+            Version {Constants.expoConfig?.version ?? "1.0.0"}
+          </Text>
+        </View>
       </ScrollView>
+
+      <SignOutModal
+        visible={showSignOutModal}
+        onCancel={() => setShowSignOutModal(false)}
+        onConfirm={() => {
+          setShowSignOutModal(false);
+          logout();
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -401,10 +430,10 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: "#F1F5F9",
-    elevation: 2,
-    shadowColor: "#64748B",
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    // elevation: 2,
+    // shadowColor: "#64748B",
+    // shadowOpacity: 0.05,
+    // shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
   },
 
@@ -468,6 +497,35 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     lineHeight: 18,
   },
+  versionFooter: {
+    marginTop: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  versionText: {
+    fontSize: 12,
+    color: "#94A3B8",
+    fontWeight: "500",
+  },
+
+  profileSignOutButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  profileSignOutText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#EF4444",
+  },
 
   header: {
     height: 52,
@@ -515,7 +573,7 @@ const styles = StyleSheet.create({
   },
   skeletonIconBox: {
     width: 38,
-    height: 38,
+    height:38,
     borderRadius: 10,
     backgroundColor: "#E2E8F0",
     marginRight: 15,

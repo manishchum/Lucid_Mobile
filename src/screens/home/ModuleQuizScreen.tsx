@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  useWindowDimensions,
   StatusBar,
   Animated,
   Easing,
@@ -29,7 +30,11 @@ import NoInternetModal from "../../components/networkModal/NetworkModal";
 import { eventBus } from "../../utils/EventBus";
 import Svg, { Circle } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { safeHaptics } from "../../utils/haptics";
 import { useInAppReview } from "../../hooks/useInAppReview";
+import { offlineQueue } from "../../utils/offlineQueue";
+import { ApiError } from "../../api/users/Request";
+import { QuizScoreDonut } from "../../components/quiz/QuizScoreDonut";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const PAGE_SIZE = 10;
@@ -162,53 +167,15 @@ const ResultProgressRing = ({
   pct: number;
   passed: boolean;
   threshold?: number;
-}) => {
-  const size = 160;
-  const strokeWidth = 12;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (circumference * Math.min(Math.max(pct, 0), 100)) / 100;
-  const activeColor = passed ? "#10B981" : "#F59E0B";
-  const trackColor = passed ? "#D1FAE5" : "#FEF3C7";
-
-  return (
-    <View style={{ width: size, height: size, justifyContent: "center", alignItems: "center", alignSelf: "center", marginVertical: 20 }}>
-      <Svg width={size} height={size}>
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={trackColor}
-          strokeWidth={strokeWidth}
-          fill="none"
-        />
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={activeColor}
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-          strokeLinecap="round"
-          fill="none"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      </Svg>
-      <View style={{ position: "absolute", justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ fontSize: 34, fontWeight: "900", color: "#0F172A", letterSpacing: -1 }}>
-          {Math.round(pct)}%
-        </Text>
-        <Text style={{ fontSize: 12, fontWeight: "600", color: "#64748B", marginTop: 2 }}>
-          {score} / {max} Correct
-        </Text>
-        <Text style={{ fontSize: 11, fontWeight: "700", color: passed ? "#10B981" : "#D97706", marginTop: 2 }}>
-          Pass Target: {threshold}%
-        </Text>
-      </View>
-    </View>
-  );
-};
+}) => (
+  <QuizScoreDonut
+    score={score}
+    max={max}
+    pct={pct}
+    passed={passed}
+    threshold={threshold}
+  />
+);
 
 // ─── Option letter badge ──────────────────────────────────────────────────────
 
@@ -223,6 +190,7 @@ export default function ModuleQuizScreen({
   navigation: any;
   route: any;
 }) {
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { cachedUser } = useAuth();
 
@@ -443,6 +411,7 @@ export default function ModuleQuizScreen({
 
   // ─── Answer selection ───────────────────────────────────────────────────────
   const handleSelectOption = (questionIndex: number, optionIdx: number) => {
+    safeHaptics.lightImpact();
     setUserAnswers((prev) => {
       const updated = [...prev];
       updated[questionIndex] = optionIdx;
@@ -482,6 +451,7 @@ export default function ModuleQuizScreen({
     };
     setGradingResult(localResult);
     if (passed) {
+      safeHaptics.successNotification();
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 3200);
       // Trigger native in-app review at the "Aha! Moment" after confetti starts
@@ -554,7 +524,31 @@ export default function ModuleQuizScreen({
           eventBus.emit("refresh_reports");
         }
       } catch (err: any) {
-        console.warn("[Quiz Submit] Background grading failed or rate limited:", err);
+        // If offline, enqueue for silent retry on reconnect
+        if (err instanceof ApiError && err.code === "NETWORK_ERROR") {
+          const { getFirebaseToken } = await import("../../api/users/Request");
+          const token = await getFirebaseToken();
+          const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
+          await offlineQueue.enqueue({
+            url: `${EXPO_API_URL}/api/submit-assessment`,
+            method: "POST",
+            body: JSON.stringify({
+              assessment_id: assessmentId,
+              answers: answerIndices,
+              user_id: userId,
+              processed_module_id: processedModuleId,
+              module_id: moduleId,
+            }),
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            label: `Quiz submit for module ${processedModuleId}`,
+          });
+          console.log("[Quiz Submit] Queued offline — will retry on reconnect.");
+        } else {
+          console.warn("[Quiz Submit] Background grading failed or rate limited:", err);
+        }
       } finally {
         isSubmittingRef.current = false;
       }

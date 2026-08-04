@@ -8,7 +8,7 @@ import {
   ScrollView,
   FlatList,
   ActivityIndicator,
-  Dimensions,
+  useWindowDimensions,
   BackHandler,
   Animated,
 } from "react-native";
@@ -24,9 +24,8 @@ import { STACK_ROUTES, APP_ROUTES } from "../../navigations/Routes";
 import { useActiveSprint } from "../../contex/ActiveSprintContext";
 import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
-const { width } = Dimensions.get("window");
-
 export default function SprintverseScreen() {
+  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { cachedUser } = useAuth();

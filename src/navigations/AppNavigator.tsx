@@ -14,6 +14,7 @@ import {
 } from "../contex/ActiveSprintContext";
 import { APP_ROUTES, STACK_ROUTES } from "./Routes";
 import { initMobileErrorReporting } from "../utils/errorReporter";
+import { initOfflineQueueListener } from "../utils/offlineQueue";
 
 // Screens
 import LoginScreen from "../screens/auth/loginScreen/LoginScreen";
@@ -170,6 +171,8 @@ function AppNavigatorContent() {
   cachedEmailRef.current = cachedUser?.email ?? null;
   useEffect(() => {
     initMobileErrorReporting(() => cachedEmailRef.current);
+    // Register offline queue listener — replays queued submissions on reconnect
+    initOfflineQueueListener();
   }, []);
 
   // Global leaderboard state and fetching

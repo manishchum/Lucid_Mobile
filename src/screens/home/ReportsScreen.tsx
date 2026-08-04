@@ -14,7 +14,7 @@ import {
   Platform,
   UIManager,
   RefreshControl,
-  Dimensions,
+  useWindowDimensions,
   Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -32,8 +32,7 @@ import {
 } from "../../api/users/Request";
 import { eventBus } from "../../utils/EventBus";
 import { useRealtimeSubscription } from "../../hooks/useRealtimeSubscription";
-
-const { width } = Dimensions.get("window");
+import { ModuleCardItem } from "../../components/reports/ModuleCardItem";
 
 // Global in-memory cache for reports to prevent skeleton on revisit
 let reportsCache: {
@@ -482,123 +481,10 @@ const FormattedMarkdownText = ({
   );
 };
 
-const ModuleCardItem = React.memo(({
-  item,
-  isExpanded,
-  onToggle,
-  onSelectAttempt,
-}: {
-  item: GroupedModule;
-  isExpanded: boolean;
-  onToggle: () => void;
-  onSelectAttempt: (attempt: AssessmentAttempt) => void;
-}) => {
-  return (
-    <View style={styles.moduleCard}>
-      {/* Module Title Summary */}
-      <TouchableOpacity
-        style={styles.moduleHeader}
-        onPress={onToggle}
-        activeOpacity={0.8}
-      >
-        <View style={{ flex: 1 }}>
-          <Text style={styles.moduleTitle} numberOfLines={2}>
-            {item.moduleTitle}
-          </Text>
-          <Text style={styles.moduleSubtitle}>
-            {item.attempts.length}{" "}
-            {item.attempts.length === 1 ? "attempt" : "attempts"}
-          </Text>
-        </View>
-        <MaterialCommunityIcons
-          name={isExpanded ? "chevron-up" : "chevron-down"}
-          size={24}
-          color="#64748B"
-        />
-      </TouchableOpacity>
 
-      {/* Collapsible Timeline of Attempts */}
-      {isExpanded && (
-        <View style={styles.moduleDetails}>
-          {item.attempts.map((attempt, index) => {
-            const percentage = Math.round(
-              (attempt.score / (attempt.max_score || 1)) * 100,
-            );
-            const isBaseline = attempt.assessments?.type === "baseline";
-            const attemptName = isBaseline
-              ? `Baseline: ${attempt.assessments?.module_title || "Evaluation"}`
-              : `${attempt.assessments?.module_title || "Module Quiz"}`;
-
-            // Color pills based on score
-            const pillBg =
-              percentage >= 80
-                ? "#ECFDF5"
-                : percentage >= 60
-                  ? "#EFF6FF"
-                  : "#F1F5F9";
-            const pillText =
-              percentage >= 80
-                ? "#10B981"
-                : percentage >= 60
-                  ? "#3B82F6"
-                  : "#64748B";
-
-            return (
-              <TouchableOpacity
-                key={attempt.employee_assessment_id}
-                style={[
-                  styles.attemptRow,
-                  index === item.attempts.length - 1 && {
-                    borderBottomWidth: 0,
-                  },
-                ]}
-                activeOpacity={0.7}
-                onPress={() => onSelectAttempt(attempt)}
-              >
-                <View style={styles.attemptDetails}>
-                  <Text style={styles.attemptTitle}>{attemptName}</Text>
-                  <Text style={styles.attemptDate}>
-                    {new Date(
-                      attempt.completed_at || attempt.created_at,
-                    ).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </Text>
-                </View>
-                <View style={styles.attemptRight}>
-                  <View
-                    style={[
-                      styles.attemptPill,
-                      { backgroundColor: pillBg },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.attemptPillText,
-                        { color: pillText },
-                      ]}
-                    >
-                      {percentage}%
-                    </Text>
-                  </View>
-                  <MaterialCommunityIcons
-                    name="chevron-right"
-                    size={18}
-                    color="#94A3B8"
-                  />
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-    </View>
-  );
-});
 
 export default function ReportsScreen() {
+  const { width } = useWindowDimensions();
   const navigation = useNavigation<any>();
   const { cachedUser } = useAuth();
   const { company } = useTenant();
@@ -1705,6 +1591,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 14,
+    marginBottom: 12,
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",

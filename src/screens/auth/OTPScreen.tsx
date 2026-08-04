@@ -10,15 +10,20 @@ import {
   StyleSheet,
   Dimensions,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { STACK_ROUTES, APP_ROUTES } from "../../navigations/Routes";
+import { safeHaptics } from "../../utils/haptics";
 import { useAuth } from "../../contex/AuthContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
 
-export default function OTPScreen() {
+export default function OTPScreen({ navigation }: { navigation: any }) {
+  const insets = useSafeAreaInsets();
   const { phoneNumber, verifyOTP, sendOTP } = useAuth(); // Added sendOTP for resend logic
 
   const [otp, setOtp] = useState("");
@@ -29,6 +34,7 @@ export default function OTPScreen() {
 
   const isOnline = useNetworkStatus();
   const inputRef = useRef<TextInput>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Focus input on mount
   useEffect(() => {
@@ -37,12 +43,15 @@ export default function OTPScreen() {
     }, 500);
   }, []);
 
-  // Timer Logic
+  // Timer Logic — ref-tracked to prevent double-fire on re-mount
   useEffect(() => {
-    const interval = setInterval(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
       setTimer((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
-    return () => clearInterval(interval);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, []);
 
   const handleVerify = async () => {
@@ -59,9 +68,12 @@ export default function OTPScreen() {
     const success = await verifyOTP(otp);
 
     if (!success) {
+      safeHaptics.errorNotification();
       setError("Invalid OTP. Please try again.");
       setOtp("");
       inputRef.current?.focus();
+    } else {
+      safeHaptics.successNotification();
     }
     // Note: If success, the AuthContext should handle navigation via state change
     setIsLoading(false);
