@@ -22,6 +22,7 @@ import {
   getEmployeeLearningStyle,
   getExistingAssessment,
   generateModuleQuiz,
+  generateBaselineQuiz,
   submitQuizForGrading,
   getProcessedModuleById,
 } from "../../api/users/Request";
@@ -198,7 +199,9 @@ export default function ModuleQuizScreen({
 
   const processedModuleId: string = route?.params?.processedModuleId ?? "";
   const moduleId: string = route?.params?.moduleId ?? ""; // original TrainingModule UUID
-  const moduleTitle: string = route?.params?.moduleTitle ?? "Module Quiz";
+  const moduleTitle: string = route?.params?.moduleTitle ?? (route?.params?.isBaseline ? "Baseline Evaluation" : "Module Quiz");
+  const isBaseline: boolean = route?.params?.isBaseline ?? route?.params?.assessmentType === "baseline";
+  const assessmentType: string = route?.params?.assessmentType ?? (isBaseline ? "baseline" : "module");
   const routeThreshold = route?.params?.passingThreshold ?? route?.params?.thresholdValue ?? route?.params?.threshold;
   const companyId: string = cachedUser?.companyId ?? "";
 
@@ -354,6 +357,32 @@ export default function ModuleQuizScreen({
       setPhase("fetching_style");
       const learningStyle = await getEmployeeLearningStyle(userId);
 
+      if (isBaseline) {
+        setPhase("generating");
+        const generated = await generateBaselineQuiz(
+          moduleId,
+          learningStyle,
+          userId,
+          companyId,
+        );
+        if (generated?.thresholdValue) {
+          setPassingThreshold(generated.thresholdValue);
+        }
+        if (!generated || generated.questions.length === 0) {
+          setPhase("error");
+          setErrorMsg(
+            "Could not generate baseline evaluation. Please try again later.",
+          );
+          return;
+        }
+        setQuestions(generated.questions);
+        setUserAnswers(new Array(generated.questions.length).fill(null));
+        setAssessmentId(generated.assessmentId ?? "");
+        setCurrentPage(0);
+        setPhase("ready");
+        return;
+      }
+
       setPhase("checking_existing");
       const existing = await getExistingAssessment(
         processedModuleId,
@@ -502,26 +531,58 @@ export default function ModuleQuizScreen({
     // 4. Submit to server in the background
     (async () => {
       try {
-        const moduleObjects = [{ module_id: processedModuleId }];
-        const serverResult = await submitQuizForGrading(
-          assessmentId,
-          answerIndices,
-          questions,
-          userId,
-          cachedUser?.name ?? cachedUser?.email,
-          moduleObjects,
-          processedModuleId,
-          moduleId,
-        );
-        if (serverResult && isMountedRef.current) {
-          console.log("[Quiz Submit] Background grading succeeded, merging feedback.");
-          setGradingResult((prev: any) => ({
-            ...prev,
-            feedback: serverResult.feedback ?? prev.feedback,
-          }));
-          // Emit events again now that the database and Redis cache are updated
-          eventBus.emit("refresh_dashboard");
-          eventBus.emit("refresh_reports");
+        if (isBaseline) {
+          const { getFirebaseToken } = await import("../../api/users/Request");
+          const token = await getFirebaseToken();
+          const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
+          const res = await fetch(`${EXPO_API_URL}/api/submit-assessment`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              assessment_id: assessmentId,
+              answers: answerIndices,
+              user_id: userId,
+              module_id: moduleId,
+              assessment_type: "baseline",
+            }),
+          });
+          if (res.ok && isMountedRef.current) {
+            console.log("[Quiz Submit] Baseline evaluation submitted successfully.");
+            const resJson = await res.json().catch(() => null);
+            if (resJson) {
+              setGradingResult((prev: any) => ({
+                ...prev,
+                feedback: resJson.feedback ?? prev?.feedback,
+              }));
+            }
+            eventBus.emit("refresh_dashboard");
+            eventBus.emit("refresh_reports");
+          }
+        } else {
+          const moduleObjects = [{ module_id: processedModuleId }];
+          const serverResult = await submitQuizForGrading(
+            assessmentId,
+            answerIndices,
+            questions,
+            userId,
+            cachedUser?.name ?? cachedUser?.email,
+            moduleObjects,
+            processedModuleId,
+            moduleId,
+          );
+          if (serverResult && isMountedRef.current) {
+            console.log("[Quiz Submit] Background grading succeeded, merging feedback.");
+            setGradingResult((prev: any) => ({
+              ...prev,
+              feedback: serverResult.feedback ?? prev.feedback,
+            }));
+            // Emit events again now that the database and Redis cache are updated
+            eventBus.emit("refresh_dashboard");
+            eventBus.emit("refresh_reports");
+          }
         }
       } catch (err: any) {
         // If offline, enqueue for silent retry on reconnect
@@ -538,12 +599,13 @@ export default function ModuleQuizScreen({
               user_id: userId,
               processed_module_id: processedModuleId,
               module_id: moduleId,
+              ...(isBaseline ? { assessment_type: "baseline" } : {}),
             }),
             headers: {
               "Content-Type": "application/json",
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
-            label: `Quiz submit for module ${processedModuleId}`,
+            label: isBaseline ? `Baseline submit for module ${moduleId}` : `Quiz submit for module ${processedModuleId}`,
           });
           console.log("[Quiz Submit] Queued offline — will retry on reconnect.");
         } else {

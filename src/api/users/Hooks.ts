@@ -690,6 +690,8 @@ export interface ResolvedPlanCard {
   processedModuleIds: string[];
   completedModulesCount: number;
   completedAt?: string | null;
+  hasBaseline?: boolean;
+  baselineCompleted?: boolean;
 }
 
 interface DashboardStats {
@@ -1217,34 +1219,8 @@ export const useGetDashboardSummary = (
 
           const baselineEvidenceByModuleId: Record<string, any[]> =
             data?.baseline_evidence_by_module_id ?? {};
-          const activePlans = statusFilteredPlans.filter((p: any) => {
-            const isBaseline = p?.baseline_assessment === true;
-            if (!isBaseline) return true;
-
-            const moduleId = String(p?.module_id ?? "");
-            const hasBaselineEvidence =
-              Array.isArray(baselineEvidenceByModuleId[moduleId]) &&
-              baselineEvidenceByModuleId[moduleId].length > 0;
-
-            if (hasBaselineEvidence) {
-              logger.debug(
-                `[Hook] ✅ Plan "${p?.learning_plan_id}" — baseline_assessment=true but ` +
-                  `baseline evidence found for module "${moduleId}" (completed via web) → showing`,
-              );
-              return true;
-            }
-
-            logger.debug(
-              `[Hook] ⏭️ Skipping plan "${p?.learning_plan_id}" — baseline_assessment=true, ` +
-                `no baseline evidence for module "${moduleId}" yet (mobile has no baseline-test flow)`,
-            );
-            return false;
-          });
-          logger.debug(
-            "[Hook] Active plans:",
-            activePlans.length,
-            `(${statusFilteredPlans.length - activePlans.length} baseline-assessment plans hidden)`,
-          );
+          const activePlans = statusFilteredPlans;
+          logger.debug("[Hook] Active plans:", activePlans.length);
 
           const completedProcessedModuleIds = new Set(
             (data?.progress ?? [])
@@ -1327,8 +1303,15 @@ export const useGetDashboardSummary = (
                   serverStatus === "COMPLETED" ? "COMPLETED" : "NOT_STARTED";
               }
 
+              const isBaseline = plan?.baseline_assessment === true;
+              const hasBaselineEvidence =
+                Array.isArray(baselineEvidenceByModuleId[moduleId]) &&
+                baselineEvidenceByModuleId[moduleId].length > 0;
+              const baselineCompleted =
+                hasBaselineEvidence || serverStatus === "COMPLETED";
+
               logger.debug(
-                `[Hook]   → status="${status}" (server="${serverStatus}", completed=${completedModulesCount}/${modules.length})`,
+                `[Hook]   → status="${status}" (server="${serverStatus}", completed=${completedModulesCount}/${modules.length}, hasBaseline=${isBaseline}, baselineCompleted=${baselineCompleted})`,
               );
 
               return {
@@ -1342,6 +1325,8 @@ export const useGetDashboardSummary = (
                 processedModuleIds,
                 completedModulesCount,
                 completedAt: plan.completed_at || null,
+                hasBaseline: isBaseline,
+                baselineCompleted,
               };
             }),
           );
