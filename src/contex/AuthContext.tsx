@@ -6,6 +6,7 @@ import React, {
   useRef,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import { AppState, AppStateStatus } from "react-native";
 import {
   getUserByPhone,
@@ -107,11 +108,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const ACCOUNT_STATUS_CHECK_INTERVAL_MS = 15 * 60 * 1000;
   const lastCheckedAtRef = useRef<number>(0);
   const isCheckingRef = useRef(false);
+  // Ref mirror of forcedLogoutReason — readable synchronously before React flushes state.
+  const forcedLogoutReasonRef = useRef<typeof forcedLogoutReason>(null);
 
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const storedToken = await AsyncStorage.getItem(JWT_TOKEN_KEY);
+        // Primary: read JWT from SecureStore (encrypted)
+        let storedToken = await SecureStore.getItemAsync(JWT_TOKEN_KEY).catch(() => null);
+
+        // One-time migration: if no token in SecureStore but one exists in
+        // plain AsyncStorage (old installs), migrate it silently.
+        if (!storedToken) {
+          const legacyToken = await AsyncStorage.getItem("@auth_jwt_token").catch(() => null);
+          if (legacyToken) {
+            await SecureStore.setItemAsync(JWT_TOKEN_KEY, legacyToken).catch(() => {});
+            await AsyncStorage.removeItem("@auth_jwt_token").catch(() => {});
+            storedToken = legacyToken;
+            console.log("[Auth] Migrated JWT from AsyncStorage → SecureStore");
+          }
+        }
+
         const storedUserJson = await AsyncStorage.getItem(CACHED_USER_KEY);
         const storedPhone = await AsyncStorage.getItem(PHONE_NUMBER_KEY);
 
@@ -134,7 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
         if (storedToken) {
           setIsLoggedIn(true);
-          console.log("[Auth] Restored JWT token session");
+          console.log("[Auth] Restored JWT token session (SecureStore)");
         } else {
           setIsLoggedIn(false);
         }
@@ -233,7 +250,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       console.log("[Auth] Verifying OTP via backend API...");
       const res = await verifyOtpApi(phone, otp);
       if (res.success && res.token) {
-        await AsyncStorage.setItem(JWT_TOKEN_KEY, res.token);
+        // Store JWT in encrypted SecureStore instead of plain AsyncStorage
+        await SecureStore.setItemAsync(JWT_TOKEN_KEY, res.token);
         if (phoneNumber) {
           await AsyncStorage.setItem(PHONE_NUMBER_KEY, phoneNumber);
         }
@@ -293,14 +311,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           (key) =>
             key === CACHED_USER_KEY ||
             key === PHONE_NUMBER_KEY ||
-            key === JWT_TOKEN_KEY ||
             appDataKeyPrefixes.some((prefix) => key.startsWith(prefix)),
         );
         if (keysToRemove.length > 0) {
           await AsyncStorage.multiRemove(keysToRemove);
         }
+        // JWT lives in SecureStore — delete it separately
+        await SecureStore.deleteItemAsync(JWT_TOKEN_KEY).catch(() => {});
         console.log(
-          `[Auth] Cleared ${keysToRemove.length} AsyncStorage key(s) on logout:`,
+          `[Auth] Cleared ${keysToRemove.length} AsyncStorage key(s) + SecureStore JWT on logout:`,
           keysToRemove,
         );
       } catch (error) {
@@ -333,12 +352,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!userResponse?.user) {
         // User record vanished entirely — treat like deactivation.
         console.warn("[Auth] verifyAccountStatus — user no longer found");
+        forcedLogoutReasonRef.current = "user_deactivated";
         setForcedLogoutReason("user_deactivated");
         await logout();
         return;
       }
       if (!userResponse.user.is_active) {
         console.warn("[Auth] verifyAccountStatus — user is now inactive");
+        forcedLogoutReasonRef.current = "user_deactivated";
         setForcedLogoutReason("user_deactivated");
         await logout();
         return;
@@ -351,6 +372,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       );
       if (companyActive === false) {
         console.warn("[Auth] verifyAccountStatus — company is now inactive");
+        forcedLogoutReasonRef.current = "company_deactivated";
         setForcedLogoutReason("company_deactivated");
         await logout();
         return;

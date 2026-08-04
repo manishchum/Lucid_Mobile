@@ -1,5 +1,6 @@
 import { logger } from "../../utils/UnifiedLogger";
 import { emitSessionInvalid, SessionInvalidReason } from "../sessionEvents";
+import * as SecureStore from "expo-secure-store";
 import {
   UserResponse,
   UserRolesResponse,
@@ -27,14 +28,15 @@ const EXPO_API_URL =
 const API_BASE_URL = `${EXPO_API_URL}/api`;
 const MODULE_CHAT_URL = `${API_BASE_URL}/module-chat`;
 
-export const JWT_TOKEN_KEY = "@auth_jwt_token";
+export const JWT_TOKEN_KEY = "auth_jwt_token";
 
 export const getFirebaseToken = async (): Promise<string | null> => {
   try {
-    const token = await AsyncStorage.getItem(JWT_TOKEN_KEY);
+    // JWT is stored in SecureStore (encrypted on-device storage)
+    const token = await SecureStore.getItemAsync(JWT_TOKEN_KEY);
     if (token) return token;
   } catch (e) {
-    logger.error("[Request] Error reading JWT token from AsyncStorage:", e);
+    logger.error("[Request] Error reading JWT token from SecureStore:", e);
   }
   return null;
 };
@@ -190,6 +192,47 @@ interface ApiFetchOptions extends RequestInit {
   noCache?: boolean;
   /** Skip auth headers entirely */
   public?: boolean;
+  /** Internal flag — prevents infinite refresh loops */
+  _isRetry?: boolean;
+}
+
+/**
+ * Silently refreshes the JWT by calling POST /api/auth/refresh.
+ * On success, stores the new token in SecureStore and returns it.
+ * On failure, returns null — caller should treat this as a fatal auth failure.
+ */
+async function refreshTokenSilently(): Promise<string | null> {
+  try {
+    const currentToken = await getFirebaseToken();
+    if (!currentToken) return null;
+
+    const refreshUrl = `${API_BASE_URL}/auth/refresh`;
+    const response = await fetch(refreshUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${currentToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      logger.warn(`[refreshToken] Refresh failed with status ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data?.token) {
+      // Persist fresh token to SecureStore
+      const { setItemAsync } = await import("expo-secure-store");
+      await setItemAsync(JWT_TOKEN_KEY, data.token);
+      logger.info("[refreshToken] Token refreshed successfully");
+      return data.token;
+    }
+    return null;
+  } catch (err) {
+    logger.error("[refreshToken] Exception during token refresh:", err);
+    return null;
+  }
 }
 
 async function apiFetch<T = any>(
@@ -230,8 +273,7 @@ async function apiFetch<T = any>(
     body = await response.json();
   } catch {}
 
-  // Session/account-validity codes --- sessionEvents.ts. Handled here
-  // once, rather than at every individual call site.
+  // Session/account-validity codes — handled centrally, emit session event.
   const code = body?.code as SessionInvalidReason | undefined;
   if (
     response.status === 401 &&
@@ -248,6 +290,20 @@ async function apiFetch<T = any>(
       response.status,
       code,
     );
+  }
+
+  // Generic 401 (most likely an expired token) — attempt a silent refresh once.
+  if (response.status === 401 && !options._isRetry && !options.public) {
+    logger.warn(`[apiFetch] 401 on ${url} — attempting silent token refresh`);
+    const newToken = await refreshTokenSilently();
+    if (newToken) {
+      // Retry the original request with the fresh token
+      return apiFetch<T>(url, { ...options, _isRetry: true });
+    }
+    // Refresh failed — the token is truly invalid; force re-login
+    logger.error("[apiFetch] Token refresh failed — emitting SESSION_TERMINATED");
+    emitSessionInvalid("SESSION_TERMINATED");
+    throw new ApiError("Session expired. Please log in again.", 401, "SESSION_TERMINATED");
   }
 
   if (!response.ok) {

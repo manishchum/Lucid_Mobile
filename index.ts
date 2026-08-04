@@ -7,19 +7,15 @@ try {
   const messaging = require('@react-native-firebase/messaging').default;
   if (messaging) {
     messaging().setBackgroundMessageHandler(async (remoteMessage: any) => {
-      console.log('[FCM] Message handled in the background:', remoteMessage);
-      
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-      const { getDashboardSummary } = require('./src/api/users/Request');
-      const { getContentCategories, getContentItems } = require('./src/api/content-library/Request');
-
       const type = remoteMessage.data?.type || "";
       const userId = remoteMessage.data?.userId || "";
       const companyId = remoteMessage.data?.companyId || "";
 
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+
+      // Resolve user/company IDs from cache if not in payload
       let resolvedUserId = userId;
       let resolvedCompanyId = companyId;
-
       try {
         const cachedUserJson = await AsyncStorage.getItem('@cached_user');
         if (cachedUserJson) {
@@ -31,39 +27,45 @@ try {
         console.warn('[FCM Background] Failed to read cached user:', e);
       }
 
-      if (resolvedUserId) {
+      // COST-02: Only fetch what this specific notification type actually needs.
+      // Avoid the previous pattern of always fetching dashboard + categories + items.
+      const needsDashboard =
+        type === "sprint_assigned" ||
+        type === "sprint_updated" ||
+        type === "dashboard_update" ||
+        type === ""; // unknown type — refresh dashboard as a safe default
+
+      const needsContent =
+        type === "content_updated" ||
+        type === "categories_updated";
+
+      if (needsDashboard && resolvedUserId) {
         try {
-          console.log('[FCM Background] Fetching fresh dashboard summary for user:', resolvedUserId);
+          const { getDashboardSummary } = require('./src/api/users/Request');
           const data = await getDashboardSummary(resolvedUserId, resolvedCompanyId || "");
-          const cacheKey = `@dashboard_data_${resolvedUserId}`;
-          await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
-          console.log('[FCM Background] Successfully updated dashboard cache.');
+          await AsyncStorage.setItem(`@dashboard_data_${resolvedUserId}`, JSON.stringify(data));
+          console.log('[FCM Background] Dashboard cache updated for type:', type);
         } catch (err: any) {
-          console.error('[FCM Background] Failed to update dashboard cache:', err.message);
+          console.error('[FCM Background] Dashboard cache update failed:', err.message);
         }
       }
 
-      if (resolvedCompanyId) {
+      if (needsContent && resolvedCompanyId) {
         try {
-          console.log('[FCM Background] Fetching fresh content categories for company:', resolvedCompanyId);
-          const response = await getContentCategories(resolvedCompanyId);
-          const categories = response.data || [];
-          const cacheKey = `@content_categories_${resolvedCompanyId}`;
-          await AsyncStorage.setItem(cacheKey, JSON.stringify(categories));
-          console.log('[FCM Background] Successfully updated content categories cache.');
+          const { getContentCategories, getContentItems } = require('./src/api/content-library/Request');
+          const catResponse = await getContentCategories(resolvedCompanyId);
+          await AsyncStorage.setItem(
+            `@content_categories_${resolvedCompanyId}`,
+            JSON.stringify(catResponse.data || []),
+          );
+          const itemsResponse = await getContentItems(undefined, resolvedCompanyId);
+          await AsyncStorage.setItem(
+            `@content_items_all_${resolvedCompanyId}`,
+            JSON.stringify(itemsResponse.data || []),
+          );
+          console.log('[FCM Background] Content cache updated for type:', type);
         } catch (err: any) {
-          console.error('[FCM Background] Failed to update content categories cache:', err.message);
-        }
-
-        try {
-          console.log('[FCM Background] Fetching fresh content items for company:', resolvedCompanyId);
-          const response = await getContentItems(undefined, resolvedCompanyId);
-          const items = response.data || [];
-          const cacheKey = `@content_items_all_${resolvedCompanyId}`;
-          await AsyncStorage.setItem(cacheKey, JSON.stringify(items));
-          console.log('[FCM Background] Successfully updated content items cache.');
-        } catch (err: any) {
-          console.error('[FCM Background] Failed to update content items cache:', err.message);
+          console.error('[FCM Background] Content cache update failed:', err.message);
         }
       }
     });

@@ -4307,6 +4307,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"expo-secure-store@npm:~15.0.8":
+  version: 15.0.8
+  resolution: "expo-secure-store@npm:15.0.8"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/c3a581aae66990c442e566c677cd884f623e33ab43015e7c1be9c6fe46fbf0dfc57c6213ec12984c86455485d0b22524e37b8d24e19acfa8b7d0d83be914496b
+  languageName: node
+  linkType: hard
+
 "expo-server@npm:^1.0.7":
   version: 1.0.7
   resolution: "expo-server@npm:1.0.7"
@@ -5420,6 +5429,7 @@ __metadata:
     expo-print: "npm:~15.0.8"
     expo-screen-capture: "npm:~8.0.9"
     expo-screen-orientation: "npm:~9.0.9"
+    expo-secure-store: "npm:~15.0.8"
     expo-sharing: "npm:~14.0.8"
     expo-speech-recognition: "npm:^56.0.1"
     expo-status-bar: "npm:~3.0.9"
@@ -6935,7 +6945,7 @@ __metadata:
 
 "resolve@patch:resolve@npm%3A^1.22.11#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.22.2#optional!builtin<compat/resolve>":
   version: 1.22.12
-  resolution: "resolve@patch:resolve@npm%3A1.22.12#optional!builtin<compat/resolve>::version=1.22.12&hash=c3c19d"
+  resolution: "resolve@patch:resolve@npm%3A1.22.12#optional!builtin<compat/resolve>::version=1.22.12&hash=9bd1a5"
   dependencies:
     es-errors: "npm:^1.3.0"
     is-core-module: "npm:^2.16.1"
@@ -6943,7 +6953,7 @@ __metadata:
     supports-preserve-symlinks-flag: "npm:^1.0.0"
   bin:
     resolve: bin/resolve
-  checksum: 10c0/fc6519984ae1f894d877c0060ba8b1f5ba3bc0e85a02f74e141929c118c23d74d9735619a9cc2965397387e514884245c65d72a40731dcb6cfc84c7bcdc8321e
+  checksum: 10c0/e12af106e16e652bd83060e8afacece4ee3dcbd0f4cf028e3d9ad178e6ced9ecb1c87ee60158b239582313902a717f8adc57a9b76ea54b1994141ba15f420c65
   languageName: node
   linkType: hard
 

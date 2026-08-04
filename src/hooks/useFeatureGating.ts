@@ -53,8 +53,9 @@ export function useFeatureGating() {
   const getAvailableTier = (): Tier | null => deriveFrontendTier(addons);
 
   const hasFeature = (featureName: FeatureName | string): boolean => {
-    // Fail open API hasn't told us about addons at all yet - show everything for now..
-    if (!addonsKnown) return true;
+    // While addons haven't loaded yet, hide all gated features to prevent
+    // a flash of locked content before the tenant data arrives.
+    if (!addonsKnown) return false;
 
     const config = FEATURE_CONFIG[featureName as FeatureName];
     if (!config) {

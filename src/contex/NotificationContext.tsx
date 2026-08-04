@@ -118,9 +118,29 @@ export const NotificationProvider = ({
 
 
 
+  /**
+   * Navigates to the correct screen based on the notification payload.
+   * Called from both foreground toast taps and background/quit notification taps.
+   *
+   * Dispatch table:
+   *   sprint_assigned | sprint_updated → Sprint tab
+   *   (default)                        → Notifications screen
+   */
   const handleSprintNotificationClick = useCallback(
-    async (sprintId?: string, assignmentTitle?: string) => {
-      navigate("Notifications");
+    async (sprintId?: string, assignmentTitle?: string, notifType?: string) => {
+      try {
+        const type = notifType ?? "";
+
+        if (type === "sprint_assigned" || type === "sprint_updated" || sprintId) {
+          // Navigate to the Sprint tab so the user sees their assigned sprint
+          navigate(STACK_ROUTES.SPRINT as any);
+        } else {
+          navigate("Notifications");
+        }
+      } catch (err) {
+        logger.warn("[NotificationContext] Navigation from notification failed:", err);
+        navigate("Notifications");
+      }
     },
     [],
   );
@@ -319,19 +339,17 @@ export const NotificationProvider = ({
             "[FCM] Notification caused app to open from background state:",
             remoteMessage,
           );
+          const notifType = remoteMessage.data?.type ?? "";
           const val =
             remoteMessage.data?.id ||
             remoteMessage.data?.learning_plan_id ||
             remoteMessage.data?.module_id;
           const titleVal = remoteMessage.data?.assignment_title;
-          if (val || titleVal) {
-            handleSprintNotificationClick(
-              String(val || ""),
-              String(titleVal || ""),
-            );
-          } else {
-            navigate("Notifications");
-          }
+          handleSprintNotificationClick(
+            String(val || ""),
+            String(titleVal || ""),
+            notifType,
+          );
         });
 
       // 2. Handle when app is in closed (quit) state and notification is clicked
@@ -343,23 +361,20 @@ export const NotificationProvider = ({
               "[FCM] Notification caused app to open from quit state:",
               remoteMessage,
             );
+            const notifType = remoteMessage.data?.type ?? "";
             const val =
               remoteMessage.data?.id ||
               remoteMessage.data?.learning_plan_id ||
               remoteMessage.data?.module_id;
             const titleVal = remoteMessage.data?.assignment_title;
-            if (val || titleVal) {
-              setTimeout(() => {
-                handleSprintNotificationClick(
-                  String(val || ""),
-                  String(titleVal || ""),
-                );
-              }, 800);
-            } else {
-              setTimeout(() => {
-                navigate("Notifications");
-              }, 500);
-            }
+            // Delay slightly for cold-start: navigation ref may not be ready yet
+            setTimeout(() => {
+              handleSprintNotificationClick(
+                String(val || ""),
+                String(titleVal || ""),
+                notifType,
+              );
+            }, 800);
           }
         })
         .catch((error: any) => {
