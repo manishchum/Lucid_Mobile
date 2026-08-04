@@ -8,23 +8,19 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, AppStateStatus } from "react-native";
 import {
-  getAuth,
-  signInWithPhoneNumber,
-  onAuthStateChanged,
-  signOut,
-  FirebaseAuthTypes,
-} from "@react-native-firebase/auth";
-import {
   getUserByPhone,
   recordUserLogin,
   getCompanyActiveStatus,
+  sendOtpApi,
+  verifyOtpApi,
+  JWT_TOKEN_KEY,
 } from "../api/users/Request";
 import { onSessionInvalid, SessionInvalidReason } from "../api/sessionEvents";
 import { logger } from "../utils/UnifiedLogger";
 
 export interface CachedUser {
   userId: string;
-  firebaseUid: string; // firebase_uid from users table — needed for endpoints that validate against Firebase JWT
+  firebaseUid: string; // firebase_uid from users table
   name: string;
   email: string;
   phone: string;
@@ -95,12 +91,6 @@ function toE164(rawPhone: string): string {
   return digits.startsWith("91") ? `+${digits}` : `+91${digits}`;
 }
 
-// ─── DEV ONLY ────────────────────────────────────────────────────────────────
-// Set to true when testing on emulator or device without Play Integrity.
-// MUST be false (or removed) before production build.
-const DISABLE_APP_VERIFICATION_FOR_TESTING = __DEV__;
-// ─────────────────────────────────────────────────────────────────────────────
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -119,10 +109,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const isCheckingRef = useRef(false);
 
   useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
     const initAuth = async () => {
       try {
+        const storedToken = await AsyncStorage.getItem(JWT_TOKEN_KEY);
         const storedUserJson = await AsyncStorage.getItem(CACHED_USER_KEY);
+        const storedPhone = await AsyncStorage.getItem(PHONE_NUMBER_KEY);
+
+        if (storedPhone) {
+          setPhoneNumber(storedPhone);
+        }
+
         if (storedUserJson) {
           try {
             const user: CachedUser = JSON.parse(storedUserJson);
@@ -136,52 +132,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         }
 
-        const auth = getAuth();
-
-        // Bypass Play Integrity / reCAPTCHA during development
-        if (DISABLE_APP_VERIFICATION_FOR_TESTING) {
-          auth.settings.appVerificationDisabledForTesting = true;
-          console.log(
-            "[Auth] ⚠️  appVerificationDisabledForTesting = true (DEV only)",
-          );
+        if (storedToken) {
+          setIsLoggedIn(true);
+          console.log("[Auth] Restored JWT token session");
+        } else {
+          setIsLoggedIn(false);
         }
-
-        unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-          try {
-            console.log(
-              "[Auth] Firebase auth state changed:",
-              firebaseUser?.uid ?? "null",
-            );
-            if (firebaseUser) {
-              setIsLoggedIn(true);
-              if (firebaseUser.phoneNumber && !phoneNumber) {
-                // firebaseUser.phoneNumber is always E.164 e.g. +919811006045
-                // phoneNumber state must stay as the raw 10-digit number (used by UI + sendOTP)
-                const raw = firebaseUser.phoneNumber.replace(/^\+91/, "");
-                setPhoneNumber(raw);
-                await AsyncStorage.setItem(PHONE_NUMBER_KEY, raw);
-              }
-            } else {
-              setIsLoggedIn(false);
-              setCachedUser(null);
-              setPhoneNumber("");
-              await AsyncStorage.removeItem(CACHED_USER_KEY);
-              await AsyncStorage.removeItem(PHONE_NUMBER_KEY);
-            }
-          } finally {
-            setIsInitializing(false);
-          }
-        });
       } catch (err) {
         console.error("[Auth] initAuth error:", err);
+      } finally {
         setIsInitializing(false);
       }
     };
     initAuth();
-
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
   }, []);
 
   const checkUserExists = async (phone: string): Promise<CheckUserResult> => {
@@ -250,14 +213,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const sendOTP = async (): Promise<boolean> => {
     try {
-      const phone = `+91${phoneNumber}`;
-      console.log("[Auth] Sending OTP to:", phone);
-      const confirmationResult = await signInWithPhoneNumber(getAuth(), phone);
-      setConfirmation(
-        confirmationResult as FirebaseAuthTypes.ConfirmationResult,
-      );
-      setOtpStep(true);
-      return true;
+      const phone = toE164(phoneNumber);
+      console.log("[Auth] Sending OTP via backend API to:", phone);
+      const res = await sendOtpApi(phone);
+      if (res.success) {
+        setOtpStep(true);
+        return true;
+      }
+      return false;
     } catch (error: any) {
       console.error("[Auth] OTP Send Error:", error);
       return false;
@@ -266,21 +229,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const verifyOTP = async (otp: string): Promise<boolean> => {
     try {
-      if (!confirmation) throw new Error("No confirmation result available");
-      console.log("[Auth] Verifying OTP...");
-      await confirmation.confirm(otp);
-      setOtpStep(false);
-      setConfirmation(null);
-
-      if (phoneNumber) {
-        try {
+      const phone = toE164(phoneNumber);
+      console.log("[Auth] Verifying OTP via backend API...");
+      const res = await verifyOtpApi(phone, otp);
+      if (res.success && res.token) {
+        await AsyncStorage.setItem(JWT_TOKEN_KEY, res.token);
+        if (phoneNumber) {
           await AsyncStorage.setItem(PHONE_NUMBER_KEY, phoneNumber);
-        } catch (storageErr) {
-          console.error("[Auth] Error saving phone number:", storageErr);
         }
-      }
 
-      return true;
+        if (res.user) {
+          const user: CachedUser = {
+            userId: res.user.user_id,
+            firebaseUid: res.user.firebase_uid ?? "",
+            name: res.user.name,
+            email: res.user.email,
+            phone: res.user.phone,
+            companyId: res.user.company_id,
+            departmentId: res.user.department_id,
+            managerId: res.user.manager_id,
+            isActive: res.user.is_active,
+          };
+          setCachedUser(user);
+          await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(user));
+        }
+
+        setOtpStep(false);
+        setIsLoggedIn(true);
+        return true;
+      }
+      return false;
     } catch (error: any) {
       console.error("[Auth] OTP Verification Error:", error);
       return false;
@@ -290,7 +268,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const logout = async () => {
     try {
       console.log("[Auth] Logging out...");
-      await signOut(getAuth());
       setIsLoggedIn(false);
       setCachedUser(null);
       setPhoneNumber("");
@@ -316,6 +293,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           (key) =>
             key === CACHED_USER_KEY ||
             key === PHONE_NUMBER_KEY ||
+            key === JWT_TOKEN_KEY ||
             appDataKeyPrefixes.some((prefix) => key.startsWith(prefix)),
         );
         if (keysToRemove.length > 0) {
