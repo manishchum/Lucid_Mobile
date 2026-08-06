@@ -75,8 +75,9 @@ export default function LoginScreen() {
       if (!success) {
         setError("Failed to send OTP. Please try again.");
       }
-    } catch (err) {
-      setError("Network connection failed. Please try again.");
+    } catch (err: any) {
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
+      setError(`Connection failed: ${err?.message || "Please check connection"} (${apiUrl})`);
     } finally {
       setIsLoading(false);
     }
@@ -111,9 +112,6 @@ export default function LoginScreen() {
 
             <View style={styles.inputLabelRow}>
               <Text style={styles.label}>Phone Number</Text>
-              {error ? (
-                <Text style={styles.errorTextInline}>{error}</Text>
-              ) : null}
             </View>
 
             <View style={[styles.inputContainer, error && styles.inputError]}>
@@ -135,6 +133,10 @@ export default function LoginScreen() {
                 placeholderTextColor="#64748B"
               />
             </View>
+
+            {error ? (
+              <Text style={styles.errorTextBelow}>{error}</Text>
+            ) : null}
 
             <TouchableOpacity
               style={[

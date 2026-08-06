@@ -47,6 +47,7 @@ export default StyleSheet.create({
   inputLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   label: { fontSize: 14, fontWeight: '600', color: '#475569' },
   errorTextInline: { fontSize: 12, color: '#EF4444', fontWeight: '500' },
+  errorTextBelow: { fontSize: 12, color: '#EF4444', fontWeight: '500', marginTop: -22, marginBottom: 20 },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',

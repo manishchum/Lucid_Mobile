@@ -220,7 +220,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return { status: "active", user };
     } catch (error) {
       console.error("[Auth] checkUserExists error:", error);
-      return { status: "not_registered" };
+      throw error;
     }
   };
 
