@@ -18,6 +18,7 @@ import {
 } from "../api/users/Request";
 import { onSessionInvalid, SessionInvalidReason } from "../api/sessionEvents";
 import { logger } from "../utils/UnifiedLogger";
+import auth from "@react-native-firebase/auth";
 
 export interface CachedUser {
   userId: string;
@@ -112,23 +113,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const forcedLogoutReasonRef = useRef<typeof forcedLogoutReason>(null);
 
   useEffect(() => {
-    const initAuth = async () => {
+    // 1. Restore cached data from AsyncStorage
+    const restoreCachedData = async () => {
       try {
-        // Primary: read JWT from SecureStore (encrypted)
-        let storedToken = await SecureStore.getItemAsync(JWT_TOKEN_KEY).catch(() => null);
-
-        // One-time migration: if no token in SecureStore but one exists in
-        // plain AsyncStorage (old installs), migrate it silently.
-        if (!storedToken) {
-          const legacyToken = await AsyncStorage.getItem("@auth_jwt_token").catch(() => null);
-          if (legacyToken) {
-            await SecureStore.setItemAsync(JWT_TOKEN_KEY, legacyToken).catch(() => {});
-            await AsyncStorage.removeItem("@auth_jwt_token").catch(() => {});
-            storedToken = legacyToken;
-            console.log("[Auth] Migrated JWT from AsyncStorage → SecureStore");
-          }
-        }
-
         const storedUserJson = await AsyncStorage.getItem(CACHED_USER_KEY);
         const storedPhone = await AsyncStorage.getItem(PHONE_NUMBER_KEY);
 
@@ -140,28 +127,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           try {
             const user: CachedUser = JSON.parse(storedUserJson);
             setCachedUser(user);
-            console.log(
-              "[Auth] Restored cachedUser from AsyncStorage:",
-              user.userId,
-            );
+            console.log("[Auth] Restored cachedUser from AsyncStorage:", user.userId);
           } catch (e) {
             console.error("[Auth] Error parsing cachedUser:", e);
           }
         }
-
-        if (storedToken) {
-          setIsLoggedIn(true);
-          console.log("[Auth] Restored JWT token session (SecureStore)");
-        } else {
-          setIsLoggedIn(false);
-        }
       } catch (err) {
-        console.error("[Auth] initAuth error:", err);
-      } finally {
-        setIsInitializing(false);
+        console.error("[Auth] Error restoring cached auth data:", err);
       }
     };
-    initAuth();
+    restoreCachedData();
+
+    // 2. Listen to Firebase native authentication state
+    const unsubscribe = auth().onAuthStateChanged((user) => {
+      if (user) {
+        setIsLoggedIn(true);
+        console.log("[Auth] Native Firebase session is active:", user.uid);
+      } else {
+        setIsLoggedIn(false);
+        console.log("[Auth] Native Firebase session is inactive");
+      }
+      setIsInitializing(false);
+    });
+
+    return unsubscribe;
   }, []);
 
   const checkUserExists = async (phone: string): Promise<CheckUserResult> => {
@@ -249,9 +238,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const phone = toE164(phoneNumber);
       console.log("[Auth] Verifying OTP via backend API...");
       const res = await verifyOtpApi(phone, otp);
-      if (res.success && res.token) {
-        // Store JWT in encrypted SecureStore instead of plain AsyncStorage
-        await SecureStore.setItemAsync(JWT_TOKEN_KEY, res.token);
+      if (res.success && res.custom_token) {
+        // Exchange custom token for a Firebase session on the device
+        console.log("[Auth] Signing in with Firebase custom token...");
+        await auth().signInWithCustomToken(res.custom_token);
+
         if (phoneNumber) {
           await AsyncStorage.setItem(PHONE_NUMBER_KEY, phoneNumber);
         }
@@ -273,7 +264,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         setOtpStep(false);
-        setIsLoggedIn(true);
         return true;
       }
       return false;
@@ -285,8 +275,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const logout = async () => {
     try {
-      console.log("[Auth] Logging out...");
-      setIsLoggedIn(false);
+      console.log("[Auth] Logging out from Firebase...");
+      await auth().signOut();
+      
       setCachedUser(null);
       setPhoneNumber("");
       setOtpStep(false);
@@ -316,7 +307,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         if (keysToRemove.length > 0) {
           await AsyncStorage.multiRemove(keysToRemove);
         }
-        // JWT lives in SecureStore — delete it separately
+        // JWT lives in SecureStore — delete it if present
         await SecureStore.deleteItemAsync(JWT_TOKEN_KEY).catch(() => {});
         console.log(
           `[Auth] Cleared ${keysToRemove.length} AsyncStorage key(s) + SecureStore JWT on logout:`,

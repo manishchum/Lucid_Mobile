@@ -73,3 +73,6 @@ GoogleService-Info.plist
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Android signing keys
+my-release-key.keystore
