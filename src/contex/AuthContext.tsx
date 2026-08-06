@@ -37,6 +37,13 @@ export interface CheckUserResult {
   user?: CachedUser;
 }
 
+export interface VerifyOtpResult {
+  success: boolean;
+  message?: string;
+  remainingAttempts?: number;
+  isInvalidated?: boolean;
+}
+
 interface AuthContextType {
   isLoggedIn: boolean;
   isInitializing: boolean;
@@ -53,7 +60,7 @@ interface AuthContextType {
   setPhoneNumber: (phone: string) => void;
   checkUserExists: (phone: string) => Promise<CheckUserResult>;
   sendOTP: () => Promise<boolean>;
-  verifyOTP: (otp: string) => Promise<boolean>;
+  verifyOTP: (otp: string) => Promise<VerifyOtpResult>;
   logout: () => Promise<void>;
 }
 
@@ -233,7 +240,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const verifyOTP = async (otp: string): Promise<boolean> => {
+  const verifyOTP = async (otp: string): Promise<VerifyOtpResult> => {
     try {
       const phone = toE164(phoneNumber);
       console.log("[Auth] Verifying OTP via backend API...");
@@ -264,12 +271,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         setOtpStep(false);
-        return true;
+        return { success: true };
       }
-      return false;
+      return { success: false, message: "Invalid OTP code. Please try again." };
     } catch (error: any) {
       console.error("[Auth] OTP Verification Error:", error);
-      return false;
+      const msg: string = error?.message || "Invalid OTP code.";
+      const isInvalidated =
+        msg.includes("invalidated") ||
+        msg.includes("Too many failed") ||
+        msg.includes("EXPIRED");
+      let remainingAttempts: number | undefined;
+      const match = msg.match(/(\d+)\s*attempts?\s*remaining/i);
+      if (match) {
+        remainingAttempts = parseInt(match[1], 10);
+      } else if (isInvalidated) {
+        remainingAttempts = 0;
+      }
+      return {
+        success: false,
+        message: msg,
+        remainingAttempts,
+        isInvalidated,
+      };
     }
   };
 
