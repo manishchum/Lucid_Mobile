@@ -11,6 +11,7 @@ import {
   AppState,
   AppStateStatus,
   Animated,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -19,13 +20,15 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import messaging from "@react-native-firebase/messaging";
-import { getAuth, getIdToken } from "@react-native-firebase/auth";
+import { getFirebaseToken } from "../api/users/Request";
 import { useAuth } from "./AuthContext";
 import { eventBus } from "../utils/EventBus";
 import { navigate } from "../navigations/NavigationService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { STACK_ROUTES } from "../navigations/Routes";
 import { logger } from "../utils/UnifiedLogger";
+import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
+
 
 let isMessagingSupported = false;
 try {
@@ -70,7 +73,9 @@ const NotificationContext = createContext<NotificationContextType | undefined>(
 const EXPO_API_URL =
   process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
 const API_BASE_URL = `${EXPO_API_URL}/api`;
-const WS_BASE_URL = EXPO_API_URL.replace(/^http/, "ws") + "/api";
+const WS_BASE_URL = EXPO_API_URL.startsWith("https")
+  ? EXPO_API_URL.replace(/^https/, "wss") + "/api"
+  : EXPO_API_URL.replace(/^http/, "ws") + "/api";
 
 export const NotificationProvider = ({
   children,
@@ -95,9 +100,47 @@ export const NotificationProvider = ({
     [],
   );
 
+  // Supabase Realtime subscription for notifications table
+  useRealtimeSubscription<Notification>({
+    table: "notifications",
+    event: "INSERT",
+    filter: cachedUser?.userId ? `user_id=eq.${cachedUser.userId}` : undefined,
+    onPayload: (payload) => {
+      const newNotif = payload.new as Notification;
+      if (newNotif && newNotif.id && newNotif.title) {
+        setNotifications((prev) => [newNotif, ...prev]);
+        setUnreadCount((count) => count + 1);
+        showToast(newNotif.title, newNotif.message || "");
+        eventBus.emit("refresh_dashboard");
+      }
+    },
+  });
+
+
+
+  /**
+   * Navigates to the correct screen based on the notification payload.
+   * Called from both foreground toast taps and background/quit notification taps.
+   *
+   * Dispatch table:
+   *   sprint_assigned | sprint_updated → Sprint tab
+   *   (default)                        → Notifications screen
+   */
   const handleSprintNotificationClick = useCallback(
-    async (sprintId?: string, assignmentTitle?: string) => {
-      navigate("Notifications");
+    async (sprintId?: string, assignmentTitle?: string, notifType?: string) => {
+      try {
+        const type = notifType ?? "";
+
+        if (type === "sprint_assigned" || type === "sprint_updated" || sprintId) {
+          // Navigate to the Sprint tab so the user sees their assigned sprint
+          navigate(STACK_ROUTES.SPRINT as any);
+        } else {
+          navigate("Notifications");
+        }
+      } catch (err) {
+        logger.warn("[NotificationContext] Navigation from notification failed:", err);
+        navigate("Notifications");
+      }
     },
     [],
   );
@@ -107,16 +150,12 @@ export const NotificationProvider = ({
 
   // Helper to get headers for API requests
   const getAuthHeaders = async () => {
-    const authInstance = getAuth();
-    const currentUser = authInstance.currentUser;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (currentUser) {
-      const token = await getIdToken(currentUser).catch(() => null);
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
+    const token = await getFirebaseToken().catch(() => null);
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
     }
     if (cachedUser?.userId) {
       headers["X-User-ID"] = cachedUser.userId;
@@ -202,10 +241,28 @@ export const NotificationProvider = ({
 
       if (enabled) {
         logger.info("[FCM] Notification permission granted.");
-        const fcmToken = await messaging().getToken();
+        await messaging().registerDeviceForRemoteMessages().catch(() => null);
+
+        // Configure High Importance Notification Channel for Android 8.0+
+        if (Platform.OS === "android" && (messaging() as any).createNotificationChannel) {
+          try {
+            await (messaging() as any).createNotificationChannel({
+              id: "lucid_high_importance_channel",
+              name: "Lucid System Alerts",
+              description: "High priority notification tray alerts for assigned sprints and tasks",
+              importance: 4, // High importance (sound + status tray popup)
+              sound: "default",
+              vibration: true,
+            });
+            logger.info("[FCM] Android High Importance Channel created.");
+          } catch (chanErr) {
+            logger.warn("[FCM] Channel creation warning:", chanErr);
+          }
+        }
+
+        const fcmToken = await messaging().getToken().catch(() => null);
         if (fcmToken) {
           logger.info("[FCM] Obtained token:", fcmToken);
-          // Register fcm_token with backend
           const headers = await getAuthHeaders();
           await fetch(`${API_BASE_URL}/notifications/register-token`, {
             method: "POST",
@@ -282,19 +339,17 @@ export const NotificationProvider = ({
             "[FCM] Notification caused app to open from background state:",
             remoteMessage,
           );
+          const notifType = remoteMessage.data?.type ?? "";
           const val =
             remoteMessage.data?.id ||
             remoteMessage.data?.learning_plan_id ||
             remoteMessage.data?.module_id;
           const titleVal = remoteMessage.data?.assignment_title;
-          if (val || titleVal) {
-            handleSprintNotificationClick(
-              String(val || ""),
-              String(titleVal || ""),
-            );
-          } else {
-            navigate("Notifications");
-          }
+          handleSprintNotificationClick(
+            String(val || ""),
+            String(titleVal || ""),
+            notifType,
+          );
         });
 
       // 2. Handle when app is in closed (quit) state and notification is clicked
@@ -306,23 +361,20 @@ export const NotificationProvider = ({
               "[FCM] Notification caused app to open from quit state:",
               remoteMessage,
             );
+            const notifType = remoteMessage.data?.type ?? "";
             const val =
               remoteMessage.data?.id ||
               remoteMessage.data?.learning_plan_id ||
               remoteMessage.data?.module_id;
             const titleVal = remoteMessage.data?.assignment_title;
-            if (val || titleVal) {
-              setTimeout(() => {
-                handleSprintNotificationClick(
-                  String(val || ""),
-                  String(titleVal || ""),
-                );
-              }, 800);
-            } else {
-              setTimeout(() => {
-                navigate("Notifications");
-              }, 500);
-            }
+            // Delay slightly for cold-start: navigation ref may not be ready yet
+            setTimeout(() => {
+              handleSprintNotificationClick(
+                String(val || ""),
+                String(titleVal || ""),
+                notifType,
+              );
+            }, 800);
           }
         })
         .catch((error: any) => {
@@ -349,17 +401,16 @@ export const NotificationProvider = ({
 
     let active = true;
     let reconnectTimeout: any;
+    let retryDelay = 1000;
     const isForeground = { current: AppState.currentState === "active" };
 
     const connectWS = async () => {
       try {
-        const authInstance = getAuth();
-        const currentUser = authInstance.currentUser;
-        if (!currentUser) return;
-        const token = await getIdToken(currentUser).catch(() => null);
+        if (!cachedUser?.userId) return;
+        const token = await getFirebaseToken().catch(() => null);
         if (!token) return;
 
-        const wsUrl = `${WS_BASE_URL}/notifications/ws?token=${token}&user_id=${cachedUser.userId}`;
+        const wsUrl = `${WS_BASE_URL}/notifications/ws?user_id=${cachedUser.userId}`;
         logger.info(
           "[WebSocket] Connecting to WS server for user:",
           cachedUser.userId,
@@ -368,6 +419,10 @@ export const NotificationProvider = ({
 
         ws.onopen = () => {
           logger.info("[WebSocket] Connected successfully");
+          retryDelay = 1000; // Reset exponential backoff on successful connection
+          if (token) {
+            ws.send(JSON.stringify({ type: "auth", token }));
+          }
         };
 
         ws.onmessage = (event) => {
@@ -451,10 +506,13 @@ export const NotificationProvider = ({
         };
 
         ws.onclose = (e) => {
-          logger.info("[WebSocket] Closed:", e.reason);
+          logger.info(`[WebSocket] Closed (${e.reason || "network drop"}). Reconnecting in ${retryDelay}ms...`);
           if (active && isForeground.current) {
-            // Reconnect after 5 seconds
-            reconnectTimeout = setTimeout(connectWS, 5000);
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(() => {
+              retryDelay = Math.min(retryDelay * 2, 30000);
+              connectWS();
+            }, retryDelay);
           }
         };
 

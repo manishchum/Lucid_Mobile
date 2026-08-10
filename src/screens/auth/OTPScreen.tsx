@@ -10,25 +10,33 @@ import {
   StyleSheet,
   Dimensions,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { STACK_ROUTES, APP_ROUTES } from "../../navigations/Routes";
+import { safeHaptics } from "../../utils/haptics";
 import { useAuth } from "../../contex/AuthContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
 
-export default function OTPScreen() {
-  const { phoneNumber, verifyOTP, sendOTP } = useAuth(); // Added sendOTP for resend logic
+export default function OTPScreen({ navigation }: { navigation: any }) {
+  const insets = useSafeAreaInsets();
+  const { phoneNumber, verifyOTP, sendOTP } = useAuth();
 
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [timer, setTimer] = useState(30);
+  const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null);
+  const [isInvalidated, setIsInvalidated] = useState(false);
   const [showNoInternet, setShowNoInternet] = useState(false);
 
   const isOnline = useNetworkStatus();
   const inputRef = useRef<TextInput>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Focus input on mount
   useEffect(() => {
@@ -37,16 +45,19 @@ export default function OTPScreen() {
     }, 500);
   }, []);
 
-  // Timer Logic
+  // Timer Logic — ref-tracked to prevent double-fire on re-mount
   useEffect(() => {
-    const interval = setInterval(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
       setTimer((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
-    return () => clearInterval(interval);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, []);
 
   const handleVerify = async () => {
-    if (otp.length !== 6) return;
+    if (otp.length !== 6 || isInvalidated) return;
 
     if (isOnline === false) {
       setShowNoInternet(true);
@@ -56,14 +67,33 @@ export default function OTPScreen() {
     setIsLoading(true);
     setError("");
 
-    const success = await verifyOTP(otp);
+    const result = await verifyOTP(otp);
 
-    if (!success) {
-      setError("Invalid OTP. Please try again.");
+    if (!result.success) {
+      safeHaptics.errorNotification();
+      setError(result.message || "Invalid OTP code. Please try again.");
       setOtp("");
       inputRef.current?.focus();
+
+      if (result.remainingAttempts !== undefined) {
+        setRemainingAttempts(result.remainingAttempts);
+      } else if (remainingAttempts !== null && remainingAttempts > 0) {
+        setRemainingAttempts((prev) => (prev !== null ? prev - 1 : 4));
+      } else {
+        setRemainingAttempts(4);
+      }
+
+      if (
+        result.isInvalidated ||
+        (result.remainingAttempts !== undefined && result.remainingAttempts <= 0)
+      ) {
+        setIsInvalidated(true);
+        setRemainingAttempts(0);
+      }
+    } else {
+      safeHaptics.successNotification();
     }
-    // Note: If success, the AuthContext should handle navigation via state change
+    // Note: If success, the AuthContext handles navigation via state change
     setIsLoading(false);
   };
 
@@ -75,6 +105,9 @@ export default function OTPScreen() {
     }
     setTimer(30);
     setError("");
+    setRemainingAttempts(null);
+    setIsInvalidated(false);
+    setOtp("");
     await sendOTP();
   };
 
@@ -91,7 +124,7 @@ export default function OTPScreen() {
               styles.otpBox,
               char && styles.otpBoxActive,
               isFocused && styles.otpBoxFocused,
-              error && styles.otpBoxError,
+              (error || isInvalidated) && styles.otpBoxError,
             ]}
           >
             <Text style={styles.otpText}>{char}</Text>
@@ -114,7 +147,7 @@ export default function OTPScreen() {
           </Text>
 
           <TouchableOpacity
-            onPress={() => inputRef.current?.focus()}
+            onPress={() => !isInvalidated && inputRef.current?.focus()}
             style={styles.otpRow}
             activeOpacity={1}
           >
@@ -124,13 +157,16 @@ export default function OTPScreen() {
           <TextInput
             ref={inputRef}
             value={otp}
-            onChangeText={(txt) => setOtp(txt.replace(/[^0-9]/g, ""))}
+            onChangeText={(txt) =>
+              !isInvalidated && setOtp(txt.replace(/[^0-9]/g, ""))
+            }
             maxLength={6}
             keyboardType="number-pad"
             style={styles.hiddenInput}
+            editable={!isInvalidated}
           />
 
-          {error && (
+          {error ? (
             <View style={styles.errorContainer}>
               <MaterialCommunityIcons
                 name="alert-circle"
@@ -139,15 +175,16 @@ export default function OTPScreen() {
               />
               <Text style={styles.errorText}>{error}</Text>
             </View>
-          )}
+          ) : null}
 
           <TouchableOpacity
             style={[
               styles.verifyButton,
-              (otp.length !== 6 || isLoading) && styles.buttonDisabled,
+              (otp.length !== 6 || isLoading || isInvalidated) &&
+                styles.buttonDisabled,
             ]}
             onPress={handleVerify}
-            disabled={otp.length !== 6 || isLoading}
+            disabled={otp.length !== 6 || isLoading || isInvalidated}
           >
             {isLoading ? (
               <ActivityIndicator color="#FFF" />
@@ -193,9 +230,24 @@ const styles = StyleSheet.create({
     color: "#64748B",
     textAlign: "center",
     lineHeight: 24,
-    marginBottom: 40,
+    marginBottom: 16,
   },
   phoneHighlight: { color: "#1E293B", fontWeight: "700" },
+  attemptsBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginBottom: 28,
+  },
+  attemptsBadgeNormal: { backgroundColor: "#EFF6FF" },
+  attemptsBadgeWarning: { backgroundColor: "#FEF3C7" },
+  attemptsBadgeError: { backgroundColor: "#FEE2E2" },
+  attemptsText: { fontSize: 13, fontWeight: "600", marginLeft: 6 },
+  attemptsTextNormal: { color: "#2563EB" },
+  attemptsTextWarning: { color: "#D97706" },
+  attemptsTextError: { color: "#DC2626" },
   otpRow: {
     flexDirection: "row",
     justifyContent: "space-between",

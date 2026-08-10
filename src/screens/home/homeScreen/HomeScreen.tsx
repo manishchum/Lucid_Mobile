@@ -18,20 +18,47 @@ import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "../../../contex/AuthContext";
 import { useActiveSprint } from "../../../contex/ActiveSprintContext";
 import { useGetUserByPhone, useGetDashboardSummary } from "../../../api/users";
+import { eventBus } from "../../../utils/EventBus";
+import { useRealtimeSubscription } from "../../../hooks/useRealtimeSubscription";
 import createStyles from "./style";
 import { useScreenProtection } from "../../../hooks/security/useScreenProtection";
 import ScreenRecordingGuard from "../../../components/security/ScreenRecordingGuard";
 import AssignedSection from "../components/AssignedSection";
 import RefreshSpinner from "../../../components/pullToRefresh/RefreshSpinner";
 
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
 const ProgressRing = ({ percentage }: { percentage: number }) => {
   const size = 72;
   const strokeWidth = 7;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset =
-    circumference -
-    (circumference * Math.min(Math.max(percentage, 0), 100)) / 100;
+
+  const validPercentage = Math.min(Math.max(percentage || 0, 0), 100);
+  const animatedVal = React.useRef(new Animated.Value(validPercentage)).current;
+  const [displayPercentage, setDisplayPercentage] = React.useState(Math.round(validPercentage));
+
+  React.useEffect(() => {
+    Animated.timing(animatedVal, {
+      toValue: validPercentage,
+      duration: 650,
+      useNativeDriver: false,
+    }).start();
+
+    const listenerId = animatedVal.addListener(({ value }) => {
+      setDisplayPercentage(Math.round(value));
+    });
+
+    return () => {
+      animatedVal.removeListener(listenerId);
+    };
+  }, [validPercentage, animatedVal]);
+
+  const strokeDashoffset = animatedVal.interpolate({
+    inputRange: [0, 100],
+    outputRange: [circumference, 0],
+    extrapolate: "clamp",
+  });
 
   return (
     <View
@@ -51,7 +78,7 @@ const ProgressRing = ({ percentage }: { percentage: number }) => {
           strokeWidth={strokeWidth}
           fill="none"
         />
-        <Circle
+        <AnimatedCircle
           cx={size / 2}
           cy={size / 2}
           r={radius}
@@ -72,12 +99,13 @@ const ProgressRing = ({ percentage }: { percentage: number }) => {
         }}
       >
         <Text style={{ fontSize: 13, fontWeight: "800", color: "#0F172A" }}>
-          {Math.round(percentage)}%
+          {displayPercentage}%
         </Text>
       </View>
     </View>
   );
 };
+
 
 const styles = createStyles();
 
@@ -159,6 +187,53 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       refetch(false); // Silent background update on screen focus
     }, [refetch]),
   );
+
+  React.useEffect(() => {
+    const handleRefresh = () => {
+      refetch(false);
+    };
+    const unsub1 = eventBus.on("refresh_dashboard", handleRefresh);
+    const unsub2 = eventBus.on("TASK_UPDATED", handleRefresh);
+    const unsub3 = eventBus.on("PROGRESS_NEEDS_RECALCULATION", handleRefresh);
+    return () => {
+      unsub1();
+      unsub2();
+      unsub3();
+    };
+  }, [refetch]);
+
+  // Real-time Supabase WebSocket subscription for employee_assessments
+  useRealtimeSubscription({
+    table: "employee_assessments",
+    onPayload: () => {
+      refetch(false);
+    },
+  });
+
+  // Real-time Supabase WebSocket subscription for tasks
+  useRealtimeSubscription({
+    table: "tasks",
+    onPayload: () => {
+      refetch(false);
+    },
+  });
+
+  // Real-time Supabase WebSocket subscription for module progress
+  useRealtimeSubscription({
+    table: "module_progress",
+    onPayload: () => {
+      refetch(false);
+    },
+  });
+
+  // Real-time Supabase WebSocket subscription for task submissions
+  useRealtimeSubscription({
+    table: "task_submissions",
+    onPayload: () => {
+      refetch(false);
+    },
+  });
+
 
   const isLoading = (userLoading && !cachedUser) || dashboardLoading;
 

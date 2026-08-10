@@ -21,6 +21,8 @@ import { getUserByPhone } from "../../api/users/Request";
 import { APP_ROUTES } from "../../navigations/Routes";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 
+import SignOutModal from "../modals/SignOutModal";
+
 const { width } = Dimensions.get("window");
 const DRAWER_WIDTH = width * 0.78;
 
@@ -39,24 +41,10 @@ export default function AppDrawer() {
   const { isDrawerOpen, closeDrawer } = useDrawer();
   const { cachedUser, phoneNumber, logout } = useAuth();
   const { hasFeature } = useFeatureGating();
-  
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+
   const confirmLogout = () => {
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to sign out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Sign Out",
-          style: "destructive",
-          onPress: () => {
-            closeDrawer();
-            logout();
-          },
-        },
-      ],
-      { cancelable: true }
-    );
+    setShowSignOutModal(true);
   };
   
   const [user, setUser] = useState<any>(null);
@@ -266,6 +254,16 @@ export default function AppDrawer() {
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
       </Animated.View>
+
+      <SignOutModal
+        visible={showSignOutModal}
+        onCancel={() => setShowSignOutModal(false)}
+        onConfirm={() => {
+          setShowSignOutModal(false);
+          closeDrawer();
+          logout();
+        }}
+      />
     </View>
   );
 }

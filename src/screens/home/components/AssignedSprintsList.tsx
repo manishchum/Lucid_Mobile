@@ -18,6 +18,8 @@ export interface PlanCard {
   processedModuleIds?: string[];
   completedModulesCount?: number;
   completedAt?: string | null;
+  hasBaseline?: boolean;
+  baselineCompleted?: boolean;
 }
 
 interface AssignedSprintsListProps {
@@ -357,8 +359,23 @@ export default function AssignedSprintsList({
                 const progressPercentage = getSprintProgress(plan);
                 const completedCount = Math.min(plan.completedModulesCount ?? 0, plan.totalModules);
                 const totalModules = plan.totalModules;
+                const isBaselinePending = plan.hasBaseline && !plan.baselineCompleted;
 
                 const handleCardPress = () => {
+                  if (isBaselinePending) {
+                    Alert.alert(
+                      "Baseline Required",
+                      "Please complete the baseline evaluation to unlock the modules for this sprint.",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Take Baseline",
+                          onPress: handleTakeBaseline,
+                        },
+                      ]
+                    );
+                    return;
+                  }
                   setActiveSprint({
                     moduleId: plan.moduleId,
                     planId: plan.planKey,
@@ -371,41 +388,78 @@ export default function AssignedSprintsList({
                   navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
                 };
 
+                const handleTakeBaseline = () => {
+                  navigation.navigate(STACK_ROUTES.MODULE_QUIZ, {
+                    moduleId: plan.moduleId,
+                    title: `${plan.title} - Baseline Evaluation`,
+                    assessmentType: "baseline",
+                    isBaseline: true,
+                  });
+                };
+
                 return (
-                  <TouchableOpacity
-                    key={plan.planKey}
-                    style={styles.unifiedCard}
-                    onPress={handleCardPress}
-                    activeOpacity={0.8}
-                  >
-                    {/* Slot A: Left Icon */}
-                    <View style={styles.slotLeft}>
-                      <View style={[styles.planIconCircle, styles.iconCircleInProgress]}>
-                        <MaterialCommunityIcons name="clock-time-eight-outline" size={20} color="#F59E0B" />
-                      </View>
-                    </View>
-
-                    {/* Slot B: Center Title & Progress Bar */}
-                    <View style={styles.slotCenter}>
-                      <Text numberOfLines={2} style={styles.planTitleText}>
-                        {plan.title}
-                      </Text>
-                      <View style={styles.listProgressContainer}>
-                        <View style={styles.progressBarTrack}>
-                          <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
+                  <View key={plan.planKey} style={styles.cardWrapper}>
+                    <TouchableOpacity
+                      style={styles.unifiedCard}
+                      onPress={handleCardPress}
+                      activeOpacity={0.8}
+                    >
+                      {/* Slot A: Left Icon */}
+                      <View style={styles.slotLeft}>
+                        <View style={[styles.planIconCircle, styles.iconCircleInProgress]}>
+                          <MaterialCommunityIcons name="clock-time-eight-outline" size={20} color="#F59E0B" />
                         </View>
-                        <Text style={styles.progressDetailText}>
-                          {completedCount}/{totalModules} modules
-                        </Text>
                       </View>
-                    </View>
 
-                    {/* Slot C: Right Status dot & Chevron */}
-                    <View style={styles.slotRight}>
-                      <View style={[styles.statusDot, styles.dotInProgress]} />
-                      <MaterialCommunityIcons name="chevron-right" size={18} color="#CBD5E1" />
-                    </View>
-                  </TouchableOpacity>
+                      {/* Slot B: Center Title & Progress Bar */}
+                      <View style={styles.slotCenter}>
+                        <Text numberOfLines={2} style={styles.planTitleText}>
+                          {plan.title}
+                        </Text>
+                        <View style={styles.listProgressContainer}>
+                          <View style={styles.progressBarTrack}>
+                            <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
+                          </View>
+                          <Text style={styles.progressDetailText}>
+                            {completedCount}/{totalModules} modules
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Slot C: Right Status dot & Chevron */}
+                      <View style={styles.slotRight}>
+                        <View style={[styles.statusDot, styles.dotInProgress]} />
+                        <MaterialCommunityIcons name="chevron-right" size={18} color="#CBD5E1" />
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* Baseline Bar */}
+                    {plan.hasBaseline && (
+                      <View style={styles.baselineRow}>
+                        {isBaselinePending ? (
+                          <>
+                            <View style={styles.baselineBadgeAmber}>
+                              <MaterialCommunityIcons name="alert-circle-outline" size={13} color="#D97706" />
+                              <Text style={styles.baselineBadgeTextAmber}>Baseline Required</Text>
+                            </View>
+                            <TouchableOpacity
+                              style={styles.takeBaselineBtn}
+                              onPress={handleTakeBaseline}
+                              activeOpacity={0.85}
+                            >
+                              <MaterialCommunityIcons name="clipboard-text-outline" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                              <Text style={styles.takeBaselineBtnText}>Take Baseline</Text>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <View style={styles.baselineBadgeGreen}>
+                            <MaterialCommunityIcons name="check-circle-outline" size={13} color="#059669" />
+                            <Text style={styles.baselineBadgeTextGreen}>Baseline Completed</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </View>
                 );
               })}
             </View>
@@ -413,11 +467,11 @@ export default function AssignedSprintsList({
         </View>
       )}
 
-      {/* ── 2. NEW RECOMMENDATIONS (NOT STARTED DROPDOWN) ──────────────── */}
+      {/* ── 2. New Sprints (NOT STARTED DROPDOWN) ──────────────── */}
       {notStartedSprints.length > 0 && (
         <View style={styles.sectionContainer}>
           <DropdownSectionHeader
-            title="New Recommendations"
+            title="New Sprints"
             count={notStartedSprints.length}
             isExpanded={recommendationsExpanded}
             onToggle={() => setRecommendationsExpanded(!recommendationsExpanded)}
@@ -425,7 +479,23 @@ export default function AssignedSprintsList({
           {recommendationsExpanded && (
             <View style={styles.dropdownContentContainer}>
               {notStartedSprints.map((plan) => {
+                const isBaselinePending = plan.hasBaseline && !plan.baselineCompleted;
+
                 const handleCardPress = () => {
+                  if (isBaselinePending) {
+                    Alert.alert(
+                      "Baseline Required",
+                      "Please complete the baseline evaluation to unlock the modules for this sprint.",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Take Baseline",
+                          onPress: handleTakeBaseline,
+                        },
+                      ]
+                    );
+                    return;
+                  }
                   setActiveSprint({
                     moduleId: plan.moduleId,
                     planId: plan.planKey,
@@ -438,36 +508,73 @@ export default function AssignedSprintsList({
                   navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
                 };
 
+                const handleTakeBaseline = () => {
+                  navigation.navigate(STACK_ROUTES.MODULE_QUIZ, {
+                    moduleId: plan.moduleId,
+                    title: `${plan.title} - Baseline Evaluation`,
+                    assessmentType: "baseline",
+                    isBaseline: true,
+                  });
+                };
+
                 return (
-                  <TouchableOpacity
-                    key={plan.planKey}
-                    style={styles.unifiedCard}
-                    onPress={handleCardPress}
-                    activeOpacity={0.8}
-                  >
-                    {/* Slot A: Left Icon */}
-                    <View style={styles.slotLeft}>
-                      <View style={[styles.planIconCircle, styles.iconCircleRecommendations]}>
-                        <MaterialCommunityIcons name="book-multiple" size={20} color="#4F46E5" />
+                  <View key={plan.planKey} style={styles.cardWrapper}>
+                    <TouchableOpacity
+                      style={styles.unifiedCard}
+                      onPress={handleCardPress}
+                      activeOpacity={0.8}
+                    >
+                      {/* Slot A: Left Icon */}
+                      <View style={styles.slotLeft}>
+                        <View style={[styles.planIconCircle, styles.iconCircleRecommendations]}>
+                          <MaterialCommunityIcons name="book-multiple" size={20} color="#4F46E5" />
+                        </View>
                       </View>
-                    </View>
 
-                    {/* Slot B: Center Title & Subtext */}
-                    <View style={styles.slotCenter}>
-                      <Text numberOfLines={2} style={styles.planTitleText}>
-                        {plan.title}
-                      </Text>
-                      <Text style={styles.progressDetailText}>
-                        {plan.totalModules} Modules
-                      </Text>
-                    </View>
+                      {/* Slot B: Center Title & Subtext */}
+                      <View style={styles.slotCenter}>
+                        <Text numberOfLines={2} style={styles.planTitleText}>
+                          {plan.title}
+                        </Text>
+                        <Text style={styles.progressDetailText}>
+                          {plan.totalModules} Modules
+                        </Text>
+                      </View>
 
-                    {/* Slot C: Right Status dot & Chevron */}
-                    <View style={styles.slotRight}>
-                      <View style={[styles.statusDot, styles.dotNotStarted]} />
-                      <MaterialCommunityIcons name="chevron-right" size={18} color="#CBD5E1" />
-                    </View>
-                  </TouchableOpacity>
+                      {/* Slot C: Right Status dot & Chevron */}
+                      <View style={styles.slotRight}>
+                        <View style={[styles.statusDot, styles.dotNotStarted]} />
+                        <MaterialCommunityIcons name="chevron-right" size={18} color="#CBD5E1" />
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* Baseline Bar */}
+                    {plan.hasBaseline && (
+                      <View style={styles.baselineRow}>
+                        {isBaselinePending ? (
+                          <>
+                            <View style={styles.baselineBadgeAmber}>
+                              <MaterialCommunityIcons name="alert-circle-outline" size={13} color="#D97706" />
+                              <Text style={styles.baselineBadgeTextAmber}>Baseline Required</Text>
+                            </View>
+                            <TouchableOpacity
+                              style={styles.takeBaselineBtn}
+                              onPress={handleTakeBaseline}
+                              activeOpacity={0.85}
+                            >
+                              <MaterialCommunityIcons name="clipboard-text-outline" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                              <Text style={styles.takeBaselineBtnText}>Take Baseline</Text>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <View style={styles.baselineBadgeGreen}>
+                            <MaterialCommunityIcons name="check-circle-outline" size={13} color="#059669" />
+                            <Text style={styles.baselineBadgeTextGreen}>Baseline Completed</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </View>
                 );
               })}
             </View>
@@ -698,6 +805,64 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
 
+  cardWrapper: {
+    marginBottom: 12,
+  },
+  baselineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: -4,
+    marginBottom: 4,
+  },
+  baselineBadgeAmber: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 4,
+  },
+  baselineBadgeTextAmber: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#D97706",
+  },
+  baselineBadgeGreen: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#D1FAE5",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 4,
+  },
+  baselineBadgeTextGreen: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#059669",
+  },
+  takeBaselineBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F59E0B",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  takeBaselineBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
   // Unified Card Container (Fixed Slot Architecture for List Items)
   unifiedCard: {
     height: 96,
@@ -706,7 +871,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: "#e2e8f0",
     shadowColor: "#0F172A",

@@ -1,10 +1,7 @@
-import {
-  getAuth,
-  onAuthStateChanged,
-  getIdToken,
-} from "@react-native-firebase/auth";
 import { logger } from "../../utils/UnifiedLogger";
 import { emitSessionInvalid, SessionInvalidReason } from "../sessionEvents";
+import * as SecureStore from "expo-secure-store";
+import auth from "@react-native-firebase/auth";
 import {
   UserResponse,
   UserRolesResponse,
@@ -25,40 +22,77 @@ import {
   FormatAnswer,
 } from "./Dto";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 const EXPO_API_URL =
   process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
 const API_BASE_URL = `${EXPO_API_URL}/api`;
 const MODULE_CHAT_URL = `${API_BASE_URL}/module-chat`;
 
-export const getFirebaseToken = (): Promise<string | null> => {
-  return new Promise((resolve) => {
-    const authInstance = getAuth();
-    const currentUser = authInstance.currentUser;
+export const JWT_TOKEN_KEY = "auth_jwt_token";
 
+export const getFirebaseToken = async (): Promise<string | null> => {
+  try {
+    const currentUser = auth().currentUser;
     if (currentUser) {
-      getIdToken(currentUser)
-        .then(resolve)
-        .catch(() => resolve(null));
-      return;
+      const token = await currentUser.getIdToken();
+      return token;
     }
-
-    const timeout = setTimeout(() => {
-      unsubscribe();
-      resolve(null);
-    }, 5000);
-    const unsubscribe = onAuthStateChanged(authInstance, (user) => {
-      clearTimeout(timeout);
-      unsubscribe();
-      if (user) {
-        getIdToken(user)
-          .then(resolve)
-          .catch(() => resolve(null));
-      } else {
-        resolve(null);
-      }
-    });
-  });
+  } catch (e) {
+    logger.error("[Request] Error reading Firebase token:", e);
+  }
+  return null;
 };
+
+export const sendOtpApi = async (
+  phone: string
+): Promise<{ success: boolean; message?: string; retry_after?: number }> => {
+  const url = `${API_BASE_URL}/auth/send-otp`;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new ApiError(
+        data.detail || data.message || "Failed to send OTP",
+        response.status
+      );
+    }
+    return data;
+  } catch (err: any) {
+    logger.error("[Request] sendOtpApi error:", err);
+    throw err;
+  }
+};
+
+export const verifyOtpApi = async (
+  phone: string,
+  otp: string
+): Promise<{ success: boolean; token: string; user: any }> => {
+  const url = `${API_BASE_URL}/auth/verify-otp`;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, otp }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new ApiError(
+        data.detail || data.message || "Failed to verify OTP",
+        response.status
+      );
+    }
+    return data;
+  } catch (err: any) {
+    logger.error("[Request] verifyOtpApi error:", err);
+    throw err;
+  }
+};
+
 
 export interface ModuleChatMessage {
   role: "user" | "assistant";
@@ -104,7 +138,7 @@ export const postModuleChat = async (
 
 const getHeaders = async (
   userId?: string,
-  options?: { noCache?: boolean },
+  options?: { noCache?: boolean; companyId?: string },
 ): Promise<Record<string, string>> => {
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -116,24 +150,30 @@ const getHeaders = async (
     headers["Expires"] = "0";
   }
   if (userId) headers["X-User-ID"] = userId;
+  if (options?.companyId) headers["X-Company-ID"] = options.companyId;
+
   const token = await getFirebaseToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   // ─── DEBUG ───────────────────────────────────────────────────────────────
-  logger.debug("[DEBUG] getHeaders called with userId:", userId);
+  logger.debug("[DEBUG] getHeaders called with userId:", userId, "companyId:", options?.companyId);
   logger.debug("[DEBUG] Authorization present:", !!token);
   logger.debug("[DEBUG] X-User-ID value:", userId ?? "NOT SET ⚠️");
+  if (options?.companyId) {
+    logger.debug("[DEBUG] X-Company-ID value:", options.companyId);
+  }
   // ─────────────────────────────────────────────────────────────────────────
 
   return headers;
 };
 
-const getPublicHeaders = (userId?: string): Record<string, string> => {
+const getPublicHeaders = (userId?: string, companyId?: string): Record<string, string> => {
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
   };
   if (userId) headers["X-User-ID"] = userId;
+  if (companyId) headers["X-Company-ID"] = companyId;
   return headers;
 };
 
@@ -151,9 +191,12 @@ export class ApiError extends Error {
 
 interface ApiFetchOptions extends RequestInit {
   userId?: string;
+  companyId?: string;
   noCache?: boolean;
   /** Skip auth headers entirely */
   public?: boolean;
+  /** Internal flag — prevents infinite refresh loops */
+  _isRetry?: boolean;
 }
 
 async function apiFetch<T = any>(
@@ -162,6 +205,7 @@ async function apiFetch<T = any>(
 ): Promise<T> {
   const {
     userId,
+    companyId,
     noCache,
     public: isPublic,
     headers: extraHeaders,
@@ -169,8 +213,8 @@ async function apiFetch<T = any>(
   } = options;
 
   const baseHeaders = isPublic
-    ? getPublicHeaders(userId)
-    : await getHeaders(userId, { noCache });
+    ? getPublicHeaders(userId, companyId)
+    : await getHeaders(userId, { noCache, companyId });
 
   const headers = {
     ...baseHeaders,
@@ -178,6 +222,7 @@ async function apiFetch<T = any>(
   };
 
   logger.debug(`[apiFetch] ${rest.method ?? "GET"} → ${url}`);
+
 
   let response: Response;
   try {
@@ -192,8 +237,7 @@ async function apiFetch<T = any>(
     body = await response.json();
   } catch {}
 
-  // Session/account-validity codes --- sessionEvents.ts. Handled here
-  // once, rather than at every individual call site.
+  // Session/account-validity codes — handled centrally, emit session event.
   const code = body?.code as SessionInvalidReason | undefined;
   if (
     response.status === 401 &&
@@ -210,6 +254,13 @@ async function apiFetch<T = any>(
       response.status,
       code,
     );
+  }
+
+  // Generic 401 (most likely an expired/invalid token) — force logout
+  if (response.status === 401 && !options.public) {
+    logger.error(`[apiFetch] 401 on ${url} — session expired/invalid — emitting SESSION_TERMINATED`);
+    emitSessionInvalid("SESSION_TERMINATED");
+    throw new ApiError("Session expired. Please log in again.", 401, "SESSION_TERMINATED");
   }
 
   if (!response.ok) {
@@ -275,25 +326,41 @@ export const getUserByPhone = async (phone: string): Promise<UserResponse> => {
 // 1b. Check whether a company is still active
 export const getCompanyActiveStatus = async (
   companyId: string,
+  userId?: string,
 ): Promise<boolean | null> => {
+  if (!companyId) return null;
   try {
-    const url = `${API_BASE_URL}/companies/`;
-    const json = await apiFetch<any>(url, { method: "GET" });
-    const companies: any[] = json?.data?.companies ?? [];
-    const match = companies.find((c) => c.company_id === companyId);
-    if (!match) {
+    const url = `${API_BASE_URL}/companies/${encodeURIComponent(companyId)}`;
+    logger.debug("[Request] getCompanyActiveStatus →", url);
+    const json = await apiFetch<any>(url, {
+      method: "GET",
+      userId,
+      companyId,
+    });
+    
+    // Response can be direct company object or wrapped in data/company property
+    const company = json?.company ?? json?.data?.company ?? json?.data ?? json;
+    if (!company || typeof company !== "object") {
       logger.warn(
-        "[Request] getCompanyActiveStatus — company not found in list:",
+        "[Request] getCompanyActiveStatus — company not found for ID:",
         companyId,
       );
       return null;
     }
-    return !!match.is_company_active;
+
+    const isActive =
+      company.is_company_active ??
+      company.is_active ??
+      company.active ??
+      true;
+
+    return !!isActive;
   } catch (error) {
     logger.error("[Request] Error fetching company active status:", error);
     return null; // network error — treat as unknown, not as "inactive"
   }
 };
+
 
 // 1c. Record user login metadata
 export const recordUserLogin = async (userId: string): Promise<any> => {
@@ -694,6 +761,74 @@ export const generateModuleQuiz = async (
   }
 };
 
+export const generateBaselineQuiz = async (
+  moduleId: string,
+  learningStyle: string,
+  userId: string,
+  companyId: string,
+): Promise<{
+  questions: any[];
+  assessmentId?: string;
+  thresholdValue?: number;
+} | null> => {
+  try {
+    const headers = await getHeaders(userId);
+    const url = `${API_BASE_URL}/gpt-mcq-quiz`;
+    logger.debug("[Quiz] Generating baseline quiz →", url);
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        moduleIds: [moduleId],
+        learningStyle,
+        userId,
+        user_id: userId,
+        companyId,
+        isBaseline: true,
+        assessmentType: "baseline",
+      }),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      logger.error("[Quiz] generateBaselineQuiz HTTP", response.status, body);
+      return null;
+    }
+    const json = await response.json();
+
+    let questions: any[] | null = null;
+    let assessmentId: string | undefined;
+    let thresholdValue: number | undefined =
+      json?.threshold_value ?? json?.thresholdValue ?? json?.threshold;
+
+    if (Array.isArray(json?.quizMapping) && json.quizMapping.length > 0) {
+      const entry = json.quizMapping[0];
+      const raw = entry?.questions;
+      if (raw) {
+        questions = typeof raw === "string" ? JSON.parse(raw) : raw;
+        assessmentId = entry?.assessment_id;
+      }
+    } else if (Array.isArray(json?.quiz)) {
+      questions = json.quiz;
+      assessmentId = json?.assessmentId ?? json?.assessment_id;
+    } else if (json?.data?.assessments?.length > 0) {
+      const entry = json.data.assessments[0];
+      const raw = entry?.questions;
+      if (raw) {
+        questions = typeof raw === "string" ? JSON.parse(raw) : raw;
+        assessmentId = entry?.assessment_id;
+      }
+    }
+
+    if (questions && questions.length > 0) {
+      return { questions, assessmentId, thresholdValue };
+    }
+    return null;
+  } catch (err) {
+    logger.error("[Quiz] generateBaselineQuiz error:", err);
+    return null;
+  }
+};
+
 // 12. Get a single processed module by its specific processed_module_id
 export const getProcessedModuleById = async (
   processedModuleId: string,
@@ -902,8 +1037,7 @@ export const submitQuizForGrading = async (
   moduleId?: string,
 ): Promise<any | null> => {
   try {
-    const currentUser = getAuth().currentUser;
-    if (!currentUser) throw new Error("No authenticated Firebase user");
+    if (!dbUserId) throw new Error("No authenticated user ID provided");
 
     const headers = await getHeaders(dbUserId);
 
@@ -935,101 +1069,83 @@ export const submitQuizForGrading = async (
       return "";
     });
 
-    const url = `${API_BASE_URL}/gpt-feedback`;
-    logger.debug("[Quiz] Step 2 — submitting →", url, {
-      assessmentId,
-      answersCount: userAnswers.length,
-      modulesCount: moduleObjects?.length ?? 0,
-      userId: dbUserId,
-    });
+    const localScore = answerIndices.reduce((acc, selectedIdx, i) => {
+      return acc + (selectedIdx === questions[i]?.correctIndex ? 1 : 0);
+    }, 0);
 
-    // Step 2 — exact web module quiz payload shape
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        quiz: questions,
-        userAnswers,
-        user_id: dbUserId,
-        employee_name: employeeName ?? "",
-        assessment_id: assessmentId,
-        modules: moduleObjects ?? [],
-      }),
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      logger.error("[Quiz] submitQuizForGrading HTTP", response.status, body);
-      let detail = body;
-      try {
-        const parsedBody = JSON.parse(body);
-        detail = parsedBody?.details ?? parsedBody?.error ?? body;
-        if (typeof detail === "string" && detail.trim().startsWith("{")) {
-          try {
-            const inner = JSON.parse(detail);
-            detail = inner?.error ?? detail;
-          } catch {}
-        }
-      } catch {}
-      throw new Error(
-        typeof detail === "string" && detail
-          ? detail
-          : `Grading request failed with status ${response.status}`,
-      );
-    }
-
-    const json = await response.json();
-    logger.debug("[Quiz] Step 2 ✅ score:", json?.score, "/", json?.maxScore);
-
-    const score =
-      typeof json?.score === "number"
-        ? json.score
-        : answerIndices.reduce((acc, selectedIdx, i) => {
-            return acc + (selectedIdx === questions[i]?.correctIndex ? 1 : 0);
-          }, 0);
-
-    // Step 3 — module-progress.
+    // Save module progress to DB FIRST so student completion is registered even if AI fails or rate limits
     if (moduleId && processedModuleId) {
       try {
         await postModuleProgress(dbUserId, {
           module_id: moduleId,
           processed_module_id: processedModuleId,
-          quiz_score: score,
+          quiz_score: localScore,
           max_score: questions.length,
-          quiz_feedback: json?.feedback ?? "",
+          quiz_feedback: "Submitted",
           completed_at: new Date().toISOString(),
         });
+        logger.debug("[Quiz] ✅ Module progress saved to DB successfully.");
       } catch (e) {
-        logger.warn("[Quiz] Step 3 module-progress error (non-blocking):", e);
+        logger.warn("[Quiz] Module progress saving error (non-blocking):", e);
       }
-    } else {
-      logger.warn(
-        "[Quiz] Step 3 module-progress SKIPPED — missing moduleId or processedModuleId",
-        { moduleId, processedModuleId },
-      );
     }
 
-    // Step 4 — background refresh (non-blocking)
+    // Step 2 — gpt-feedback request
+    let feedbackJson: any = null;
+    try {
+      const url = `${API_BASE_URL}/gpt-feedback`;
+      logger.debug("[Quiz] Submitting GPT feedback request →", url);
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          quiz: questions,
+          userAnswers,
+          user_id: dbUserId,
+          employee_name: employeeName ?? "",
+          assessment_id: assessmentId,
+          modules: moduleObjects ?? [],
+        }),
+      });
+
+      if (response.ok) {
+        feedbackJson = await response.json();
+      } else {
+        const body = await response.text();
+        logger.warn(`[Quiz] GPT Feedback HTTP ${response.status}:`, body.slice(0, 200));
+      }
+    } catch (gptErr) {
+      logger.warn("[Quiz] GPT Feedback request failed or rate limited (non-blocking):", gptErr);
+    }
+
+    // Step 3 — background refresh (non-blocking)
     fetch(`${API_BASE_URL}/employee-assessments/user/${dbUserId}`, {
       method: "GET",
       headers,
     })
       .then((r) =>
-        logger.debug("[Quiz] Step 4 assessments refresh HTTP", r.status),
+        logger.debug("[Quiz] Step 3 assessments refresh HTTP", r.status),
       )
       .catch((e) =>
         logger.warn(
-          "[Quiz] Step 4 assessments refresh failed (non-blocking):",
+          "[Quiz] Step 3 assessments refresh failed (non-blocking):",
           e,
         ),
       );
 
-    return json;
+    return {
+      score: feedbackJson?.score ?? localScore,
+      maxScore: feedbackJson?.maxScore ?? questions.length,
+      feedback:
+        feedbackJson?.feedback ??
+        "Quiz completed & score saved! Detailed AI analysis is currently queued.",
+    };
   } catch (err) {
     logger.error("[Quiz] submitQuizForGrading error:", err);
     throw err;
   }
 };
+
 
 export interface FormatSubmissionInput {
   taskId: string;

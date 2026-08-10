@@ -7,7 +7,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
+  useWindowDimensions,
   Modal,
   StyleSheet,
 } from "react-native";
@@ -18,9 +18,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNetworkStatus } from "../../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../../components/networkModal/NetworkModal";
 
-const { width } = Dimensions.get("window");
-
 export default function LoginScreen() {
+  const { width } = useWindowDimensions();
   const { phoneNumber, setPhoneNumber, sendOTP, checkUserExists } = useAuth();
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -46,40 +45,42 @@ export default function LoginScreen() {
 
     setIsLoading(true);
 
-    // Step 1: Verify user registration, active status, and company validity
-    const result = await checkUserExists(phoneNumber);
+    try {
+      // Step 1: Verify user registration, active status, and company validity
+      const result = await checkUserExists(phoneNumber);
 
-    if (result.status === "not_registered") {
-      setShowNotRegisteredModal(true);
+      if (result.status === "not_registered") {
+        setShowNotRegisteredModal(true);
+        return;
+      }
+
+      if (result.status === "inactive") {
+        setAccessDeniedMessage(
+          "Access Denied. Your account is deactivated. Please contact your administrator."
+        );
+        setShowAccessDeniedModal(true);
+        return;
+      }
+
+      if (result.status === "company_invalid") {
+        setAccessDeniedMessage(
+          "Access Denied. Your company account is not registered or inactive. Please contact your administrator."
+        );
+        setShowAccessDeniedModal(true);
+        return;
+      }
+
+      // Step 2: User is verified, active, and company exists — safe to send OTP
+      const success = await sendOTP();
+      if (!success) {
+        setError("Failed to send OTP. Please try again.");
+      }
+    } catch (err: any) {
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
+      setError(`Connection failed: ${err?.message || "Please check connection"} (${apiUrl})`);
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    if (result.status === "inactive") {
-      setAccessDeniedMessage(
-        "Access Denied. Your account is deactivated. Please contact your administrator."
-      );
-      setShowAccessDeniedModal(true);
-      setIsLoading(false);
-      return;
-    }
-
-    if (result.status === "company_invalid") {
-      setAccessDeniedMessage(
-        "Access Denied. Your company account is not registered or inactive. Please contact your administrator."
-      );
-      setShowAccessDeniedModal(true);
-      setIsLoading(false);
-      return;
-    }
-
-    // Step 2: User is verified, active, and company exists — safe to send OTP
-    const success = await sendOTP();
-    if (!success) {
-      setError("Failed to send OTP. Please try again.");
-    }
-
-    setIsLoading(false);
   };
 
   const isButtonDisabled = phoneNumber.length !== 10 || isLoading;
@@ -111,9 +112,6 @@ export default function LoginScreen() {
 
             <View style={styles.inputLabelRow}>
               <Text style={styles.label}>Phone Number</Text>
-              {error ? (
-                <Text style={styles.errorTextInline}>{error}</Text>
-              ) : null}
             </View>
 
             <View style={[styles.inputContainer, error && styles.inputError]}>
@@ -135,6 +133,10 @@ export default function LoginScreen() {
                 placeholderTextColor="#64748B"
               />
             </View>
+
+            {error ? (
+              <Text style={styles.errorTextBelow}>{error}</Text>
+            ) : null}
 
             <TouchableOpacity
               style={[
