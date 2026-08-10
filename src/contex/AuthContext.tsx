@@ -245,10 +245,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const phone = toE164(phoneNumber);
       console.log("[Auth] Verifying OTP via backend API...");
       const res = await verifyOtpApi(phone, otp);
-      if (res.success && res.custom_token) {
+      if (res.success && res.token) {
         // Exchange custom token for a Firebase session on the device
         console.log("[Auth] Signing in with Firebase custom token...");
-        await auth().signInWithCustomToken(res.custom_token);
+        await auth().signInWithCustomToken(res.token);
 
         if (phoneNumber) {
           await AsyncStorage.setItem(PHONE_NUMBER_KEY, phoneNumber);
