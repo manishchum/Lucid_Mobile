@@ -46,34 +46,19 @@ export default function LoginScreen() {
     setIsLoading(true);
 
     try {
-      // Step 1: Verify user registration, active status, and company validity
-      const result = await checkUserExists(phoneNumber);
-
-      if (result.status === "not_registered") {
-        setShowNotRegisteredModal(true);
-        return;
-      }
-
-      if (result.status === "inactive") {
-        setAccessDeniedMessage(
-          "Access Denied. Your account is deactivated. Please contact your administrator."
-        );
-        setShowAccessDeniedModal(true);
-        return;
-      }
-
-      if (result.status === "company_invalid") {
-        setAccessDeniedMessage(
-          "Access Denied. Your company account is not registered or inactive. Please contact your administrator."
-        );
-        setShowAccessDeniedModal(true);
-        return;
-      }
-
-      // Step 2: User is verified, active, and company exists — safe to send OTP
-      const success = await sendOTP();
-      if (!success) {
-        setError("Failed to send OTP. Please try again.");
+      // Send OTP — Backend validates user registration & active status internally
+      const result = await sendOTP();
+      if (!result.success) {
+        if (result.status === 404) {
+          setShowNotRegisteredModal(true);
+        } else if (result.status === 403) {
+          setAccessDeniedMessage(
+            result.message || "Access Denied. Your account or company is inactive. Please contact your administrator."
+          );
+          setShowAccessDeniedModal(true);
+        } else {
+          setError(result.message || "Failed to send OTP. Please try again.");
+        }
       }
     } catch (err: any) {
       const apiUrl = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
