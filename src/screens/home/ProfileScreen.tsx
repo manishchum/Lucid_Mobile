@@ -44,7 +44,6 @@ export default function ProfileScreen() {
           name: cachedUser.name,
           phone: cachedUser.phone,
           company_id: cachedUser.companyId,
-          department_id: cachedUser.departmentId ?? "",
           manager_id: cachedUser.managerId,
           position: "",
           avatar_url: null,

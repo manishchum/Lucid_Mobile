@@ -27,7 +27,8 @@ export interface CachedUser {
   email: string;
   phone: string;
   companyId: string;
-  departmentId: string | null;
+  function_id: string | null;
+  sub_function_id: string | null;
   managerId: string | null;
   isActive: boolean;
 }
@@ -206,7 +207,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         email: response.user.email,
         phone: response.user.phone,
         companyId: response.user.company_id,
-        departmentId: response.user.department_id,
+        function_id: response.user.function_id,
+        sub_function_id: response.user.sub_function_id,
         managerId: response.user.manager_id,
         isActive: response.user.is_active,
       };
@@ -275,7 +277,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             email: res.user.email,
             phone: res.user.phone,
             companyId: res.user.company_id,
-            departmentId: res.user.department_id,
+            function_id: res.user.function_id,
+            sub_function_id: res.user.sub_function_id,
             managerId: res.user.manager_id,
             isActive: res.user.is_active,
           };
