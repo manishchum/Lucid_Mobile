@@ -80,37 +80,37 @@ function ConfettiParticle({
   color: string;
   x: number;
 }) {
-  const translateY = useRef(new Animated.Value(-20)).current;
+  const translateY = useRef(new Animated.Value(-30)).current;
   const translateX = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(1)).current;
   const rotate = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const drift = (Math.random() - 0.5) * 80;
+    const drift = (Math.random() - 0.5) * 120;
     Animated.sequence([
       Animated.delay(delay),
       Animated.parallel([
         Animated.timing(translateY, {
-          toValue: SCREEN_HEIGHT * 0.65,
-          duration: 2400,
+          toValue: SCREEN_HEIGHT * 0.8,
+          duration: 2600,
           useNativeDriver: true,
           easing: Easing.out(Easing.quad),
         }),
         Animated.timing(translateX, {
           toValue: drift,
-          duration: 2400,
+          duration: 2600,
           useNativeDriver: true,
         }),
         Animated.timing(rotate, {
-          toValue: 6,
-          duration: 2400,
+          toValue: 8,
+          duration: 2600,
           useNativeDriver: true,
         }),
         Animated.sequence([
           Animated.delay(1800),
           Animated.timing(opacity, {
             toValue: 0,
-            duration: 600,
+            duration: 700,
             useNativeDriver: true,
           }),
         ]),
@@ -128,9 +128,9 @@ function ConfettiParticle({
         position: "absolute",
         top: 0,
         left: x,
-        width: 9,
-        height: 9,
-        borderRadius: 2,
+        width: 10,
+        height: 10,
+        borderRadius: 3,
         backgroundColor: color,
         opacity,
         transform: [{ translateY }, { translateX }, { rotate: spin }],
@@ -141,14 +141,20 @@ function ConfettiParticle({
 
 function Confetti({ visible }: { visible: boolean }) {
   if (!visible) return null;
-  const particles = Array.from({ length: 48 }, (_, i) => ({
+  const particles = Array.from({ length: 64 }, (_, i) => ({
     id: i,
-    delay: Math.random() * 700,
+    delay: Math.random() * 800,
     color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
     x: Math.random() * SCREEN_WIDTH,
   }));
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+    <View
+      style={[
+        StyleSheet.absoluteFillObject,
+        { zIndex: 9999, elevation: 9999 },
+      ]}
+      pointerEvents="none"
+    >
       {particles.map((p) => (
         <ConfettiParticle key={p.id} {...p} />
       ))}
@@ -479,10 +485,11 @@ export default function ModuleQuizScreen({
       feedback: "Submitting details to server in the background...",
     };
     setGradingResult(localResult);
+    safeHaptics.successNotification();
+    setShowConfetti(true);
+    setTimeout(() => setShowConfetti(false), 3600);
+
     if (passed) {
-      safeHaptics.successNotification();
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 3200);
       // Trigger native in-app review at the "Aha! Moment" after confetti starts
       setTimeout(() => {
         console.log("[Quiz] Requesting in-app review...");
@@ -626,13 +633,22 @@ export default function ModuleQuizScreen({
     horizontalScrollRef.current?.scrollTo({ x: 0, animated: false });
   };
 
+  const handleBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate("SprintScreen" as never);
+    }
+  };
+
   // ─── Shared header ──────────────────────────────────────────────────────────
   const renderHeader = () => (
     <View style={styles.header}>
       <TouchableOpacity
-        onPress={() => navigation.goBack()}
+        onPress={handleBack}
         style={styles.backBtn}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        activeOpacity={0.7}
       >
         <MaterialCommunityIcons name="arrow-left" size={20} color="#374151" />
       </TouchableOpacity>
@@ -640,12 +656,6 @@ export default function ModuleQuizScreen({
         <Text style={styles.headerTitle} numberOfLines={1}>
           Module Quiz
         </Text>
-        {/* {phase === "ready" && !gradingResult && questions.length > 0 && (
-          <Text style={styles.headerSub}>
-            {userAnswers.filter((a) => a !== null).length} of {questions.length}{" "}
-            answered
-          </Text>
-        )} */}
       </View>
       {phase === "ready" && !gradingResult && questions.length > 0 && (
         <View style={styles.pageChip}>
@@ -808,14 +818,7 @@ export default function ModuleQuizScreen({
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        <Confetti visible={showConfetti} />
         {renderHeader()}
-
-        {/* Curved Elliptical Top Header Background */}
-        <View style={[
-          styles.headerAccentBackground,
-          { backgroundColor: passed ? "#D1FAE5" : "#FEF3C7" }
-        ]} />
 
         <ScrollView
           ref={resultScrollRef}
@@ -872,7 +875,7 @@ export default function ModuleQuizScreen({
           <View style={styles.actionsWrap}>
             <TouchableOpacity
               style={styles.primaryCTA}
-              onPress={() => navigation.goBack()}
+              onPress={handleBack}
               activeOpacity={0.85}
             >
               <MaterialCommunityIcons name="arrow-left" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
@@ -970,6 +973,7 @@ export default function ModuleQuizScreen({
             </View>
           )}
         </ScrollView>
+        <Confetti visible={showConfetti} />
       </View>
     );
   }
@@ -1271,6 +1275,7 @@ export default function ModuleQuizScreen({
         onDismiss={() => setShowNoInternet(false)}
         contextMessage="Your answers are saved locally — they won't be lost. Reconnect and try again."
       />
+      <Confetti visible={showConfetti} />
     </View>
   );
 }
@@ -1906,14 +1911,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#7C3AED",
+    backgroundColor: "#4F46E5",
     borderRadius: 16,
     paddingVertical: 15,
-    shadowColor: "#7C3AED",
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    // shadowColor: "#7C3AED",
+    // shadowOpacity: 0.2,
+    // shadowRadius: 10,
+    // shadowOffset: { width: 0, height: 4 },
+    // elevation: 3,
   },
   primaryCTAText: {
     fontSize: 15,

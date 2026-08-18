@@ -1,724 +1,919 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  FlatList,
-  TouchableOpacity,
-  ActivityIndicator,
-  BackHandler,
-  Animated,
-  ScrollView,
+	View,
+	Text,
+	StyleSheet,
+	TextInput,
+	FlatList,
+	TouchableOpacity,
+	ActivityIndicator,
+	BackHandler,
+	Animated,
+	ScrollView,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../../contex/AuthContext";
 
-import { useContentCategories, useContentItems } from "../../api/content-library/Hooks";
+import {
+	useContentCategories,
+	useContentItems,
+} from "../../api/content-library/Hooks";
 import { ContentCategory, ContentItem } from "../../api/content-library/Dto";
 import { STACK_ROUTES } from "../../navigations/Routes";
 import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
 export default function ContentLibraryScreen() {
-  const insets = useSafeAreaInsets();
-  const navigation = useNavigation<any>();
-  const { cachedUser } = useAuth();
-  const companyId = cachedUser?.companyId ?? null;
+	const insets = useSafeAreaInsets();
+	const navigation = useNavigation<any>();
+	const { cachedUser } = useAuth();
+	const companyId = cachedUser?.companyId ?? null;
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<ContentCategory | null>(null);
-  const [sortBy, setSortBy] = useState<"Newest" | "A-Z" | "Z-A">("Newest");
-  const [showSortDropdown, setShowSortDropdown] = useState(false);
-  const [isGridView, setIsGridView] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+	const [searchQuery, setSearchQuery] = useState("");
+	const [selectedCategory, setSelectedCategory] =
+		useState<ContentCategory | null>(null);
+	const [sortBy, setSortBy] = useState<"Newest" | "A-Z" | "Z-A">("Newest");
+	const [showSortDropdown, setShowSortDropdown] = useState(false);
+	const [isGridView, setIsGridView] = useState(false);
+	const [refreshing, setRefreshing] = useState(false);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      const onBackPress = () => {
-        if (selectedCategory !== null) {
-          setSelectedCategory(null);
-          return true;
-        }
-        return false;
-      };
+	useFocusEffect(
+		React.useCallback(() => {
+			const onBackPress = () => {
+				if (selectedCategory !== null) {
+					setSelectedCategory(null);
+					return true;
+				}
+				return false;
+			};
 
-      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
-      return () => subscription.remove();
-    }, [selectedCategory])
-  );
+			const subscription = BackHandler.addEventListener(
+				"hardwareBackPress",
+				onBackPress,
+			);
+			return () => subscription.remove();
+		}, [selectedCategory]),
+	);
 
-  const { data: categories = [], isLoading: loadingCats, refetch: refetchCats } = useContentCategories(companyId);
-  // Fetch ALL items to count them by category
-  const { data: allItems = [], isLoading: loadingItems, refetch: refetchItems } = useContentItems(undefined, companyId);
+	const {
+		data: categories = [],
+		isLoading: loadingCats,
+		refetch: refetchCats,
+	} = useContentCategories(companyId);
+	// Fetch ALL items to count them by category
+	const {
+		data: allItems = [],
+		isLoading: loadingItems,
+		refetch: refetchItems,
+	} = useContentItems(undefined, companyId);
 
-  // Skeleton Breathing Animation State
-  const [skeletonOpacity] = useState(new Animated.Value(0.3));
+	// Skeleton Breathing Animation State
+	const [skeletonOpacity] = useState(new Animated.Value(0.3));
 
-  useEffect(() => {
-    let anim: Animated.CompositeAnimation | null = null;
-    if (loadingCats || loadingItems) {
-      anim = Animated.loop(
-        Animated.sequence([
-          Animated.timing(skeletonOpacity, {
-            toValue: 0.8,
-            duration: 850,
-            useNativeDriver: true,
-          }),
-          Animated.timing(skeletonOpacity, {
-            toValue: 0.3,
-            duration: 850,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      anim.start();
-    }
-    return () => {
-      if (anim) anim.stop();
-    };
-  }, [loadingCats, loadingItems, skeletonOpacity]);
+	useEffect(() => {
+		let anim: Animated.CompositeAnimation | null = null;
+		if (loadingCats || loadingItems) {
+			anim = Animated.loop(
+				Animated.sequence([
+					Animated.timing(skeletonOpacity, {
+						toValue: 0.8,
+						duration: 850,
+						useNativeDriver: true,
+					}),
+					Animated.timing(skeletonOpacity, {
+						toValue: 0.3,
+						duration: 850,
+						useNativeDriver: true,
+					}),
+				]),
+			);
+			anim.start();
+		}
+		return () => {
+			if (anim) anim.stop();
+		};
+	}, [loadingCats, loadingItems, skeletonOpacity]);
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await Promise.all([
-        refetchCats(false),
-        refetchItems(false),
-      ]);
-    } catch (err) {
-      console.error("[ContentLibraryScreen] Refresh error:", err);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [refetchCats, refetchItems]);
+	const onRefresh = useCallback(async () => {
+		setRefreshing(true);
+		try {
+			await Promise.all([refetchCats(false), refetchItems(false)]);
+		} catch (err) {
+			console.error("[ContentLibraryScreen] Refresh error:", err);
+		} finally {
+			setRefreshing(false);
+		}
+	}, [refetchCats, refetchItems]);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      refetchCats(false).catch(() => {});
-      refetchItems(false).catch(() => {});
-    }, [refetchCats, refetchItems])
-  );
+	useFocusEffect(
+		React.useCallback(() => {
+			refetchCats(false).catch(() => {});
+			refetchItems(false).catch(() => {});
+		}, [refetchCats, refetchItems]),
+	);
 
-  const getItemsForCategory = (categoryId: string) => {
-    return allItems.filter(item => item.category_id === categoryId);
-  };
+	const getItemsForCategory = (categoryId: string) => {
+		return allItems.filter((item) => item.category_id === categoryId);
+	};
 
-  const getFileIconProps = (fileType: string): { name: any, color: string, bgColor: string } => {
-    if (fileType?.startsWith("image/")) {
-      return { name: "image-outline", color: "#3b82f6", bgColor: "#eff6ff" }; // Blue
-    }
-    if (fileType?.startsWith("audio/")) {
-      return { name: "headphones", color: "#a855f7", bgColor: "#faf5ff" }; // Purple
-    }
-    if (fileType?.startsWith("video/")) {
-      return { name: "play-circle-outline", color: "#f59e0b", bgColor: "#fffbeb" }; // Yellow
-    }
-    // Default to document (PDF, docx, etc.)
-    return { name: "file-document-outline", color: "#ef4444", bgColor: "#fef2f2" }; // Red
-  };
+	const getFileIconProps = (
+		fileType: string,
+	): { name: any; color: string; bgColor: string } => {
+		if (fileType?.startsWith("image/")) {
+			return {
+				name: "image-outline",
+				color: "#3b82f6",
+				bgColor: "#eff6ff",
+			}; // Blue
+		}
+		if (fileType?.startsWith("audio/")) {
+			return { name: "headphones", color: "#a855f7", bgColor: "#faf5ff" }; // Purple
+		}
+		if (fileType?.startsWith("video/")) {
+			return {
+				name: "play-circle-outline",
+				color: "#f59e0b",
+				bgColor: "#fffbeb",
+			}; // Yellow
+		}
+		// Default to document (PDF, docx, etc.)
+		return {
+			name: "file-document-outline",
+			color: "#ef4444",
+			bgColor: "#fef2f2",
+		}; // Red
+	};
 
-  const renderFolderList = () => {
-    let filteredCategories = categories.filter(c => 
-      c.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+	const renderFolderList = () => {
+		let filteredCategories = categories.filter((c) =>
+			c.name.toLowerCase().includes(searchQuery.toLowerCase()),
+		);
 
-    filteredCategories.sort((a, b) => {
-      if (sortBy === "A-Z") {
-        return (a.name || "").toLowerCase().localeCompare((b.name || "").toLowerCase());
-      } else if (sortBy === "Z-A") {
-        return (b.name || "").toLowerCase().localeCompare((a.name || "").toLowerCase());
-      } else {
-        // Newest: sort by created_at descending
-        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return timeB - timeA;
-      }
-    });
+		filteredCategories.sort((a, b) => {
+			if (sortBy === "A-Z") {
+				return (a.name || "")
+					.toLowerCase()
+					.localeCompare((b.name || "").toLowerCase());
+			} else if (sortBy === "Z-A") {
+				return (b.name || "")
+					.toLowerCase()
+					.localeCompare((a.name || "").toLowerCase());
+			} else {
+				// Newest: sort by created_at descending
+				const timeA = a.created_at
+					? new Date(a.created_at).getTime()
+					: 0;
+				const timeB = b.created_at
+					? new Date(b.created_at).getTime()
+					: 0;
+				return timeB - timeA;
+			}
+		});
 
-    return (
-      <>
-        <View style={styles.toolbarContainer}>
-          <View style={styles.sortContainer}>
-            <Text style={styles.sortLabel}>SORT BY:</Text>
-            <View style={{ zIndex: 10 }}>
-              <TouchableOpacity 
-                style={styles.sortDropdown}
-                onPress={() => setShowSortDropdown(!showSortDropdown)}
-              >
-                <Text style={styles.sortDropdownText}>{sortBy}</Text>
-                <MaterialCommunityIcons name={showSortDropdown ? "chevron-up" : "chevron-down"} size={18} color="#475569" />
-              </TouchableOpacity>
-              
-              {showSortDropdown && (
-                <View style={styles.dropdownMenu}>
-                  {(["Newest", "A-Z", "Z-A"] as const).map(option => (
-                    <TouchableOpacity 
-                      key={option} 
-                      style={styles.dropdownItem}
-                      onPress={() => {
-                        setSortBy(option);
-                        setShowSortDropdown(false);
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, sortBy === option && styles.dropdownItemTextSelected]}>{option}</Text>
-                      {sortBy === option && <MaterialCommunityIcons name="check" size={16} color="#3b82f6" />}
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-          </View>
+		return (
+			<>
+				<View style={styles.toolbarContainer}>
+					<View style={styles.sortContainer}>
+						<Text style={styles.sortLabel}>SORT BY:</Text>
+						<View style={{ zIndex: 10 }}>
+							<TouchableOpacity
+								style={styles.sortDropdown}
+								onPress={() =>
+									setShowSortDropdown(!showSortDropdown)
+								}>
+								<Text style={styles.sortDropdownText}>
+									{sortBy}
+								</Text>
+								<MaterialCommunityIcons
+									name={
+										showSortDropdown
+											? "chevron-up"
+											: "chevron-down"
+									}
+									size={18}
+									color="#475569"
+								/>
+							</TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.toggleViewBtn}
-            onPress={() => setIsGridView(!isGridView)}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons 
-              name={isGridView ? "view-list" : "view-grid-outline"} 
-              size={20} 
-              color="#475569" 
-            />
-          </TouchableOpacity>
-        </View>
+							{showSortDropdown && (
+								<View style={styles.dropdownMenu}>
+									{(["Newest", "A-Z", "Z-A"] as const).map(
+										(option) => (
+											<TouchableOpacity
+												key={option}
+												style={styles.dropdownItem}
+												onPress={() => {
+													setSortBy(option);
+													setShowSortDropdown(false);
+												}}>
+												<Text
+													style={[
+														styles.dropdownItemText,
+														sortBy === option &&
+															styles.dropdownItemTextSelected,
+													]}>
+													{option}
+												</Text>
+												{sortBy === option && (
+													<MaterialCommunityIcons
+														name="check"
+														size={16}
+														color="#3b82f6"
+													/>
+												)}
+											</TouchableOpacity>
+										),
+									)}
+								</View>
+							)}
+						</View>
+					</View>
 
-        <FlatList
-          key={isGridView ? "grid" : "list"}
-          numColumns={isGridView ? 2 : 1}
-          data={filteredCategories}
-          keyExtractor={(item: ContentCategory) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={isGridView ? styles.gridContent : styles.listContent}
-          refreshControl={
-            RefreshSpinner(refreshing, onRefresh)
-          }
-          renderItem={({ item }: { item: ContentCategory }) => {
-            const itemCount = getItemsForCategory(item.id).length;
-            if (isGridView) {
-              return (
-                <TouchableOpacity
-                  style={styles.folderGridCard}
-                  activeOpacity={0.7}
-                  onPress={() => setSelectedCategory(item)}
-                >
-                  <View style={styles.folderIconContainer}>
-                    <MaterialCommunityIcons name="folder-outline" size={24} color="#3b82f6" />
-                  </View>
-                  <View style={styles.folderTextContainer}>
-                    <Text numberOfLines={2} style={styles.folderGridTitle}>{item.name}</Text>
-                    <Text style={styles.folderGridSubtitle}>
-                      {itemCount} {itemCount === 1 ? 'ITEM' : 'ITEMS'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            }
-            return (
-              <TouchableOpacity
-                style={styles.folderCard}
-                activeOpacity={0.7}
-                onPress={() => setSelectedCategory(item)}
-              >
-                <View style={styles.folderIconContainer}>
-                  <MaterialCommunityIcons name="folder-outline" size={24} color="#3b82f6" />
-                </View>
-                <View style={styles.folderTextContainer}>
-                  <Text style={styles.folderTitle}>{item.name}</Text>
-                  <Text style={styles.folderSubtitle}>
-                    {itemCount} {itemCount === 1 ? 'ITEM' : 'ITEMS'}
-                  </Text>
-                </View>
-                <MaterialCommunityIcons name="chevron-right" size={24} color="#cbd5e1" />
-              </TouchableOpacity>
-            );
-          }}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No folders found</Text>
-            </View>
-          }
-        />
-      </>
-    );
-  };
+					<TouchableOpacity
+						style={styles.toggleViewBtn}
+						onPress={() => setIsGridView(!isGridView)}
+						activeOpacity={0.7}>
+						<MaterialCommunityIcons
+							name={
+								isGridView ? "view-list" : "view-grid-outline"
+							}
+							size={20}
+							color="#475569"
+						/>
+					</TouchableOpacity>
+				</View>
 
-  const renderItemList = () => {
-    if (!selectedCategory) return null;
+				<FlatList
+					key={isGridView ? "grid" : "list"}
+					numColumns={isGridView ? 2 : 1}
+					data={filteredCategories}
+					keyExtractor={(item: ContentCategory) => item.id}
+					showsVerticalScrollIndicator={false}
+					contentContainerStyle={
+						isGridView ? styles.gridContent : styles.listContent
+					}
+					refreshControl={RefreshSpinner(refreshing, onRefresh)}
+					renderItem={({ item }: { item: ContentCategory }) => {
+						const itemCount = getItemsForCategory(item.id).length;
+						if (isGridView) {
+							return (
+								<TouchableOpacity
+									style={styles.folderGridCard}
+									activeOpacity={0.7}
+									onPress={() => setSelectedCategory(item)}>
+									<View style={styles.folderIconContainer}>
+										<MaterialCommunityIcons
+											name="folder-outline"
+											size={24}
+											color="#3b82f6"
+										/>
+									</View>
+									<View style={styles.folderTextContainer}>
+										<Text
+											numberOfLines={2}
+											style={styles.folderGridTitle}>
+											{item.name}
+										</Text>
+										<Text style={styles.folderGridSubtitle}>
+											{itemCount}{" "}
+											{itemCount === 1 ? "ITEM" : "ITEMS"}
+										</Text>
+									</View>
+								</TouchableOpacity>
+							);
+						}
+						return (
+							<TouchableOpacity
+								style={styles.folderCard}
+								activeOpacity={0.7}
+								onPress={() => setSelectedCategory(item)}>
+								<View style={styles.folderIconContainer}>
+									<MaterialCommunityIcons
+										name="folder-outline"
+										size={24}
+										color="#3b82f6"
+									/>
+								</View>
+								<View style={styles.folderTextContainer}>
+									<Text style={styles.folderTitle}>
+										{item.name}
+									</Text>
+									<Text style={styles.folderSubtitle}>
+										{itemCount}{" "}
+										{itemCount === 1 ? "ITEM" : "ITEMS"}
+									</Text>
+								</View>
+								<MaterialCommunityIcons
+									name="chevron-right"
+									size={24}
+									color="#cbd5e1"
+								/>
+							</TouchableOpacity>
+						);
+					}}
+					ListEmptyComponent={
+						<View style={styles.emptyContainer}>
+							<Text style={styles.emptyText}>
+								No folders found
+							</Text>
+						</View>
+					}
+				/>
+			</>
+		);
+	};
 
-    let items = getItemsForCategory(selectedCategory.id);
-    if (searchQuery) {
-      items = items.filter(item => 
-        item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
-      );
-    }
+	const renderItemList = () => {
+		if (!selectedCategory) return null;
 
-    // Apply the global sort to items as well
-    items.sort((a, b) => {
-      if (sortBy === "A-Z") {
-        return (a.title || "").toLowerCase().localeCompare((b.title || "").toLowerCase());
-      } else if (sortBy === "Z-A") {
-        return (b.title || "").toLowerCase().localeCompare((a.title || "").toLowerCase());
-      } else {
-        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return timeB - timeA;
-      }
-    });
+		let items = getItemsForCategory(selectedCategory.id);
+		if (searchQuery) {
+			items = items.filter(
+				(item) =>
+					item.title
+						.toLowerCase()
+						.includes(searchQuery.toLowerCase()) ||
+					(item.description &&
+						item.description
+							.toLowerCase()
+							.includes(searchQuery.toLowerCase())),
+			);
+		}
 
-    return (
-      <>
-        <View style={styles.categoryHeaderRow}>
-          <View style={styles.categoryHeader}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => setSelectedCategory(null)}
-            >
-              <MaterialCommunityIcons name="arrow-left" size={20} color="#0f172a" />
-            </TouchableOpacity>
-            <View>
-              <Text numberOfLines={1} style={styles.categoryHeaderTitle}>{selectedCategory.name}</Text>
-              <Text style={styles.categoryHeaderSubtitle}>
-                {items.length} {items.length === 1 ? 'ITEM' : 'ITEMS'}
-              </Text>
-            </View>
-          </View>
+		// Apply the global sort to items as well
+		items.sort((a, b) => {
+			if (sortBy === "A-Z") {
+				return (a.title || "")
+					.toLowerCase()
+					.localeCompare((b.title || "").toLowerCase());
+			} else if (sortBy === "Z-A") {
+				return (b.title || "")
+					.toLowerCase()
+					.localeCompare((a.title || "").toLowerCase());
+			} else {
+				const timeA = a.created_at
+					? new Date(a.created_at).getTime()
+					: 0;
+				const timeB = b.created_at
+					? new Date(b.created_at).getTime()
+					: 0;
+				return timeB - timeA;
+			}
+		});
 
-          <TouchableOpacity
-            style={styles.toggleViewBtn}
-            onPress={() => setIsGridView(!isGridView)}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons 
-              name={isGridView ? "view-list" : "view-grid-outline"} 
-              size={20} 
-              color="#475569" 
-            />
-          </TouchableOpacity>
-        </View>
+		return (
+			<>
+				<View style={styles.categoryHeaderRow}>
+					<View style={styles.categoryHeader}>
+						<TouchableOpacity
+							style={styles.backButton}
+							onPress={() => setSelectedCategory(null)}>
+							<MaterialCommunityIcons
+								name="arrow-left"
+								size={20}
+								color="#0f172a"
+							/>
+						</TouchableOpacity>
+						<View>
+							<Text
+								numberOfLines={1}
+								style={styles.categoryHeaderTitle}>
+								{selectedCategory.name}
+							</Text>
+							<Text style={styles.categoryHeaderSubtitle}>
+								{items.length}{" "}
+								{items.length === 1 ? "ITEM" : "ITEMS"}
+							</Text>
+						</View>
+					</View>
 
-        <FlatList
-          key={isGridView ? "grid" : "list"}
-          numColumns={isGridView ? 2 : 1}
-          data={items}
-          keyExtractor={(item: ContentItem) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={isGridView ? styles.gridContent : styles.listContent}
-          refreshControl={
-            RefreshSpinner(refreshing, onRefresh)
-          }
-          renderItem={({ item }: { item: ContentItem }) => {
-            const iconProps = getFileIconProps(item.file_type);
-            if (isGridView) {
-              return (
-                <TouchableOpacity
-                  style={styles.itemGridCard}
-                  activeOpacity={0.7}
-                  onPress={() => navigation.navigate(STACK_ROUTES.CONTENT_VIEWER, { item })}
-                >
-                  <View style={[styles.itemIconContainer, { backgroundColor: iconProps.bgColor, marginBottom: 12 }]}>
-                    <MaterialCommunityIcons name={iconProps.name} size={24} color={iconProps.color} />
-                  </View>
-                  <View style={styles.itemTextContainer}>
-                    <Text numberOfLines={2} style={styles.itemGridTitle}>{item.title}</Text>
-                    {item.description ? (
-                      <Text numberOfLines={1} style={styles.itemGridSubtitle}>{item.description}</Text>
-                    ) : null}
-                  </View>
-                </TouchableOpacity>
-              );
-            }
-            return (
-              <TouchableOpacity
-                style={styles.itemCard}
-                activeOpacity={0.7}
-                onPress={() => navigation.navigate(STACK_ROUTES.CONTENT_VIEWER, { item })}
-              >
-                <View style={[styles.itemIconContainer, { backgroundColor: iconProps.bgColor }]}>
-                  <MaterialCommunityIcons name={iconProps.name} size={24} color={iconProps.color} />
-                </View>
-                <View style={styles.itemTextContainer}>
-                  <Text style={styles.itemTitle}>{item.title}</Text>
-                  <Text style={styles.itemSubtitle} numberOfLines={1}>{item.description}</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          }}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No items found in this folder</Text>
-            </View>
-          }
-        />
-      </>
-    );
-  };
+					<TouchableOpacity
+						style={styles.toggleViewBtn}
+						onPress={() => setIsGridView(!isGridView)}
+						activeOpacity={0.7}>
+						<MaterialCommunityIcons
+							name={
+								isGridView ? "view-list" : "view-grid-outline"
+							}
+							size={20}
+							color="#475569"
+						/>
+					</TouchableOpacity>
+				</View>
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.searchContainer}>
-        <MaterialCommunityIcons name="magnify" size={22} color="#94a3b8" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search courses, folders or topics..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholderTextColor="#94a3b8"
-        />
-      </View>
+				<FlatList
+					key={isGridView ? "grid" : "list"}
+					numColumns={isGridView ? 2 : 1}
+					data={items}
+					keyExtractor={(item: ContentItem) => item.id}
+					showsVerticalScrollIndicator={false}
+					contentContainerStyle={
+						isGridView ? styles.gridContent : styles.listContent
+					}
+					refreshControl={RefreshSpinner(refreshing, onRefresh)}
+					renderItem={({ item }: { item: ContentItem }) => {
+						const iconProps = getFileIconProps(item.file_type);
+						if (isGridView) {
+							return (
+								<TouchableOpacity
+									style={styles.itemGridCard}
+									activeOpacity={0.7}
+									onPress={() =>
+										navigation.navigate(
+											STACK_ROUTES.CONTENT_VIEWER,
+											{ item },
+										)
+									}>
+									<View
+										style={[
+											styles.itemIconContainer,
+											{
+												backgroundColor:
+													iconProps.bgColor,
+												marginBottom: 12,
+											},
+										]}>
+										<MaterialCommunityIcons
+											name={iconProps.name}
+											size={24}
+											color={iconProps.color}
+										/>
+									</View>
+									<View style={styles.itemTextContainer}>
+										<Text
+											numberOfLines={2}
+											style={styles.itemGridTitle}>
+											{item.title}
+										</Text>
+										{item.description ? (
+											<Text
+												numberOfLines={1}
+												style={styles.itemGridSubtitle}>
+												{item.description}
+											</Text>
+										) : null}
+									</View>
+								</TouchableOpacity>
+							);
+						}
+						return (
+							<TouchableOpacity
+								style={styles.itemCard}
+								activeOpacity={0.7}
+								onPress={() =>
+									navigation.navigate(
+										STACK_ROUTES.CONTENT_VIEWER,
+										{ item },
+									)
+								}>
+								<View
+									style={[
+										styles.itemIconContainer,
+										{ backgroundColor: iconProps.bgColor },
+									]}>
+									<MaterialCommunityIcons
+										name={iconProps.name}
+										size={24}
+										color={iconProps.color}
+									/>
+								</View>
+								<View style={styles.itemTextContainer}>
+									<Text style={styles.itemTitle}>
+										{item.title}
+									</Text>
+									<Text
+										style={styles.itemSubtitle}
+										numberOfLines={1}>
+										{item.description}
+									</Text>
+								</View>
+							</TouchableOpacity>
+						);
+					}}
+					ListEmptyComponent={
+						<View style={styles.emptyContainer}>
+							<Text style={styles.emptyText}>
+								No items found in this folder
+							</Text>
+						</View>
+					}
+				/>
+			</>
+		);
+	};
 
-      {(loadingCats || loadingItems) ? (
-        <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16 }}>
-          {/* Horizontal scroll chips skeleton */}
-          <View style={{ flexDirection: "row", marginBottom: 20 }}>
-            {Array.from({ length: 4 }).map((_, idx) => (
-              <Animated.View key={idx} style={[styles.skeletonChip, { opacity: skeletonOpacity }]} />
-            ))}
-          </View>
+	return (
+		<View style={styles.container}>
+			<View style={styles.searchContainer}>
+				<MaterialCommunityIcons
+					name="magnify"
+					size={22}
+					color="#94a3b8"
+					style={styles.searchIcon}
+				/>
+				<TextInput
+					style={styles.searchInput}
+					placeholder="Search courses, folders or topics..."
+					value={searchQuery}
+					onChangeText={setSearchQuery}
+					placeholderTextColor="#94a3b8"
+				/>
+			</View>
 
-          {/* List items / grid items skeleton */}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
-            {Array.from({ length: 4 }).map((_, idx) => (
-              <View key={idx} style={styles.skeletonGridItem}>
-                <Animated.View style={[styles.skeletonImagePlaceholder, { opacity: skeletonOpacity }]} />
-                <View style={{ padding: 12 }}>
-                  <Animated.View style={[styles.skeletonLineLong, { opacity: skeletonOpacity, width: "80%", height: 14, marginBottom: 8 }]} />
-                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: "50%", height: 10 }]} />
-                </View>
-              </View>
-            ))}
-          </View>
-        </ScrollView>
-      ) : (
-        selectedCategory ? renderItemList() : renderFolderList()
-      )}
-    </View>
-  );
+			{loadingCats || loadingItems ? (
+				<ScrollView
+					showsVerticalScrollIndicator={false}
+					style={{ flex: 1 }}
+					contentContainerStyle={{
+						paddingHorizontal: 16,
+						paddingTop: 16,
+					}}>
+					{/* Horizontal scroll chips skeleton */}
+					<View style={{ flexDirection: "row", marginBottom: 20 }}>
+						{Array.from({ length: 4 }).map((_, idx) => (
+							<Animated.View
+								key={idx}
+								style={[
+									styles.skeletonChip,
+									{ opacity: skeletonOpacity },
+								]}
+							/>
+						))}
+					</View>
+
+					{/* List items / grid items skeleton */}
+					<View
+						style={{
+							flexDirection: "row",
+							flexWrap: "wrap",
+							justifyContent: "space-between",
+						}}>
+						{Array.from({ length: 4 }).map((_, idx) => (
+							<View key={idx} style={styles.skeletonGridItem}>
+								<Animated.View
+									style={[
+										styles.skeletonImagePlaceholder,
+										{ opacity: skeletonOpacity },
+									]}
+								/>
+								<View style={{ padding: 12 }}>
+									<Animated.View
+										style={[
+											styles.skeletonLineLong,
+											{
+												opacity: skeletonOpacity,
+												width: "80%",
+												height: 14,
+												marginBottom: 8,
+											},
+										]}
+									/>
+									<Animated.View
+										style={[
+											styles.skeletonLineShort,
+											{
+												opacity: skeletonOpacity,
+												width: "50%",
+												height: 10,
+											},
+										]}
+									/>
+								</View>
+							</View>
+						))}
+					</View>
+				</ScrollView>
+			) : selectedCategory ? (
+				renderItemList()
+			) : (
+				renderFolderList()
+			)}
+		</View>
+	);
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    paddingHorizontal: 12,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    height: 48,
-    fontSize: 15,
-    color: "#0f172a",
-  },
-  toolbarContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  sortContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  toggleViewBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  categoryHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    marginBottom: 20,
-  },
-  categoryHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    marginRight: 12,
-  },
-  sortLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#94a3b8",
-    marginRight: 8,
-    letterSpacing: 0.5,
-  },
-  sortDropdown: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: "#ffffff",
-    minWidth: 100,
-    justifyContent: "space-between",
-  },
-  sortDropdownText: {
-    fontSize: 13,
-    color: "#1e293b",
-    marginRight: 4,
-    fontWeight: "500",
-  },
-  dropdownMenu: {
-    position: "absolute",
-    top: "100%",
-    left: 0,
-    marginTop: 4,
-    backgroundColor: "#ffffff",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    // elevation: 5,
-    minWidth: 120,
-    zIndex: 100,
-  },
-  dropdownItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-  },
-  dropdownItemText: {
-    fontSize: 13,
-    color: "#475569",
-  },
-  dropdownItemTextSelected: {
-    color: "#3b82f6",
-    fontWeight: "600",
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  categoryHeaderTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#0f172a",
-  },
-  categoryHeaderSubtitle: {
-    fontSize: 12,
-    color: "#94a3b8",
-    fontWeight: "600",
-    marginTop: 2,
-    letterSpacing: 0.5,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-    gap: 12,
-  },
-  folderCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    // elevation: 2,
-  },
-  folderIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: "#eff6ff",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 16,
-  },
-  folderTextContainer: {
-    flex: 1,
-  },
-  folderTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 4,
-  },
-  folderSubtitle: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#94a3b8",
-    letterSpacing: 0.5,
-  },
-  itemCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    // elevation: 2,
-  },
-  itemIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 16,
-  },
-  itemTextContainer: {
-    flex: 1,
-  },
-  itemTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 4,
-  },
-  itemSubtitle: {
-    fontSize: 13,
-    color: "#64748b",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  emptyContainer: {
-    padding: 40,
-    alignItems: "center",
-  },
-  emptyText: {
-    fontSize: 15,
-    color: "#94a3b8",
-    fontWeight: "500",
-  },
-  gridContent: {
-    paddingHorizontal: 10,
-    paddingBottom: 24,
-  },
-  folderGridCard: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 16,
-    margin: 6,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    // elevation: 2,
-    alignItems: "flex-start",
-    minHeight: 120,
-    justifyContent: "space-between",
-  },
-  folderGridTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 4,
-    marginTop: 12,
-  },
-  folderGridSubtitle: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#94a3b8",
-    letterSpacing: 0.5,
-  },
-  itemGridCard: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 16,
-    margin: 6,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    // elevation: 2,
-    alignItems: "flex-start",
-    minHeight: 120,
-    justifyContent: "space-between",
-  },
-  itemGridTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 4,
-  },
-  itemGridSubtitle: {
-    fontSize: 11,
-    color: "#64748b",
-  },
-  skeletonLineShort: {
-    backgroundColor: "#E2E8F0",
-    borderRadius: 6,
-  },
-  skeletonLineLong: {
-    backgroundColor: "#E2E8F0",
-    borderRadius: 8,
-  },
-  skeletonChip: {
-    width: 80,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#E2E8F0",
-    marginRight: 8,
-  },
-  skeletonGridItem: {
-    width: "48%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    marginBottom: 12,
-    overflow: "hidden",
-  },
-  skeletonImagePlaceholder: {
-    height: 100,
-    backgroundColor: "#E2E8F0",
-  },
+	container: {
+		flex: 1,
+		backgroundColor: "#fff",
+	},
+	searchContainer: {
+		flexDirection: "row",
+		alignItems: "center",
+		backgroundColor: "#ffffff",
+		marginHorizontal: 16,
+		marginTop: 16,
+		marginBottom: 20,
+		borderRadius: 12,
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+		paddingHorizontal: 12,
+	},
+	searchIcon: {
+		marginRight: 8,
+	},
+	searchInput: {
+		flex: 1,
+		height: 48,
+		fontSize: 15,
+		color: "#0f172a",
+	},
+	toolbarContainer: {
+		flexDirection: "row",
+		justifyContent: "space-between",
+		alignItems: "center",
+		paddingHorizontal: 16,
+		marginBottom: 16,
+	},
+	sortContainer: {
+		flexDirection: "row",
+		alignItems: "center",
+	},
+	toggleViewBtn: {
+		width: 36,
+		height: 36,
+		borderRadius: 8,
+		backgroundColor: "#ffffff",
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+		justifyContent: "center",
+		alignItems: "center",
+	},
+	categoryHeaderRow: {
+		flexDirection: "row",
+		justifyContent: "space-between",
+		alignItems: "center",
+		paddingHorizontal: 16,
+		marginBottom: 20,
+	},
+	categoryHeader: {
+		flexDirection: "row",
+		alignItems: "center",
+		flex: 1,
+		marginRight: 12,
+	},
+	sortLabel: {
+		fontSize: 12,
+		fontWeight: "600",
+		color: "#94a3b8",
+		marginRight: 8,
+		letterSpacing: 0.5,
+	},
+	sortDropdown: {
+		flexDirection: "row",
+		alignItems: "center",
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+		borderRadius: 8,
+		paddingHorizontal: 10,
+		paddingVertical: 6,
+		backgroundColor: "#ffffff",
+		minWidth: 100,
+		justifyContent: "space-between",
+	},
+	sortDropdownText: {
+		fontSize: 13,
+		color: "#1e293b",
+		marginRight: 4,
+		fontWeight: "500",
+	},
+	dropdownMenu: {
+		position: "absolute",
+		top: "100%",
+		left: 0,
+		marginTop: 4,
+		backgroundColor: "#ffffff",
+		borderRadius: 8,
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+		shadowColor: "#000",
+		shadowOffset: { width: 0, height: 4 },
+		shadowOpacity: 0.1,
+		shadowRadius: 12,
+		// elevation: 5,
+		minWidth: 120,
+		zIndex: 100,
+	},
+	dropdownItem: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+		paddingHorizontal: 12,
+		paddingVertical: 10,
+		borderBottomWidth: 1,
+		borderBottomColor: "#f1f5f9",
+	},
+	dropdownItemText: {
+		fontSize: 13,
+		color: "#475569",
+	},
+	dropdownItemTextSelected: {
+		color: "#3b82f6",
+		fontWeight: "600",
+	},
+	backButton: {
+		width: 40,
+		height: 40,
+		borderRadius: 20,
+		backgroundColor: "#ffffff",
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+		justifyContent: "center",
+		alignItems: "center",
+		marginRight: 12,
+	},
+	categoryHeaderTitle: {
+		fontSize: 18,
+		fontWeight: "700",
+		color: "#0f172a",
+	},
+	categoryHeaderSubtitle: {
+		fontSize: 12,
+		color: "#94a3b8",
+		fontWeight: "600",
+		marginTop: 2,
+		letterSpacing: 0.5,
+	},
+	listContent: {
+		paddingHorizontal: 16,
+		paddingBottom: 24,
+		gap: 12,
+	},
+	folderCard: {
+		flexDirection: "row",
+		alignItems: "center",
+		backgroundColor: "#ffffff",
+		borderRadius: 16,
+		padding: 16,
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+		shadowColor: "#0f172a",
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.04,
+		shadowRadius: 8,
+		// elevation: 2,
+	},
+	folderIconContainer: {
+		width: 48,
+		height: 48,
+		borderRadius: 12,
+		backgroundColor: "#eff6ff",
+		justifyContent: "center",
+		alignItems: "center",
+		marginRight: 16,
+	},
+	folderTextContainer: {
+		flex: 1,
+	},
+	folderTitle: {
+		fontSize: 16,
+		fontWeight: "700",
+		color: "#0f172a",
+		marginBottom: 4,
+	},
+	folderSubtitle: {
+		fontSize: 11,
+		fontWeight: "600",
+		color: "#94a3b8",
+		letterSpacing: 0.5,
+	},
+	itemCard: {
+		flexDirection: "row",
+		alignItems: "center",
+		backgroundColor: "#ffffff",
+		borderRadius: 16,
+		padding: 16,
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+		shadowColor: "#0f172a",
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.04,
+		shadowRadius: 8,
+		// elevation: 2,
+	},
+	itemIconContainer: {
+		width: 48,
+		height: 48,
+		borderRadius: 12,
+		justifyContent: "center",
+		alignItems: "center",
+		marginRight: 16,
+	},
+	itemTextContainer: {
+		flex: 1,
+	},
+	itemTitle: {
+		fontSize: 16,
+		fontWeight: "700",
+		color: "#0f172a",
+		marginBottom: 4,
+	},
+	itemSubtitle: {
+		fontSize: 13,
+		color: "#64748b",
+	},
+	loadingContainer: {
+		flex: 1,
+		justifyContent: "center",
+		alignItems: "center",
+	},
+	emptyContainer: {
+		padding: 40,
+		alignItems: "center",
+	},
+	emptyText: {
+		fontSize: 15,
+		color: "#94a3b8",
+		fontWeight: "500",
+	},
+	gridContent: {
+		paddingHorizontal: 10,
+		paddingBottom: 24,
+	},
+	folderGridCard: {
+		flex: 1,
+		backgroundColor: "#ffffff",
+		borderRadius: 16,
+		padding: 16,
+		margin: 6,
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+		shadowColor: "#0f172a",
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.04,
+		shadowRadius: 8,
+		// elevation: 2,
+		alignItems: "flex-start",
+		minHeight: 120,
+		justifyContent: "space-between",
+	},
+	folderGridTitle: {
+		fontSize: 14,
+		fontWeight: "700",
+		color: "#0f172a",
+		marginBottom: 4,
+		marginTop: 12,
+	},
+	folderGridSubtitle: {
+		fontSize: 11,
+		fontWeight: "600",
+		color: "#94a3b8",
+		letterSpacing: 0.5,
+	},
+	itemGridCard: {
+		flex: 1,
+		backgroundColor: "#ffffff",
+		borderRadius: 16,
+		padding: 16,
+		margin: 6,
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+		shadowColor: "#0f172a",
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.04,
+		shadowRadius: 8,
+		// elevation: 2,
+		alignItems: "flex-start",
+		minHeight: 120,
+		justifyContent: "space-between",
+	},
+	itemGridTitle: {
+		fontSize: 14,
+		fontWeight: "700",
+		color: "#0f172a",
+		marginBottom: 4,
+	},
+	itemGridSubtitle: {
+		fontSize: 11,
+		color: "#64748b",
+	},
+	skeletonLineShort: {
+		backgroundColor: "#E2E8F0",
+		borderRadius: 6,
+	},
+	skeletonLineLong: {
+		backgroundColor: "#E2E8F0",
+		borderRadius: 8,
+	},
+	skeletonChip: {
+		width: 80,
+		height: 32,
+		borderRadius: 16,
+		backgroundColor: "#E2E8F0",
+		marginRight: 8,
+	},
+	skeletonGridItem: {
+		width: "48%",
+		backgroundColor: "#FFFFFF",
+		borderRadius: 16,
+		borderWidth: 1,
+		borderColor: "#E2E8F0",
+		marginBottom: 12,
+		overflow: "hidden",
+	},
+	skeletonImagePlaceholder: {
+		height: 100,
+		backgroundColor: "#E2E8F0",
+	},
 });
