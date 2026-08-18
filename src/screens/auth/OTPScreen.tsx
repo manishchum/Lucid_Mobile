@@ -108,7 +108,10 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
     setRemainingAttempts(null);
     setIsInvalidated(false);
     setOtp("");
-    await sendOTP();
+    const res = await sendOTP();
+    if (!res.success) {
+      setError(res.message || "Failed to resend OTP. Please try again.");
+    }
   };
 
   const renderOtpBoxes = () => {

@@ -18,6 +18,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import * as FileSystem from "expo-file-system/legacy";
 
 import { ContentItem } from "../../api/content-library/Dto";
+import AudioContentViewer from "../../components/content/AudioContentViewer";
 
 export default function ContentViewerScreen() {
   const insets = useSafeAreaInsets();
@@ -77,10 +78,12 @@ export default function ContentViewerScreen() {
     }
   }, [file_url, file_type, isDocument, isText]);
 
-  // Modern expo-video player hook
-  const player = useVideoPlayer(file_url, player => {
-    player.loop = false;
-    player.play();
+  // Modern expo-video player hook (only initialize video source for videos)
+  const player = useVideoPlayer(isVideo ? file_url : null, player => {
+    if (player) {
+      player.loop = false;
+      if (isVideo) player.play();
+    }
   });
 
   const handleDownload = async () => {
@@ -111,7 +114,7 @@ export default function ContentViewerScreen() {
       );
     }
 
-    if (isVideo || isAudio) {
+    if (isVideo) {
       return (
         <View style={styles.videoContainer}>
           <VideoView
@@ -123,6 +126,16 @@ export default function ContentViewerScreen() {
             nativeControls
           />
         </View>
+      );
+    }
+
+    if (isAudio) {
+      return (
+        <AudioContentViewer
+          audioUrl={file_url}
+          title={title}
+          category={(item as any)?.category_name ?? "Audio Track"}
+        />
       );
     }
 

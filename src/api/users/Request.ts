@@ -310,7 +310,7 @@ export const getUserByPhone = async (phone: string): Promise<UserResponse> => {
   try {
     const url = `${API_BASE_URL}/users/by-phone/${encodeURIComponent(phone)}`;
     logger.debug("[Request] getUserByPhone →", url);
-    const json = await apiFetch<any>(url, { method: "GET", public: true });
+    const json = await apiFetch<any>(url, { method: "GET" });
     if (json.user) {
       logger.debug("[Request] getUserByPhone ✅ user_id:", json.user.user_id);
     } else {
