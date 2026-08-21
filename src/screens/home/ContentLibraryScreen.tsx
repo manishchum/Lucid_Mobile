@@ -118,31 +118,86 @@ export default function ContentLibraryScreen() {
 	};
 
 	const getFileIconProps = (
-		fileType: string,
+		fileType?: string,
+		fileUrl?: string,
 	): { name: any; color: string; bgColor: string } => {
-		if (fileType?.startsWith("image/")) {
-			return {
-				name: "image-outline",
-				color: "#3b82f6",
-				bgColor: "#eff6ff",
-			}; // Blue
+		const ft = (fileType || "").toLowerCase();
+		const url = (fileUrl || "").toLowerCase();
+
+		// Images
+		if (ft.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|svg)($|\?)/.test(url)) {
+			return { name: "image-outline", color: "#3B82F6", bgColor: "#EFF6FF" };
 		}
-		if (fileType?.startsWith("audio/")) {
-			return { name: "headphones", color: "#a855f7", bgColor: "#faf5ff" }; // Purple
+		// Audio
+		if (ft.startsWith("audio/") || /\.(mp3|wav|m4a|aac|flac|ogg)($|\?)/.test(url)) {
+			return { name: "headphones", color: "#9333EA", bgColor: "#FAF5FF" };
 		}
-		if (fileType?.startsWith("video/")) {
-			return {
-				name: "play-circle-outline",
-				color: "#f59e0b",
-				bgColor: "#fffbeb",
-			}; // Yellow
+		// Video
+		if (ft.startsWith("video/") || /\.(mp4|mov|avi|mkv|webm)($|\?)/.test(url)) {
+			return { name: "play-circle-outline", color: "#F59E0B", bgColor: "#FFFBEB" };
 		}
-		// Default to document (PDF, docx, etc.)
-		return {
-			name: "file-document-outline",
-			color: "#ef4444",
-			bgColor: "#fef2f2",
-		}; // Red
+
+		// PDF Documents
+		if (ft.includes("pdf") || url.endsWith(".pdf")) {
+			return { name: "file-pdf-box", color: "#EF4444", bgColor: "#FEF2F2" };
+		}
+
+		// Excel / CSV / Spreadsheets
+		if (
+			ft.includes("excel") ||
+			ft.includes("spreadsheet") ||
+			ft.includes("csv") ||
+			/\.(xls|xlsx|csv)($|\?)/.test(url)
+		) {
+			return { name: "file-excel-box", color: "#16A34A", bgColor: "#F0FDF4" };
+		}
+
+		// Word / Text Documents
+		if (
+			ft.includes("document") ||
+			ft.includes("msword") ||
+			ft.includes("wordprocessingml") ||
+			/\.(doc|docx)($|\?)/.test(url)
+		) {
+			return { name: "file-word-box", color: "#2563EB", bgColor: "#EFF6FF" };
+		}
+
+		// PowerPoint / Presentations
+		if (
+			ft.includes("presentation") ||
+			ft.includes("powerpoint") ||
+			/\.(ppt|pptx|key)($|\?)/.test(url)
+		) {
+			return { name: "file-powerpoint-box", color: "#EA580C", bgColor: "#FFF7ED" };
+		}
+
+		// Code / Structured Data (JSON, XML, HTML, JS, TS)
+		if (
+			ft.includes("json") ||
+			ft.includes("xml") ||
+			ft.includes("html") ||
+			/\.(json|xml|html|css|js|ts|jsx|tsx)($|\?)/.test(url)
+		) {
+			return { name: "file-code-outline", color: "#0284C7", bgColor: "#F0F9FF" };
+		}
+
+		// Plain Text / Notes
+		if (ft.startsWith("text/") || /\.(txt|log|md)($|\?)/.test(url)) {
+			return { name: "file-document-edit-outline", color: "#475569", bgColor: "#F8FAFC" };
+		}
+
+		// Archives / Zips
+		if (
+			ft.includes("zip") ||
+			ft.includes("compressed") ||
+			ft.includes("archive") ||
+			/\.(zip|rar|7z|tar|gz)($|\?)/.test(url)
+		) {
+			return { name: "folder-zip-outline", color: "#D97706", bgColor: "#FFFBEB" };
+		}
+
+		// Default fallback document
+		return { name: "file-document-outline", color: "#64748B", bgColor: "#F8FAFC" };
 	};
 
 	const renderFolderList = () => {
@@ -413,7 +468,7 @@ export default function ContentLibraryScreen() {
 					}
 					refreshControl={RefreshSpinner(refreshing, onRefresh)}
 					renderItem={({ item }: { item: ContentItem }) => {
-						const iconProps = getFileIconProps(item.file_type);
+						const iconProps = getFileIconProps(item.file_type, item.file_url);
 						if (isGridView) {
 							return (
 								<TouchableOpacity

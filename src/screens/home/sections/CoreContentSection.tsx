@@ -16,6 +16,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { simplifyHindiText } from "./HindiSimplifier";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTenant } from "../../../contex/TenantContext";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -708,6 +709,19 @@ function MediaEmbedView({ media }: { media: MediaItem }) {
     }
   };
 
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+
+  useEffect(() => {
+    if (isVideoPlaying) {
+      activateKeepAwakeAsync("CoreContentVideo").catch(() => {});
+    } else {
+      deactivateKeepAwake("CoreContentVideo").catch(() => {});
+    }
+    return () => {
+      deactivateKeepAwake("CoreContentVideo").catch(() => {});
+    };
+  }, [isVideoPlaying]);
+
   if (media.type === "video") {
     return (
       <View style={styles.mediaWrapper}>
@@ -716,6 +730,11 @@ function MediaEmbedView({ media }: { media: MediaItem }) {
           style={styles.mediaVideo}
           useNativeControls
           resizeMode={ResizeMode.CONTAIN}
+          onPlaybackStatusUpdate={(s) => {
+            if (s.isLoaded) {
+              setIsVideoPlaying(s.isPlaying);
+            }
+          }}
         />
         {!!media.title && <Text style={styles.mediaTitle}>{media.title}</Text>}
         {!!media.description && (
@@ -1006,7 +1025,7 @@ export default function CoreContentSection({
           />
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.title}>Core Content</Text>
+          <Text style={styles.title}>Playbook</Text>
           {/* <Text style={styles.subtitle}>
             {sections.length > 0
               ? `${sections.length} section${sections.length > 1 ? "s" : ""} · Tap to read`

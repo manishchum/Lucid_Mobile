@@ -89,12 +89,13 @@ export default function StudioScreen({ navigation }: any) {
     }, [navigation])
   );
 
-  const { activeModule } = useActiveSprint();
+  const { activeSprint, activeModule } = useActiveSprint();
 
   // Params from ActiveSprintContext — each module tap passes its own processedModuleId
   const processedModuleId: string = activeModule?.processedModuleId ?? "";
+  const sprintModuleId: string = activeSprint?.moduleId ?? activeSprint?.planId ?? "";
   const moduleTitle: string = activeModule?.moduleTitle ?? "";
-  const sprintTitle: string = activeModule?.sprintTitle ?? "";
+  const sprintTitle: string = activeSprint?.planTitle ?? activeModule?.sprintTitle ?? "";
 
   const [lang, setLang] = useState<string>('en');
 
@@ -241,7 +242,7 @@ export default function StudioScreen({ navigation }: any) {
         <Text style={styles.emptyTitle}>Studio Empty</Text>
         <Text style={styles.emptySubtitle}>
           Tap <Text style={styles.emptyHighlight}>View Content</Text> on any
-          Sprint module to explore core content, podcasts, flashcards, videos
+          Sprint module to explore Playbook, podcasts, flashcards, videos
           and AI assistance here.
         </Text>
         <TouchableOpacity
@@ -394,7 +395,7 @@ export default function StudioScreen({ navigation }: any) {
 
         {/* ── Accordion Sections ── */}
         <View style={styles.accordionList}>
-          {/* Core Content — parses processedModule.content (HTML) into sections */}
+          {/* Playbook — parses processedModule.content (HTML) into sections */}
           {showTextual && (
             <CoreContentSection
               isExpanded={expanded === "core"}
@@ -483,7 +484,9 @@ export default function StudioScreen({ navigation }: any) {
               isExpanded={expanded === "ai"}
               onToggle={() => toggle("ai")}
               processedModuleId={processedModuleId}
+              sprintModuleId={sprintModuleId}
               moduleTitle={moduleTitle}
+              sprintTitle={sprintTitle}
               userId={userId ?? ""}
               companyId={companyId}
               lang={lang}

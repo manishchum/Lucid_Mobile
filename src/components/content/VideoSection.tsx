@@ -16,6 +16,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTenant } from "../../contex/TenantContext";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 
 // ─── Language Types ────────────────────────────────────────────────────────────
 
@@ -108,6 +109,18 @@ export default function VideoSection({
   const durationMs = isLoaded ? ((status as any).durationMillis ?? 0) : 0;
   const positionMs = isLoaded ? ((status as any).positionMillis ?? 0) : 0;
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
+
+  // Keep screen awake while video is playing
+  useEffect(() => {
+    if (isPlaying) {
+      activateKeepAwakeAsync("VideoSection").catch(() => {});
+    } else {
+      deactivateKeepAwake("VideoSection").catch(() => {});
+    }
+    return () => {
+      deactivateKeepAwake("VideoSection").catch(() => {});
+    };
+  }, [isPlaying]);
 
   // Reset on language switch — show transition overlay while new source loads
   useEffect(() => {
@@ -563,7 +576,7 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
   },
   header: { flexDirection: "row", alignItems: "center", padding: 16, gap: 12 },
   iconBox: {

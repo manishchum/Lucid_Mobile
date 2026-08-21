@@ -16,6 +16,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import { WebView } from "react-native-webview";
 import { useVideoPlayer, VideoView } from "expo-video";
 import * as FileSystem from "expo-file-system/legacy";
+import { useKeepAwake, activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 
 import { ContentItem } from "../../api/content-library/Dto";
 import AudioContentViewer from "../../components/content/AudioContentViewer";
@@ -56,6 +57,14 @@ export default function ContentViewerScreen() {
                  file_url.toLowerCase().endsWith(".json") ||
                  file_url.toLowerCase().endsWith(".xml");
 
+  const isOfficeDoc = file_type?.includes("document") || 
+                       file_type?.includes("msword") || 
+                       file_type?.includes("spreadsheet") || 
+                       file_type?.includes("excel") || 
+                       file_type?.includes("presentation") || 
+                       file_type?.includes("powerpoint") || 
+                       /\.(doc|docx|xls|xlsx|ppt|pptx)($|\?)/i.test(file_url);
+
   useEffect(() => {
     if (isDocument && isText) {
       setTextLoading(true);
@@ -78,10 +87,23 @@ export default function ContentViewerScreen() {
     }
   }, [file_url, file_type, isDocument, isText]);
 
+  // Keep screen awake when viewing video in Content Library
+  useEffect(() => {
+    if (isVideo) {
+      activateKeepAwakeAsync("ContentViewerVideo").catch(() => {});
+    } else {
+      deactivateKeepAwake("ContentViewerVideo").catch(() => {});
+    }
+    return () => {
+      deactivateKeepAwake("ContentViewerVideo").catch(() => {});
+    };
+  }, [isVideo]);
+
   // Modern expo-video player hook (only initialize video source for videos)
-  const player = useVideoPlayer(isVideo ? file_url : null, player => {
+  const player = useVideoPlayer(isVideo ? file_url : null, (player) => {
     if (player) {
       player.loop = false;
+      player.keepScreenOnWhilePlaying = true;
       if (isVideo) player.play();
     }
   });
@@ -153,32 +175,29 @@ export default function ContentViewerScreen() {
         );
       }
 
-      const isOfficeDoc = file_type?.includes("document") || 
-                           file_type?.includes("msword") || 
-                           file_url.toLowerCase().endsWith(".doc") || 
-                           file_url.toLowerCase().endsWith(".docx") ||
-                           file_url.toLowerCase().endsWith(".xls") ||
-                           file_url.toLowerCase().endsWith(".xlsx") ||
-                           file_url.toLowerCase().endsWith(".ppt") ||
-                           file_url.toLowerCase().endsWith(".pptx");
-
-      let urlToRender;
+      let urlToRender = "";
       if (isPdf) {
-        urlToRender = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file_url)}`;
-      } else if (isOfficeDoc) {
         urlToRender = `https://docs.google.com/viewer?url=${encodeURIComponent(file_url)}&embedded=true`;
+      } else if (isOfficeDoc) {
+        urlToRender = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file_url)}`;
       } else {
-        urlToRender = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(file_url)}`;
+        urlToRender = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file_url)}`;
       }
 
       return (
         <WebView
           source={{ uri: urlToRender }}
           style={styles.webviewContent}
+          onLoadStart={() => setLoading(true)}
           onLoadEnd={() => setLoading(false)}
-          onError={() => {
+          onError={(syntheticEvent) => {
+            const { nativeEvent } = syntheticEvent;
+            console.warn("[ContentViewer] WebView error:", nativeEvent);
             setLoading(false);
-            Alert.alert("Load Error", "Failed to load document.");
+            Alert.alert(
+              "Load Error",
+              "Failed to load document preview. You can use the download button to open/download the file."
+            );
           }}
           startInLoadingState={true}
           renderLoading={() => (
@@ -210,7 +229,7 @@ export default function ContentViewerScreen() {
       </View>
 
       <View style={styles.contentWrapper}>
-        {(isImage) && loading && (
+        {(isImage || isDocument) && loading && (
           <ActivityIndicator style={styles.loader} size="large" color="#3b82f6" />
         )}
         {renderContent()}

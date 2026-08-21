@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
     overflow: "hidden",
   },
   header: { flexDirection: "row", alignItems: "center", padding: 16, gap: 12 },

@@ -5,8 +5,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  PanResponder,
 } from "react-native";
+import Slider from "@react-native-community/slider";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Audio, AVPlaybackStatus } from "expo-av";
 import { safeHaptics } from "../../utils/haptics";
@@ -37,9 +37,11 @@ export default function AudioContentViewer({
   const [positionMillis, setPositionMillis] = useState(0);
   const [durationMillis, setDurationMillis] = useState(0);
   const [speedIndex, setSpeedIndex] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubPosition, setScrubPosition] = useState(0);
 
   const soundRef = useRef<Audio.Sound | null>(null);
-  const progressBarWidth = useRef(0);
+  const isScrubbingRef = useRef(false);
 
   const playbackSpeed = PLAYBACK_SPEEDS[speedIndex];
 
@@ -81,7 +83,9 @@ export default function AudioContentViewer({
         { shouldPlay: true, rate: playbackSpeed, shouldCorrectPitch: true },
         (status: AVPlaybackStatus) => {
           if (status.isLoaded) {
-            setPositionMillis(status.positionMillis ?? 0);
+            if (!isScrubbingRef.current) {
+              setPositionMillis(status.positionMillis ?? 0);
+            }
             setDurationMillis(status.durationMillis ?? 0);
             setIsPlaying(status.isPlaying);
             if (status.didJustFinish) {
@@ -112,10 +116,10 @@ export default function AudioContentViewer({
     }
   };
 
-  const handleSeek = async (ratio: number) => {
-    const clamped = Math.max(0, Math.min(1, ratio));
+  const handleSeek = async (millis: number) => {
+    const clamped = Math.max(0, Math.min(durationMillis, millis));
     if (soundRef.current && durationMillis > 0) {
-      await soundRef.current.setPositionAsync(clamped * durationMillis);
+      await soundRef.current.setPositionAsync(clamped);
     }
   };
 
@@ -140,26 +144,8 @@ export default function AudioContentViewer({
     }
   };
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => {
-        if (progressBarWidth.current > 0) {
-          handleSeek(evt.nativeEvent.locationX / progressBarWidth.current);
-        }
-      },
-      onPanResponderMove: (evt) => {
-        if (progressBarWidth.current > 0) {
-          handleSeek(evt.nativeEvent.locationX / progressBarWidth.current);
-        }
-      },
-    })
-  ).current;
-
-  const progressRatio =
-    durationMillis > 0 ? positionMillis / durationMillis : 0;
-  const remainingMillis = Math.max(0, durationMillis - positionMillis);
+  const displayPosition = isScrubbing ? scrubPosition : positionMillis;
+  const remainingMillis = Math.max(0, durationMillis - displayPosition);
 
   return (
     <View style={styles.container}>
@@ -178,33 +164,39 @@ export default function AudioContentViewer({
 
       {/* Player Card */}
       <View style={styles.playerCard}>
-        {/* Scrubber */}
-        <View
-          style={styles.progressHitSlop}
-          {...panResponder.panHandlers}
-          onLayout={(e) => {
-            progressBarWidth.current = e.nativeEvent.layout.width;
-          }}
-        >
-          <View style={styles.track}>
-            <View
-              style={[
-                styles.fill,
-                { width: `${Math.min(100, Math.max(0, progressRatio * 100))}%` },
-              ]}
-            />
-          </View>
-          <View
-            style={[
-              styles.thumb,
-              { left: `${Math.min(100, Math.max(0, progressRatio * 100))}%` },
-            ]}
+        {/* Timeline Slider for forward and backward audio scrubbing */}
+        <View style={styles.sliderContainer}>
+          <Slider
+            style={styles.slider}
+            minimumValue={0}
+            maximumValue={durationMillis > 0 ? durationMillis : 1}
+            value={displayPosition}
+            minimumTrackTintColor="#7C3AED"
+            maximumTrackTintColor="#E2E8F0"
+            thumbTintColor="#7C3AED"
+            disabled={durationMillis === 0}
+            onSlidingStart={() => {
+              isScrubbingRef.current = true;
+              setIsScrubbing(true);
+              setScrubPosition(positionMillis);
+            }}
+            onValueChange={(val) => {
+              setScrubPosition(val);
+            }}
+            onSlidingComplete={async (val) => {
+              isScrubbingRef.current = false;
+              setIsScrubbing(false);
+              setPositionMillis(val);
+              if (soundRef.current) {
+                await soundRef.current.setPositionAsync(val);
+              }
+            }}
           />
         </View>
 
         {/* Time display */}
         <View style={styles.timeRow}>
-          <Text style={styles.timeText}>{formatTime(positionMillis)}</Text>
+          <Text style={styles.timeText}>{formatTime(displayPosition)}</Text>
           <Text style={styles.timeText}>−{formatTime(remainingMillis)}</Text>
         </View>
 
@@ -340,35 +332,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
   },
-  progressHitSlop: {
-    paddingVertical: 12,
+  sliderContainer: {
+    paddingVertical: 6,
     justifyContent: "center",
   },
-  track: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#E2E8F0",
-    overflow: "hidden",
-  },
-  fill: {
-    height: "100%",
-    borderRadius: 4,
-    backgroundColor: "#7C3AED",
-  },
-  thumb: {
-    position: "absolute",
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "#7C3AED",
-    top: "50%",
-    marginTop: 3,
-    marginLeft: -9,
-    // shadowColor: "#7C3AED",
-    // shadowOpacity: 0.35,
-    // shadowRadius: 6,
-    // shadowOffset: { width: 0, height: 2 },
-    // elevation: 3,
+  slider: {
+    width: "100%",
+    height: 20,
   },
   timeRow: {
     flexDirection: "row",

@@ -282,15 +282,17 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             </View>
           </View>
 
-          {/* STATS GRID SKELETON */}
+          {/* STATS BAR SKELETON */}
           <View style={styles.sectionWrapper}>
-            <View style={styles.statsGrid}>
+            <View style={styles.statsBar}>
               {Array.from({ length: 3 }).map((_, idx) => (
-                <View key={idx} style={styles.statCard}>
-                  <Animated.View style={[styles.skeletonIconBox, { opacity: skeletonOpacity }]} />
-                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 30, height: 14, marginBottom: 6 }]} />
-                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 50, height: 10 }]} />
-                </View>
+                <React.Fragment key={idx}>
+                  {idx > 0 && <View style={styles.statDivider} />}
+                  <View style={styles.statItem}>
+                    <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 44, height: 16, marginBottom: 4 }]} />
+                    <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 50, height: 10 }]} />
+                  </View>
+                </React.Fragment>
               ))}
             </View>
           </View>
@@ -379,9 +381,9 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                 <Text style={styles.welcomeName}>
                   {(user?.name || "Learner").split(" ")[0]}!
                 </Text>
-                <Text style={styles.welcomeTagline}>
+                {/* <Text style={styles.welcomeTagline}>
                   Keep learning, keep growing.
-                </Text>
+                </Text> */}
               </View>
               <View style={styles.ringWrapper}>
                 <ProgressRing percentage={progressPercentage} />
@@ -391,31 +393,36 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
           {/* ── QUICK STATS ─────────────────────────────────────────── */}
           <View style={styles.sectionWrapper}>
-            <View style={styles.statsGrid}>
-              <StatCard
-                icon="book-multiple"
-                color="#EEF2FF"
-                iconColor="#4F46E5"
-                val={String(resolvedPlanCards.length)}
-                label="Sprints"
-              />
-              <StatCard
-                icon="check-decagram"
-                color="#ECFDF5"
-                iconColor="#10B981"
-                val={String(completedCount)}
-                label="Completed"
-              />
-              <StatCard
-                icon="clock-time-eight-outline"
-                color="#FFF7ED"
-                iconColor="#F59E0B"
-                val={String(
-                  resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS")
-                    .length,
-                )}
-                label="In Progress"
-              />
+            <View style={styles.statsBar}>
+              <View style={styles.statItem}>
+                <View style={styles.statValueRow}>
+                  <MaterialCommunityIcons name="book-open-variant" size={17} color="#4F46E5" />
+                  <Text style={styles.statVal}>{resolvedPlanCards.length}</Text>
+                </View>
+                <Text style={styles.statLabel}>Sprints</Text>
+              </View>
+
+              <View style={styles.statDivider} />
+
+              <View style={styles.statItem}>
+                <View style={styles.statValueRow}>
+                  <MaterialCommunityIcons name="check-circle-outline" size={17} color="#10B981" />
+                  <Text style={styles.statVal}>{completedCount}</Text>
+                </View>
+                <Text style={styles.statLabel}>Completed</Text>
+              </View>
+
+              <View style={styles.statDivider} />
+
+              <View style={styles.statItem}>
+                <View style={styles.statValueRow}>
+                  <MaterialCommunityIcons name="clock-outline" size={17} color="#F59E0B" />
+                  <Text style={styles.statVal}>
+                    {resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS").length}
+                  </Text>
+                </View>
+                <Text style={styles.statLabel}>In Progress</Text>
+              </View>
             </View>
           </View>
 
@@ -434,13 +441,3 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     </View>
   );
 }
-
-const StatCard = ({ icon, color, iconColor, val, label }: any) => (
-  <View style={styles.statCard}>
-    <View style={[styles.statIconBox, { backgroundColor: color }]}>
-      <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
-    </View>
-    <Text style={styles.statVal}>{val}</Text>
-    <Text style={styles.statLabel}>{label}</Text>
-  </View>
-);

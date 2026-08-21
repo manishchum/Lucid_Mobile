@@ -118,18 +118,27 @@ export const postModuleChat = async (
 ): Promise<PostModuleChatResponseDto> => {
   logger.info("[Request] postModuleChat", {
     processed_module_id: data.processed_module_id,
+    module_id: data.module_id,
   });
+
+  const payload: Record<string, any> = {
+    user_message: data.user_message,
+    user_id: data.user_id,
+    company_id: data.company_id,
+    chat_history: data.chat_history,
+  };
+
+  if (data.processed_module_id) {
+    payload.processed_module_id = data.processed_module_id;
+  }
+  if (data.module_id) {
+    payload.module_id = data.module_id;
+  }
 
   const result = await apiFetch<PostModuleChatResponseDto>(MODULE_CHAT_URL, {
     method: "POST",
     userId: data.user_id,
-    body: JSON.stringify({
-      processed_module_id: data.processed_module_id,
-      user_message: data.user_message,
-      user_id: data.user_id,
-      company_id: data.company_id,
-      chat_history: data.chat_history,
-    }),
+    body: JSON.stringify(payload),
   });
 
   logger.info("[Request] postModuleChat success");

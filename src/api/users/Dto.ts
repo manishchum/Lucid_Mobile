@@ -204,7 +204,8 @@ export type ChatMessage = {
 };
 
 export type PostModuleChatDto = {
-  processed_module_id: string;
+  processed_module_id?: string;
+  module_id?: string;
   user_message: string;
   user_id: string;
   company_id: string;
