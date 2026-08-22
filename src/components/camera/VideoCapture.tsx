@@ -1,13 +1,29 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Video, ResizeMode } from "expo-av";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { useVideoRecorder } from "../../hooks/useVideoRecorder";
 import CustomVideoRecorder from "./CustomVideoRecorder";
 
 interface VideoCaptureProps {
   /** Called every time a new video is captured (or null when reset) */
   onCapture: (uri: string | null, mimeType: string | null) => void;
+}
+
+function CapturedVideoPreview({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = false;
+  });
+
+  return (
+    <VideoView
+      style={styles.videoPlayer}
+      player={player}
+      fullscreenOptions={{ enable: true }}
+      allowsPictureInPicture
+      contentFit="contain"
+    />
+  );
 }
 
 export default function VideoCapture({ onCapture }: VideoCaptureProps) {
@@ -29,13 +45,7 @@ export default function VideoCapture({ onCapture }: VideoCaptureProps) {
   if (capturedUri) {
     return (
       <View style={styles.previewWrapper}>
-        <Video
-          source={{ uri: capturedUri }}
-          style={styles.videoPlayer}
-          useNativeControls
-          resizeMode={ResizeMode.CONTAIN}
-          isLooping={false}
-        />
+        <CapturedVideoPreview uri={capturedUri} />
 
         <View style={styles.successBadge}>
           <MaterialCommunityIcons

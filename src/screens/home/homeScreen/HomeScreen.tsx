@@ -106,6 +106,12 @@ const ProgressRing = ({ percentage }: { percentage: number }) => {
   );
 };
 
+const getGreeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning,";
+  if (hour < 17) return "Good afternoon,";
+  return "Good evening,";
+}
 
 const styles = createStyles();
 
@@ -358,6 +364,8 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
   const { completedCount, totalAssigned, progressPercentage } = stats;
 
+  const greeting = getGreeting();
+
   return (
     <View style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
@@ -377,7 +385,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           <View style={styles.welcomeContainer}>
             <View style={styles.welcomeHeaderRow}>
               <View style={styles.welcomeTextColumn}>
-                <Text style={styles.welcomeSub}>Welcome back,</Text>
+                <Text style={styles.welcomeSub}>{greeting}</Text>
                 <Text style={styles.welcomeName}>
                   {(user?.name || "Learner").split(" ")[0]}!
                 </Text>

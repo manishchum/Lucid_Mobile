@@ -212,6 +212,7 @@ export default function ContentDetailScreen({ route, navigation }: any) {
             />
 
             <PodcastSection
+              title={primaryModule?.title ?? moduleTitle ?? "Podcast Lesson"}
               isExpanded={expanded === 'podcast'}
               onToggle={() => toggle('podcast')}
               lang={lang}

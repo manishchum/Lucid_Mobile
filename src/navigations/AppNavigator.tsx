@@ -1,7 +1,10 @@
 import React, { useEffect } from "react";
 import { View, ActivityIndicator, StyleSheet, Alert } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import {
+  createBottomTabNavigator,
+  BottomTabBar,
+} from "@react-navigation/bottom-tabs";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,6 +15,11 @@ import {
   ActiveSprintProvider,
   useActiveSprint,
 } from "../contex/ActiveSprintContext";
+import {
+  PodcastPlayerProvider,
+  usePodcastPlayer,
+} from "../contex/PodcastPlayerContext";
+import { PodcastMiniPlayer } from "../components/podcast/PodcastMiniPlayer";
 import { APP_ROUTES, STACK_ROUTES } from "./Routes";
 import { initMobileErrorReporting } from "../utils/errorReporter";
 import { initOfflineQueueListener } from "../utils/offlineQueue";
@@ -49,6 +57,12 @@ function BottomTabNavigator() {
 
   return (
     <Tab.Navigator
+      tabBar={(props) => (
+        <View style={{ backgroundColor: "#ffffff" }}>
+          <PodcastMiniPlayer />
+          <BottomTabBar {...props} />
+        </View>
+      )}
       screenOptions={({ route }: any) => ({
         headerShown: true,
         header: () => <AppHeader />,
@@ -289,9 +303,11 @@ export default function AppNavigator() {
   return (
     <TenantProvider>
       <ActiveSprintProvider>
-        <DrawerProvider>
-          <AppNavigatorContent />
-        </DrawerProvider>
+        <PodcastPlayerProvider>
+          <DrawerProvider>
+            <AppNavigatorContent />
+          </DrawerProvider>
+        </PodcastPlayerProvider>
       </ActiveSprintProvider>
     </TenantProvider>
   );

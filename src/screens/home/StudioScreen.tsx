@@ -435,6 +435,7 @@ export default function StudioScreen({ navigation }: any) {
           {/* Podcast — audio URLs and timelines all from API response */}
           {showPodcast && (
             <PodcastSection
+              title={processedModule?.title ?? moduleTitle ?? "Podcast Lesson"}
               isExpanded={expanded === "podcast"}
               onToggle={() => toggle("podcast")}
               lang={lang}

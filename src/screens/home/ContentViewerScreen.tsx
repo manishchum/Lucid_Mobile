@@ -142,7 +142,7 @@ export default function ContentViewerScreen() {
           <VideoView
             player={player}
             style={styles.videoContent}
-            allowsFullscreen
+            fullscreenOptions={{ enable: true }}
             allowsPictureInPicture
             showsTimecodes
             nativeControls

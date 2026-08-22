@@ -1287,9 +1287,9 @@ export default function ReportsScreen() {
                       Attempted on{" "}
                       {new Date(
                         selectedAttempt.completed_at || selectedAttempt.created_at,
-                      ).toLocaleDateString("en-US", {
+                      ).toLocaleDateString("en-IN", {
                         year: "numeric",
-                        month: "short",
+                        month: "long",
                         day: "numeric",
                       })}
                     </Text>

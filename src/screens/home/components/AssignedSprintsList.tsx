@@ -608,45 +608,46 @@ export default function AssignedSprintsList({
                 };
 
                 return (
-                  <TouchableOpacity
-                    key={plan.planKey}
-                    style={styles.unifiedCard}
-                    onPress={handleCardPress}
-                    activeOpacity={0.8}
-                  >
-                    {/* Slot A: Left Icon */}
-                    <View style={styles.slotLeft}>
-                      <View style={[styles.planIconCircle, styles.iconCircleCompleted]}>
-                        <MaterialCommunityIcons name="check-decagram" size={20} color="#10B981" />
+                  <View key={plan.planKey} style={styles.cardWrapper}>
+                    <TouchableOpacity
+                      style={styles.unifiedCard}
+                      onPress={handleCardPress}
+                      activeOpacity={0.8}
+                    >
+                      {/* Slot A: Left Icon */}
+                      <View style={styles.slotLeft}>
+                        <View style={[styles.planIconCircle, styles.iconCircleCompleted]}>
+                          <MaterialCommunityIcons name="check-decagram" size={20} color="#10B981" />
+                        </View>
                       </View>
-                    </View>
 
-                    {/* Slot B: Center Title & Subtext */}
-                    <View style={styles.slotCenter}>
-                      <Text numberOfLines={2} style={styles.planTitleText}>
-                        {plan.title}
-                      </Text>
-                      <Text style={styles.progressDetailText}>
-                        Completed
-                      </Text>
-                    </View>
+                      {/* Slot B: Center Title & Subtext */}
+                      <View style={styles.slotCenter}>
+                        <Text numberOfLines={2} style={styles.planTitleText}>
+                          {plan.title}
+                        </Text>
+                        <Text style={styles.progressDetailText}>
+                          Completed
+                        </Text>
+                      </View>
 
-                    {/* Slot C: Right Status dot & Certificate Download button */}
-                    <View style={styles.slotRight}>
-                      <View style={[styles.statusDot, styles.dotCompleted]} />
-                      <TouchableOpacity
-                        style={styles.certificateIconBtn}
-                        activeOpacity={0.7}
-                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          setActiveCertPlan(plan);
-                        }}
-                      >
-                        <MaterialCommunityIcons name="certificate" size={20} color="#D97706" />
-                      </TouchableOpacity>
-                    </View>
-                  </TouchableOpacity>
+                      {/* Slot C: Right Status dot & Certificate Download button */}
+                      <View style={styles.slotRight}>
+                        <View style={[styles.statusDot, styles.dotCompleted]} />
+                        <TouchableOpacity
+                          style={styles.certificateIconBtn}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            setActiveCertPlan(plan);
+                          }}
+                        >
+                          <MaterialCommunityIcons name="certificate" size={20} color="#D97706" />
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
                 );
               })}
             </View>

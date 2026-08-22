@@ -11,7 +11,8 @@ import {
   Image,
   Modal,
 } from "react-native";
-import { Video, ResizeMode, Audio, AVPlaybackStatus } from "expo-av";
+import { Audio, AVPlaybackStatus } from "expo-av";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { simplifyHindiText } from "./HindiSimplifier";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -128,6 +129,46 @@ function parseTable(tableHtml: string): {
     if (cells.length > 0) rows.push(cells.map((td) => stripTags(td)));
   });
   return { headers, rows };
+}
+
+function MediaVideoPlayer({
+  src,
+  title,
+  description,
+  onPlayingChange,
+}: {
+  src: string;
+  title?: string;
+  description?: string;
+  onPlayingChange: (playing: boolean) => void;
+}) {
+  const player = useVideoPlayer(src, (p) => {
+    p.loop = false;
+  });
+
+  useEffect(() => {
+    if (!player) return;
+    const playingSub = player.addListener("playingChange", (evt: any) => {
+      onPlayingChange(evt.isPlaying ?? evt);
+    });
+    return () => playingSub.remove();
+  }, [player, onPlayingChange]);
+
+  return (
+    <View style={styles.mediaWrapper}>
+      <VideoView
+        style={styles.mediaVideo}
+        player={player}
+        fullscreenOptions={{ enable: true }}
+        allowsPictureInPicture
+        contentFit="contain"
+      />
+      {!!title && <Text style={styles.mediaTitle}>{title}</Text>}
+      {!!description && (
+        <Text style={styles.mediaDescription}>{description}</Text>
+      )}
+    </View>
+  );
 }
 
 // ─── Tab label logic ──────────────────────────────────────────────────────────
@@ -724,23 +765,12 @@ function MediaEmbedView({ media }: { media: MediaItem }) {
 
   if (media.type === "video") {
     return (
-      <View style={styles.mediaWrapper}>
-        <Video
-          source={{ uri: media.src }}
-          style={styles.mediaVideo}
-          useNativeControls
-          resizeMode={ResizeMode.CONTAIN}
-          onPlaybackStatusUpdate={(s) => {
-            if (s.isLoaded) {
-              setIsVideoPlaying(s.isPlaying);
-            }
-          }}
-        />
-        {!!media.title && <Text style={styles.mediaTitle}>{media.title}</Text>}
-        {!!media.description && (
-          <Text style={styles.mediaDescription}>{media.description}</Text>
-        )}
-      </View>
+      <MediaVideoPlayer
+        src={media.src}
+        title={media.title}
+        description={media.description}
+        onPlayingChange={setIsVideoPlaying}
+      />
     );
   }
 
