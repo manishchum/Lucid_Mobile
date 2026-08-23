@@ -22,6 +22,7 @@ export default function LoginScreen() {
   const { width } = useWindowDimensions();
   const { phoneNumber, setPhoneNumber, sendOTP, checkUserExists } = useAuth();
   const [error, setError] = useState("");
+  const [errorDetails, setErrorDetails] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showNotRegisteredModal, setShowNotRegisteredModal] = useState(false);
   const [showAccessDeniedModal, setShowAccessDeniedModal] = useState(false);
@@ -32,6 +33,7 @@ export default function LoginScreen() {
 
   const handleSendCode = async () => {
     setError("");
+    setErrorDetails("");
 
     if (phoneNumber.length !== 10) {
       setError("Please enter exactly 10 digits");
@@ -58,11 +60,15 @@ export default function LoginScreen() {
           setShowAccessDeniedModal(true);
         } else {
           setError(result.message || "Failed to send OTP. Please try again.");
+          if (result.details) {
+            setErrorDetails(result.details);
+          }
         }
       }
     } catch (err: any) {
       const apiUrl = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
-      setError(`Connection failed: ${err?.message || "Please check connection"} (${apiUrl})`);
+      setError(`Connection failed: ${err?.message || "Please check connection"}`);
+      setErrorDetails(`Target: ${apiUrl}/api/auth/send-otp | ${err?.name || "Error"} ${err?.cause ? JSON.stringify(err.cause) : ""}`);
     } finally {
       setIsLoading(false);
     }
@@ -120,7 +126,14 @@ export default function LoginScreen() {
             </View>
 
             {error ? (
-              <Text style={styles.errorTextBelow}>{error}</Text>
+              <View style={{ marginTop: 6, marginBottom: 4 }}>
+                <Text style={styles.errorTextBelow}>{error}</Text>
+                {errorDetails ? (
+                  <Text style={{ fontSize: 11, color: "#94A3B8", marginTop: 2, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" }}>
+                    {errorDetails}
+                  </Text>
+                ) : null}
+              </View>
             ) : null}
 
             <TouchableOpacity

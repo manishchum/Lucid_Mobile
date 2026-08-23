@@ -51,7 +51,10 @@ export const sendOtpApi = async (
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
       body: JSON.stringify({ phone }),
     });
     const data = await response.json();
@@ -76,7 +79,10 @@ export const verifyOtpApi = async (
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
       body: JSON.stringify({ phone, otp }),
     });
     const data = await response.json();

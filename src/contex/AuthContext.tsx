@@ -49,6 +49,7 @@ export interface SendOtpResult {
   success: boolean;
   status?: number;
   message?: string;
+  details?: string;
 }
 
 interface AuthContextType {
@@ -247,10 +248,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return { success: false, message: res.message || "Failed to send OTP." };
     } catch (error: any) {
       console.error("[Auth] OTP Send Error:", error);
+      const detailInfo = [
+        error?.name ? `Type: ${error.name}` : null,
+        error?.cause ? `Cause: ${JSON.stringify(error.cause)}` : null,
+        `Target: ${process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai"}/api/auth/send-otp`
+      ].filter(Boolean).join(" | ");
+
       return {
         success: false,
         status: error?.status,
         message: error?.message || "Failed to send OTP.",
+        details: detailInfo,
       };
     }
   };
