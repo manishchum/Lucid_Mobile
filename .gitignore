@@ -74,4 +74,4 @@ GoogleService-Info.plist
 !.yarn/sdks
 !.yarn/versions
 
-google-service.json
+google-services.json
