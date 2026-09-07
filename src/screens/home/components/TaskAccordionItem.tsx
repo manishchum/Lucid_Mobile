@@ -37,6 +37,7 @@ import TaskSubmissionBlock, {
 } from "../../../components/tasks/TaskSubmissionBlock";
 import { useAuth } from "../../../contex/AuthContext";
 import { eventBus } from "../../../utils/EventBus";
+import { uploadMediaToStorage } from "../../../services/storageUpload";
 
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -223,6 +224,7 @@ export default function TaskAccordionItem({
   const [modalOpen, setModalOpen] = useState(false);
   const insets = useSafeAreaInsets();
   const [submitting, setSubmitting] = useState(false);
+  const [submittingLabel, setSubmittingLabel] = useState<string>("Submitting…");
   const [justCompleted, setJustCompleted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -331,28 +333,112 @@ export default function TaskAccordionItem({
       ? bundleTasks.length
       : ((task as any).max_score ?? 1);
 
-    const payload = isBundle
-      ? {
-          is_bundle: true,
-          bundle_answers: bundleTasks.map((bt, idx) => ({
-            title: bt.title,
-            answers: buildFormatAnswers(
-              toFormatList(bt.submission_format),
-              bt.questions ?? [],
-              bundleAnswers[idx] ?? {},
-            ),
-          })) as BundleSubmissionEntry[],
-        }
-      : {
-          is_bundle: false,
-          answers: buildFormatAnswers(submissionFormats, questions, answers),
-        };
-
-    onSubmit?.(task, payload);
-
     setSubmitting(true);
     setSubmitError(null);
+    setSubmittingLabel("Uploading media…");
+
     try {
+      // 1. Pre-upload local media for single-task answers
+      const resolvedAnswers = { ...answers };
+      for (const fmt of submissionFormats) {
+        if (fmt === "image" && resolvedAnswers.image?.image?.uri) {
+          const cloudUrl = await uploadMediaToStorage(
+            resolvedAnswers.image.image.uri,
+            resolvedAnswers.image.image.mime || "image/jpeg",
+            { userId: effectiveUserId },
+          );
+          resolvedAnswers.image = {
+            ...resolvedAnswers.image,
+            image: { ...resolvedAnswers.image.image, uri: cloudUrl },
+          };
+        } else if (fmt === "video" && resolvedAnswers.video?.video?.uri) {
+          const cloudUrl = await uploadMediaToStorage(
+            resolvedAnswers.video.video.uri,
+            resolvedAnswers.video.video.mime || "video/mp4",
+            { userId: effectiveUserId },
+          );
+          resolvedAnswers.video = {
+            ...resolvedAnswers.video,
+            video: { ...resolvedAnswers.video.video, uri: cloudUrl },
+          };
+        } else if (fmt === "audio" && resolvedAnswers.audio?.audio?.uri) {
+          const cloudUrl = await uploadMediaToStorage(
+            resolvedAnswers.audio.audio.uri,
+            resolvedAnswers.audio.audio.mime || "audio/m4a",
+            { userId: effectiveUserId },
+          );
+          resolvedAnswers.audio = {
+            ...resolvedAnswers.audio,
+            audio: { ...resolvedAnswers.audio.audio, uri: cloudUrl },
+          };
+        }
+      }
+
+      // 2. Pre-upload local media for bundle tasks
+      const resolvedBundleAnswers = { ...bundleAnswers };
+      if (isBundle) {
+        for (let idx = 0; idx < bundleTasks.length; idx++) {
+          const bt = bundleTasks[idx];
+          const fmts = toFormatList(bt.submission_format);
+          const taskAns = { ...(resolvedBundleAnswers[idx] ?? {}) };
+          for (const fmt of fmts) {
+            if (fmt === "image" && taskAns.image?.image?.uri) {
+              const cloudUrl = await uploadMediaToStorage(
+                taskAns.image.image.uri,
+                taskAns.image.image.mime || "image/jpeg",
+                { userId: effectiveUserId },
+              );
+              taskAns.image = {
+                ...taskAns.image,
+                image: { ...taskAns.image.image, uri: cloudUrl },
+              };
+            } else if (fmt === "video" && taskAns.video?.video?.uri) {
+              const cloudUrl = await uploadMediaToStorage(
+                taskAns.video.video.uri,
+                taskAns.video.video.mime || "video/mp4",
+                { userId: effectiveUserId },
+              );
+              taskAns.video = {
+                ...taskAns.video,
+                video: { ...taskAns.video.video, uri: cloudUrl },
+              };
+            } else if (fmt === "audio" && taskAns.audio?.audio?.uri) {
+              const cloudUrl = await uploadMediaToStorage(
+                taskAns.audio.audio.uri,
+                taskAns.audio.audio.mime || "audio/m4a",
+                { userId: effectiveUserId },
+              );
+              taskAns.audio = {
+                ...taskAns.audio,
+                audio: { ...taskAns.audio.audio, uri: cloudUrl },
+              };
+            }
+          }
+          resolvedBundleAnswers[idx] = taskAns;
+        }
+      }
+
+      setSubmittingLabel("Submitting…");
+
+      const payload = isBundle
+        ? {
+            is_bundle: true,
+            bundle_answers: bundleTasks.map((bt, idx) => ({
+              title: bt.title,
+              answers: buildFormatAnswers(
+                toFormatList(bt.submission_format),
+                bt.questions ?? [],
+                resolvedBundleAnswers[idx] ?? {},
+              ),
+            })) as BundleSubmissionEntry[],
+          }
+        : {
+            is_bundle: false,
+            answers: buildFormatAnswers(submissionFormats, questions, resolvedAnswers),
+          };
+
+      onSubmit?.(task, payload);
+
       if (isBundle) {
         for (let idx = 0; idx < bundleTasks.length; idx++) {
           const bt = bundleTasks[idx];
@@ -361,7 +447,7 @@ export default function TaskAccordionItem({
           const formatAnswers = buildFormatAnswers(
             fmts,
             bt.questions ?? [],
-            bundleAnswers[idx] ?? {},
+            resolvedBundleAnswers[idx] ?? {},
           );
           for (const fa of formatAnswers) {
             await submitFormatAnswer({
@@ -380,7 +466,7 @@ export default function TaskAccordionItem({
         const formatAnswers = buildFormatAnswers(
           submissionFormats,
           questions,
-          answers,
+          resolvedAnswers,
         );
         const useChildTaskId = formatAnswers.length > 1;
         for (let idx = 0; idx < formatAnswers.length; idx++) {
@@ -639,7 +725,10 @@ export default function TaskAccordionItem({
                   disabled={submitting || !!validationMessage}
                 >
                   {submitting ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <ActivityIndicator size="small" color="#fff" />
+                      <Text style={s.submitBtnText}>{submittingLabel}</Text>
+                    </View>
                   ) : (
                     <>
                       <MaterialCommunityIcons

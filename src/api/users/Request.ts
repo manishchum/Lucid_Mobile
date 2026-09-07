@@ -21,6 +21,7 @@ import {
   SubmissionFormat,
   FormatAnswer,
 } from "./Dto";
+import { uploadMediaToStorage } from "../../services/storageUpload";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -282,7 +283,7 @@ async function apiFetch<T = any>(
   if (!response.ok) {
     logger.error(`[apiFetch] ${response.status} for ${url}:`, body);
     throw new ApiError(
-      body?.message ?? `HTTP error! status: ${response.status}`,
+      body?.detail ?? body?.message ?? `HTTP error! status: ${response.status}`,
       response.status,
       code,
     );
@@ -292,6 +293,36 @@ async function apiFetch<T = any>(
 }
 
 // 1. Get user by email
+export interface PresignedUploadResponse {
+  upload_url: string;
+  file_url: string;
+  path: string;
+  category: string;
+  mime_type: string;
+  max_size_bytes: number;
+  max_size_human: string;
+}
+
+export const getPresignedUploadUrlApi = async (
+  fileName: string,
+  contentType: string,
+  fileSize?: number,
+  userId?: string,
+): Promise<PresignedUploadResponse> => {
+  const params: string[] = [
+    `file_name=${encodeURIComponent(fileName)}`,
+    `content_type=${encodeURIComponent(contentType)}`,
+  ];
+  if (fileSize !== undefined && fileSize !== null) {
+    params.push(`file_size=${fileSize}`);
+  }
+  const url = `${API_BASE_URL}/generate-upload-url?${params.join("&")}`;
+  return apiFetch<PresignedUploadResponse>(url, {
+    method: "GET",
+    userId,
+  });
+};
+
 export const getUserByEmail = async (email: string): Promise<UserResponse> => {
   try {
     const url = `${API_BASE_URL}/users/by-email/${encodeURIComponent(email)}`;
@@ -1213,11 +1244,23 @@ export const submitFormatAnswer = async (
   } else if (format === "multiple_choice") {
     body.answers = formatAnswer.answers ?? [];
   } else if (format === "image") {
-    body.image_url = formatAnswer.image_url ?? "";
+    let imgUrl = formatAnswer.image_url ?? "";
+    if (imgUrl && (imgUrl.startsWith("file://") || imgUrl.startsWith("file:/"))) {
+      imgUrl = await uploadMediaToStorage(imgUrl, "image/jpeg", { userId });
+    }
+    body.image_url = imgUrl;
   } else if (format === "video") {
-    body.video_url = formatAnswer.video_url ?? "";
+    let vidUrl = formatAnswer.video_url ?? "";
+    if (vidUrl && (vidUrl.startsWith("file://") || vidUrl.startsWith("file:/"))) {
+      vidUrl = await uploadMediaToStorage(vidUrl, "video/mp4", { userId });
+    }
+    body.video_url = vidUrl;
   } else if (format === "audio") {
-    body.audio_url = formatAnswer.audio_url ?? "";
+    let audUrl = formatAnswer.audio_url ?? "";
+    if (audUrl && (audUrl.startsWith("file://") || audUrl.startsWith("file:/"))) {
+      audUrl = await uploadMediaToStorage(audUrl, "audio/m4a", { userId });
+    }
+    body.audio_url = audUrl;
   }
 
   try {
@@ -1235,11 +1278,16 @@ export const submitFormatAnswer = async (
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
+      let parsedDetail = "";
+      try {
+        const parsed = JSON.parse(errText);
+        parsedDetail = parsed.detail || parsed.message || "";
+      } catch {}
       logger.error(
-        `[Request] submitFormathhAnswer(${format}) ${response.status}:`,
+        `[Request] submitFormatAnswer(${format}) ${response.status}:`,
         errText,
       );
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(parsedDetail || `HTTP error! status: ${response.status}`);
     }
 
     const json = (await response.json()) as TaskSubmissionResponse;
@@ -1282,7 +1330,11 @@ export const submitTaskAnswer = async (
     };
 
     if (payload.submission_type === "image") {
-      body.image_url = payload.image_url ?? "";
+      let imgUrl = payload.image_url ?? "";
+      if (imgUrl && (imgUrl.startsWith("file://") || imgUrl.startsWith("file:/"))) {
+        imgUrl = await uploadMediaToStorage(imgUrl, "image/jpeg", { userId });
+      }
+      body.image_url = imgUrl;
     } else if (payload.submission_type === "text") {
       body.text_response = payload.text_answer ?? "";
     } else if (payload.submission_type === "options") {
@@ -1308,8 +1360,13 @@ export const submitTaskAnswer = async (
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
+      let parsedDetail = "";
+      try {
+        const parsed = JSON.parse(errText);
+        parsedDetail = parsed.detail || parsed.message || "";
+      } catch {}
       logger.error(`[Request] submitTaskAnswer ${response.status}:`, errText);
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(parsedDetail || `HTTP error! status: ${response.status}`);
     }
 
     const json = (await response.json()) as TaskSubmissionResponse;
