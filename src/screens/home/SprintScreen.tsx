@@ -33,6 +33,7 @@ import { logger } from "../../utils/UnifiedLogger";
 
 if (
 	Platform.OS === "android" &&
+	!(globalThis as any).nativeFabricUIManager &&
 	UIManager.setLayoutAnimationEnabledExperimental
 ) {
 	UIManager.setLayoutAnimationEnabledExperimental(true);

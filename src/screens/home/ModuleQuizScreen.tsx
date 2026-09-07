@@ -150,7 +150,7 @@ function Confetti({ visible }: { visible: boolean }) {
   return (
     <View
       style={[
-        StyleSheet.absoluteFillObject,
+        StyleSheet.absoluteFill,
         { zIndex: 9999, elevation: 9999 },
       ]}
       pointerEvents="none"

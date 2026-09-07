@@ -7,7 +7,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Audio, AVPlaybackStatus } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
 import { useAudioRecorder } from "../../hooks/useAudioRecorder";
 
 interface AudioRecorderProps {
@@ -52,16 +52,17 @@ export default function AudioRecorder({ onCapture }: AudioRecorderProps) {
   };
 
   // ── Playback (review before submit) ─────────────────────────────
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const playerRef = useRef<AudioPlayer | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingPlayback, setIsLoadingPlayback] = useState(false);
 
   const stopPlayback = async () => {
-    if (soundRef.current) {
+    if (playerRef.current) {
       try {
-        await soundRef.current.unloadAsync();
+        playerRef.current.pause();
+        playerRef.current.remove();
       } catch {}
-      soundRef.current = null;
+      playerRef.current = null;
     }
     setIsPlaying(false);
   };
@@ -80,32 +81,33 @@ export default function AudioRecorder({ onCapture }: AudioRecorderProps) {
   const handlePlayPause = async () => {
     if (!recordedUri) return;
 
-    if (isPlaying && soundRef.current) {
-      await soundRef.current.pauseAsync();
+    if (isPlaying && playerRef.current) {
+      playerRef.current.pause();
       setIsPlaying(false);
       return;
     }
 
-    if (soundRef.current) {
-      await soundRef.current.playAsync();
+    if (playerRef.current) {
+      playerRef.current.play();
       setIsPlaying(true);
       return;
     }
 
     setIsLoadingPlayback(true);
     try {
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: recordedUri },
-        { shouldPlay: true },
-      );
-      soundRef.current = sound;
+      await setAudioModeAsync({ playsInSilentMode: true });
+      const player = createAudioPlayer({ uri: recordedUri });
+      playerRef.current = player;
+      player.play();
       setIsPlaying(true);
-      sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
-        if (status.isLoaded && status.didJustFinish) {
+
+      player.addListener("playbackStatusUpdate", (status) => {
+        if (status.playing === false && status.currentTime >= status.duration && status.duration > 0) {
           setIsPlaying(false);
         }
       });
+    } catch (err) {
+      console.error("[AudioRecorder] Playback error:", err);
     } finally {
       setIsLoadingPlayback(false);
     }

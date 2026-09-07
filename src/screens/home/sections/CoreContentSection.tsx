@@ -11,8 +11,8 @@ import {
   Image,
   Modal,
 } from "react-native";
-import { Audio, AVPlaybackStatus } from "expo-av";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { simplifyHindiText } from "./HindiSimplifier";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -694,7 +694,7 @@ function renderFormattedText(text: string, textStyle: any) {
 // ─── Media embed renderer (video / audio / image) ─────────────────────────────
 
 function MediaEmbedView({ media }: { media: MediaItem }) {
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [positionMillis, setPositionMillis] = useState(0);
@@ -702,7 +702,9 @@ function MediaEmbedView({ media }: { media: MediaItem }) {
 
   useEffect(() => {
     return () => {
-      soundRef.current?.unloadAsync().catch(() => {});
+      try {
+        soundRef.current?.remove();
+      } catch {}
     };
   }, []);
 
@@ -713,35 +715,34 @@ function MediaEmbedView({ media }: { media: MediaItem }) {
     return `${min}:${sec < 10 ? "0" : ""}${sec}`;
   };
 
-  const onAudioStatusUpdate = (status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
-    setPositionMillis(status.positionMillis ?? 0);
-    setDurationMillis(status.durationMillis ?? 0);
-    setIsPlaying(status.isPlaying ?? false);
-    if (status.didJustFinish) {
-      setIsPlaying(false);
-      soundRef.current?.setPositionAsync(0).catch(() => {});
-    }
-  };
-
   const toggleAudioPlayback = async () => {
     try {
       if (!soundRef.current) {
         setIsLoadingAudio(true);
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: media.src },
-          { shouldPlay: true },
-          onAudioStatusUpdate,
-        );
-        soundRef.current = sound;
+        await setAudioModeAsync({ playsInSilentMode: true });
+        const player = createAudioPlayer({ uri: media.src });
+        soundRef.current = player;
+
+        player.addListener("playbackStatusUpdate", (status) => {
+          setPositionMillis(Math.round((status.currentTime || 0) * 1000));
+          setDurationMillis(Math.round((status.duration || 0) * 1000));
+          setIsPlaying(status.playing);
+          if (status.playing === false && status.currentTime >= status.duration && status.duration > 0) {
+            setIsPlaying(false);
+            player.seekTo(0);
+          }
+        });
+
+        player.play();
+        setIsPlaying(true);
         setIsLoadingAudio(false);
         return;
       }
-      const status = await soundRef.current.getStatusAsync();
-      if (status.isLoaded && status.isPlaying) {
-        await soundRef.current.pauseAsync();
+
+      if (isPlaying) {
+        soundRef.current.pause();
       } else {
-        await soundRef.current.playAsync();
+        soundRef.current.play();
       }
     } catch (err) {
       console.error("[CoreContentSection] Audio playback error:", err);

@@ -1,13 +1,14 @@
 import React from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
+import { ObserveRoot } from 'expo-observe';
 import { AuthProvider } from './src/contex/AuthContext'; 
 import { NotificationProvider } from './src/contex/NotificationContext';
 import AppNavigator from './src/navigations/AppNavigator';
 import { navigationRef } from './src/navigations/NavigationService';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 
-export default function App() {
+function App() {
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
@@ -22,3 +23,6 @@ export default function App() {
     </ErrorBoundary>
   );
 }
+
+export default ObserveRoot.wrap(App);
+

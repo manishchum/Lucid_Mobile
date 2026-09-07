@@ -7,6 +7,7 @@ import {
 } from "@react-navigation/bottom-tabs";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useObserve } from "expo-observe";
 
 import { useAuth } from "../contex/AuthContext";
 import { TenantProvider, useTenant } from "../contex/TenantContext";
@@ -180,6 +181,8 @@ function AppNavigatorContent() {
   const userId = cachedUser?.userId ?? null;
   const companyId = cachedUser?.companyId ?? null;
 
+  const { markInteractive } = useObserve();
+
   // Start production crash/error reporting to the same /api/logs endpoint web points to
   const cachedEmailRef = React.useRef<string | null>(null);
   cachedEmailRef.current = cachedUser?.email ?? null;
@@ -188,6 +191,12 @@ function AppNavigatorContent() {
     // Register offline queue listener — replays queued submissions on reconnect
     initOfflineQueueListener();
   }, []);
+
+  useEffect(() => {
+    if (!isInitializing) {
+      markInteractive();
+    }
+  }, [isInitializing, markInteractive]);
 
   // Global leaderboard state and fetching
   const {

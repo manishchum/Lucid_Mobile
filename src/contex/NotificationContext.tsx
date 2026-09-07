@@ -19,7 +19,16 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import messaging from "@react-native-firebase/messaging";
+import {
+  getMessaging,
+  requestPermission,
+  registerDeviceForRemoteMessages,
+  getToken,
+  onMessage,
+  onNotificationOpenedApp,
+  getInitialNotification,
+  AuthorizationStatus,
+} from "@react-native-firebase/messaging";
 import { getFirebaseToken } from "../api/users/Request";
 import { useAuth } from "./AuthContext";
 import { eventBus } from "../utils/EventBus";
@@ -29,11 +38,10 @@ import { STACK_ROUTES } from "../navigations/Routes";
 import { logger } from "../utils/UnifiedLogger";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 
-
 let isMessagingSupported = false;
 try {
-  if (messaging) {
-    messaging();
+  const msg = getMessaging();
+  if (msg) {
     isMessagingSupported = true;
   }
 } catch (error) {
@@ -234,19 +242,20 @@ export const NotificationProvider = ({
       return;
     }
     try {
-      const authStatus = await messaging().requestPermission();
+      const messagingInstance = getMessaging();
+      const authStatus = await requestPermission(messagingInstance);
       const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+        authStatus === AuthorizationStatus.AUTHORIZED ||
+        authStatus === AuthorizationStatus.PROVISIONAL;
 
       if (enabled) {
         logger.info("[FCM] Notification permission granted.");
-        await messaging().registerDeviceForRemoteMessages().catch(() => null);
+        await registerDeviceForRemoteMessages(messagingInstance).catch(() => null);
 
         // Configure High Importance Notification Channel for Android 8.0+
-        if (Platform.OS === "android" && (messaging() as any).createNotificationChannel) {
+        if (Platform.OS === "android" && (messagingInstance as any).createNotificationChannel) {
           try {
-            await (messaging() as any).createNotificationChannel({
+            await (messagingInstance as any).createNotificationChannel({
               id: "lucid_high_importance_channel",
               name: "Lucid System Alerts",
               description: "High priority notification tray alerts for assigned sprints and tasks",
@@ -260,7 +269,7 @@ export const NotificationProvider = ({
           }
         }
 
-        const fcmToken = await messaging().getToken().catch(() => null);
+        const fcmToken = await getToken(messagingInstance).catch(() => null);
         if (fcmToken) {
           logger.info("[FCM] Obtained token:", fcmToken);
           const headers = await getAuthHeaders();
@@ -282,7 +291,7 @@ export const NotificationProvider = ({
       return;
 
     try {
-      const unsubscribe = messaging().onMessage(async (remoteMessage: any) => {
+      const unsubscribe = onMessage(getMessaging(), async (remoteMessage: any) => {
         logger.info("[FCM] Foreground message received:", remoteMessage);
         // Trigger a fetch to refresh notification log
         fetchNotifications();
@@ -334,7 +343,7 @@ export const NotificationProvider = ({
     try {
       // 1. Handle when app is in background state and notification is clicked
       const unsubscribeOnNotificationOpened =
-        messaging().onNotificationOpenedApp((remoteMessage: any) => {
+        onNotificationOpenedApp(getMessaging(), (remoteMessage: any) => {
           logger.info(
             "[FCM] Notification caused app to open from background state:",
             remoteMessage,
@@ -353,8 +362,7 @@ export const NotificationProvider = ({
         });
 
       // 2. Handle when app is in closed (quit) state and notification is clicked
-      messaging()
-        .getInitialNotification()
+      getInitialNotification(getMessaging())
         .then((remoteMessage: any) => {
           if (remoteMessage) {
             logger.info(

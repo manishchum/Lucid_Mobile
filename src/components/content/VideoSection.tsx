@@ -588,7 +588,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -654,7 +654,7 @@ const styles = StyleSheet.create({
 const fsStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   bufferOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.3)",

@@ -158,7 +158,7 @@ export default function AppDrawer() {
   const displayEmail = user?.email || cachedUser?.email || "";
 
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents={isDrawerOpen ? "auto" : "none"}>
+    <View style={StyleSheet.absoluteFill} pointerEvents={isDrawerOpen ? "auto" : "none"}>
       {/* Backdrop overlay */}
       <TouchableWithoutFeedback onPress={closeDrawer}>
         <Animated.View style={[styles.overlay, { opacity: opacityAnim }]} />
@@ -270,7 +270,7 @@ export default function AppDrawer() {
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(15, 23, 42, 0.4)",
   },
   drawerContainer: {

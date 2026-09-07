@@ -136,7 +136,7 @@ export function initMobileErrorReporting(getEmail: () => string | null) {
   });
 
   // 2) Unhandled promise rejections.
-  const globalAny = global as any;
+  const globalAny = globalThis as any;
   try {
     globalAny.addEventListener?.('unhandledrejection', (ev: any) => {
       const reason = ev?.reason ?? ev;
@@ -147,10 +147,10 @@ export function initMobileErrorReporting(getEmail: () => string | null) {
 
   // 3) Wrap fetch so failed API calls (network errors, 4xx/5xx) get logged
   //    too — mirrors clientErrorReporter.ts's fetch wrapper on web.
-  const originalFetch = global.fetch;
-  global.fetch = async (...args: Parameters<typeof fetch>) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (...args: any[]) => {
     try {
-      const res = await originalFetch(...args);
+      const res = await (originalFetch as any)(...args);
       if (!res.ok && res.status >= 400) {
         report(`Fetch failed ${res.status} ${res.statusText}`, 'FetchError', null, String(args[0]));
       }
@@ -159,7 +159,7 @@ export function initMobileErrorReporting(getEmail: () => string | null) {
       report(err?.message || String(err), 'FetchException', err?.stack, String(args[0]));
       throw err;
     }
-  };
+  }) as any;
 }
 
 export function reportBoundaryError(error: Error, componentStack?: string) {

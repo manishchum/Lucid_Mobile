@@ -1,7 +1,7 @@
 import { logger } from "../../utils/UnifiedLogger";
 import { emitSessionInvalid, SessionInvalidReason } from "../sessionEvents";
 import * as SecureStore from "expo-secure-store";
-import auth from "@react-native-firebase/auth";
+import { getAuth, getIdToken } from "@react-native-firebase/auth";
 import {
   UserResponse,
   UserRolesResponse,
@@ -33,9 +33,10 @@ export const JWT_TOKEN_KEY = "auth_jwt_token";
 
 export const getFirebaseToken = async (): Promise<string | null> => {
   try {
-    const currentUser = auth().currentUser;
+    const authInstance = getAuth();
+    const currentUser = authInstance.currentUser;
     if (currentUser) {
-      const token = await currentUser.getIdToken();
+      const token = await getIdToken(currentUser);
       return token;
     }
   } catch (e) {

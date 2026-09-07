@@ -18,7 +18,12 @@ import {
 } from "../api/users/Request";
 import { onSessionInvalid, SessionInvalidReason } from "../api/sessionEvents";
 import { logger } from "../utils/UnifiedLogger";
-import auth from "@react-native-firebase/auth";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithCustomToken,
+  signOut,
+} from "@react-native-firebase/auth";
 
 export interface CachedUser {
   userId: string;
@@ -156,7 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     restoreCachedData();
 
     // 2. Listen to Firebase native authentication state
-    const unsubscribe = auth().onAuthStateChanged((fbUser) => {
+    const unsubscribe = onAuthStateChanged(getAuth(), (fbUser) => {
       setUser(fbUser);
       if (fbUser) {
         setIsLoggedIn(true);
@@ -271,7 +276,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (res.success && res.token) {
         // Exchange custom token for a Firebase session on the device
         console.log("[Auth] Signing in with Firebase custom token...");
-        await auth().signInWithCustomToken(res.token);
+        await signInWithCustomToken(getAuth(), res.token);
 
         if (phoneNumber) {
           await AsyncStorage.setItem(PHONE_NUMBER_KEY, phoneNumber);
@@ -324,7 +329,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const logout = async () => {
     try {
       console.log("[Auth] Logging out from Firebase...");
-      await auth().signOut();
+      await signOut(getAuth());
       
       setCachedUser(null);
       setPhoneNumber("");

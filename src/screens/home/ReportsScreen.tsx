@@ -49,6 +49,7 @@ eventBus.on("refresh_reports", () => {
 // Enable LayoutAnimation for Android
 if (
   Platform.OS === "android" &&
+  !(globalThis as any).nativeFabricUIManager &&
   UIManager.setLayoutAnimationEnabledExperimental
 ) {
   UIManager.setLayoutAnimationEnabledExperimental(true);

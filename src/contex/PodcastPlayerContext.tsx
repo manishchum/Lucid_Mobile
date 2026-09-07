@@ -6,7 +6,11 @@ import React, {
   useRef,
   useCallback,
 } from "react";
-import { Audio, AVPlaybackStatus } from "expo-av";
+import {
+  createAudioPlayer,
+  setAudioModeAsync,
+  AudioPlayer,
+} from "expo-audio";
 
 export interface PodcastTrackInfo {
   audioUrl: string;
@@ -34,7 +38,7 @@ interface PodcastPlayerContextType {
   togglePlayPause: () => Promise<void>;
   togglePlayPauseFromMiniPlayer: () => Promise<void>;
   seekTo: (positionSeconds: number) => Promise<void>;
-  dismissMiniPlayer: () => void;
+  dismissMiniPlayer: () => Promise<void>;
   showMiniPlayerAgain: () => void;
 }
 
@@ -52,53 +56,29 @@ export const PodcastPlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isAccordionExpanded, setIsAccordionExpanded] = useState(false);
   const [pausedFromMiniPlayer, setPausedFromMiniPlayer] = useState(false);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const playerRef = useRef<AudioPlayer | null>(null);
 
   const progressRatio =
     durationMillis > 0 ? positionMillis / durationMillis : 0;
 
   useEffect(() => {
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      staysActiveInBackground: true,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
+    setAudioModeAsync({
+      allowsRecording: false,
+      shouldPlayInBackground: true,
+      playsInSilentMode: true,
     }).catch((err) => {
       console.warn("[PodcastPlayerContext] setAudioModeAsync error:", err);
     });
 
     return () => {
-      if (soundRef.current) {
-        const soundToUnload = soundRef.current;
-        soundRef.current = null;
-        soundToUnload
-          .stopAsync()
-          .then(() => soundToUnload.unloadAsync())
-          .catch(() => {});
+      if (playerRef.current) {
+        try {
+          playerRef.current.pause();
+          playerRef.current.remove();
+        } catch {}
+        playerRef.current = null;
       }
     };
-  }, []);
-
-  const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
-    if (!status.isLoaded) {
-      if (status.error) {
-        console.error("[PodcastPlayerContext] Playback error:", status.error);
-        setIsLoading(false);
-        setIsPlaying(false);
-      }
-      return;
-    }
-
-    setIsLoading(status.isBuffering);
-    setIsPlaying(status.isPlaying);
-    setPositionMillis(status.positionMillis);
-    setDurationMillis(status.durationMillis ?? 0);
-
-    if (status.didJustFinish) {
-      setIsPlaying(false);
-      setPositionMillis(0);
-      setPausedFromMiniPlayer(false);
-    }
   }, []);
 
   const playPodcast = useCallback(
@@ -108,24 +88,33 @@ export const PodcastPlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsMiniPlayerDismissed(false);
         setIsLoading(true);
 
-        if (soundRef.current) {
-          const oldSound = soundRef.current;
-          soundRef.current = null;
+        if (playerRef.current) {
           try {
-            await oldSound.stopAsync();
-            await oldSound.unloadAsync();
+            playerRef.current.pause();
+            playerRef.current.remove();
           } catch {}
+          playerRef.current = null;
         }
 
         setActiveTrackInfo(info);
 
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: info.audioUrl },
-          { shouldPlay: true },
-          onPlaybackStatusUpdate,
-        );
+        const player = createAudioPlayer({ uri: info.audioUrl });
+        playerRef.current = player;
 
-        soundRef.current = sound;
+        player.addListener("playbackStatusUpdate", (status) => {
+          setIsLoading(status.isBuffering);
+          setIsPlaying(status.playing);
+          setPositionMillis(Math.round((status.currentTime || 0) * 1000));
+          setDurationMillis(Math.round((status.duration || 0) * 1000));
+
+          if (status.playing === false && status.currentTime >= status.duration && status.duration > 0) {
+            setIsPlaying(false);
+            setPositionMillis(0);
+            setPausedFromMiniPlayer(false);
+          }
+        });
+
+        player.play();
         setIsLoading(false);
         setIsPlaying(true);
       } catch (error) {
@@ -134,13 +123,13 @@ export const PodcastPlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsPlaying(false);
       }
     },
-    [onPlaybackStatusUpdate],
+    [],
   );
 
   const pausePodcast = useCallback(async () => {
-    if (soundRef.current) {
+    if (playerRef.current) {
       try {
-        await soundRef.current.pauseAsync();
+        playerRef.current.pause();
       } catch {}
       setPausedFromMiniPlayer(false);
     }
@@ -148,50 +137,57 @@ export const PodcastPlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const togglePlayPause = useCallback(async () => {
     setPausedFromMiniPlayer(false);
-    if (!soundRef.current && activeTrackInfo) {
+    if (!playerRef.current && activeTrackInfo) {
       await playPodcast(activeTrackInfo);
       return;
     }
-    if (soundRef.current) {
+    if (playerRef.current) {
       try {
         if (isPlaying) {
-          await soundRef.current.pauseAsync();
+          playerRef.current.pause();
         } else {
-          await soundRef.current.playAsync();
+          playerRef.current.play();
         }
       } catch {}
     }
   }, [isPlaying, activeTrackInfo, playPodcast]);
 
   const togglePlayPauseFromMiniPlayer = useCallback(async () => {
-    if (!soundRef.current && activeTrackInfo) {
+    if (!playerRef.current && activeTrackInfo) {
       await playPodcast(activeTrackInfo);
       return;
     }
-    if (soundRef.current) {
+    if (playerRef.current) {
       try {
         if (isPlaying) {
           setPausedFromMiniPlayer(true);
-          await soundRef.current.pauseAsync();
+          playerRef.current.pause();
         } else {
           setPausedFromMiniPlayer(false);
-          await soundRef.current.playAsync();
+          playerRef.current.play();
         }
       } catch {}
     }
   }, [isPlaying, activeTrackInfo, playPodcast]);
 
   const seekTo = useCallback(async (positionSeconds: number) => {
-    if (soundRef.current) {
+    if (playerRef.current) {
       try {
-        await soundRef.current.setPositionAsync(Math.floor(positionSeconds * 1000));
+        await playerRef.current.seekTo(positionSeconds);
       } catch {}
     }
   }, []);
 
-  const dismissMiniPlayer = useCallback(() => {
+  const dismissMiniPlayer = useCallback(async () => {
     setIsMiniPlayerDismissed(true);
     setPausedFromMiniPlayer(false);
+    if (playerRef.current) {
+      try {
+        playerRef.current.pause();
+      } catch (err) {
+        console.warn("[PodcastPlayerContext] Error pausing audio on dismiss:", err);
+      }
+    }
   }, []);
 
   const showMiniPlayerAgain = useCallback(() => {
