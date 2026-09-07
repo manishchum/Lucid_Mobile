@@ -594,8 +594,6 @@ export default function ModuleQuizScreen({
       } catch (err: any) {
         // If offline, enqueue for silent retry on reconnect
         if (err instanceof ApiError && err.code === "NETWORK_ERROR") {
-          const { getFirebaseToken } = await import("../../api/users/Request");
-          const token = await getFirebaseToken();
           const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
           await offlineQueue.enqueue({
             url: `${EXPO_API_URL}/api/submit-assessment`,
@@ -610,8 +608,9 @@ export default function ModuleQuizScreen({
             }),
             headers: {
               "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
+            requiresAuth: true,
+            userId,
             label: isBaseline ? `Baseline submit for module ${moduleId}` : `Quiz submit for module ${processedModuleId}`,
           });
           console.log("[Quiz Submit] Queued offline — will retry on reconnect.");

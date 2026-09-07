@@ -18,6 +18,7 @@ import {
 } from "../api/users/Request";
 import { onSessionInvalid, SessionInvalidReason } from "../api/sessionEvents";
 import { logger } from "../utils/UnifiedLogger";
+import { offlineQueue } from "../utils/offlineQueue";
 import {
   getAuth,
   onAuthStateChanged,
@@ -336,6 +337,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setOtpStep(false);
       setConfirmation(null);
 
+      // Purge offline queue immediately on logout to prevent token or body replay
+      await offlineQueue.purgeQueue().catch((err) =>
+        console.error("[Auth] Error purging offline queue on logout:", err),
+      );
+
       // Clear persistent storage on logout — both auth keys AND every app-data cache
       try {
         const allKeys = await AsyncStorage.getAllKeys();
@@ -355,6 +361,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           (key) =>
             key === CACHED_USER_KEY ||
             key === PHONE_NUMBER_KEY ||
+            key === "@offline_queue" ||
             appDataKeyPrefixes.some((prefix) => key.startsWith(prefix)),
         );
         if (keysToRemove.length > 0) {
