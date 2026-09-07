@@ -11,4 +11,15 @@
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
-# Add any project specific keep options here:
+# React Native JNI & reflection
+-keepclassmembers class * {
+    @com.facebook.react.uimanager.annotations.ReactProp <methods>;
+    @com.facebook.react.uimanager.annotations.ReactPropGroup <methods>;
+}
+-keep class com.facebook.react.bridge.** { *; }
+-dontwarn com.facebook.react.**
+-dontwarn javax.annotation.**
+
+# AsyncStorage & NetInfo
+-keep class com.reactnativecommunity.asyncstorage.** { *; }
+-keep class com.reactnativecommunity.netinfo.** { *; }
