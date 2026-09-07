@@ -195,6 +195,9 @@ const getPublicHeaders = (userId?: string, companyId?: string): Record<string, s
 };
 
 // ==================== CENTRALIZED FETCH WRAPPER ====================
+export const DEFAULT_FETCH_TIMEOUT_MS = 15_000; // 15 seconds
+export const DEFAULT_RETRY_DELAY_MS = 800; // 800ms
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -206,7 +209,7 @@ export class ApiError extends Error {
   }
 }
 
-interface ApiFetchOptions extends RequestInit {
+export interface ApiFetchOptions extends RequestInit {
   userId?: string;
   companyId?: string;
   noCache?: boolean;
@@ -214,9 +217,18 @@ interface ApiFetchOptions extends RequestInit {
   public?: boolean;
   /** Internal flag — prevents infinite refresh loops */
   _isRetry?: boolean;
+  /** Timeout in milliseconds before aborting (default: 15_000ms / 15s) */
+  timeoutMs?: number;
+  /**
+   * Number of retries on network error, timeout, or 502/503/504 status.
+   * Default: 1 for idempotent methods (GET, HEAD, OPTIONS), 0 for mutations.
+   */
+  retries?: number;
+  /** Base delay between retries in milliseconds (default: 800ms) */
+  retryDelayMs?: number;
 }
 
-async function apiFetch<T = any>(
+export async function apiFetch<T = any>(
   url: string,
   options: ApiFetchOptions = {},
 ): Promise<T> {
@@ -226,8 +238,16 @@ async function apiFetch<T = any>(
     noCache,
     public: isPublic,
     headers: extraHeaders,
+    timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
+    retries,
+    retryDelayMs = DEFAULT_RETRY_DELAY_MS,
+    signal: userSignal,
     ...rest
   } = options;
+
+  const method = (rest.method ?? "GET").toUpperCase();
+  const isIdempotent = method === "GET" || method === "HEAD" || method === "OPTIONS";
+  const retryBudget = retries ?? (isIdempotent ? 1 : 0);
 
   const baseHeaders = isPublic
     ? getPublicHeaders(userId, companyId)
@@ -238,58 +258,137 @@ async function apiFetch<T = any>(
     ...(extraHeaders as Record<string, string> | undefined),
   };
 
-  logger.debug(`[apiFetch] ${rest.method ?? "GET"} → ${url}`);
+  logger.debug(`[apiFetch] ${method} → ${url} (timeout: ${timeoutMs}ms, retries: ${retryBudget})`);
 
+  const controller = new AbortController();
+  let isTimeout = false;
+
+  const timer = setTimeout(() => {
+    isTimeout = true;
+    controller.abort();
+  }, timeoutMs);
+
+  let onUserAbort: (() => void) | undefined;
+  if (userSignal) {
+    if (userSignal.aborted) {
+      clearTimeout(timer);
+      controller.abort(userSignal.reason);
+    } else {
+      onUserAbort = () => {
+        controller.abort(userSignal.reason);
+      };
+      userSignal.addEventListener("abort", onUserAbort, { once: true });
+    }
+  }
 
   let response: Response;
   try {
-    response = await fetch(url, { ...rest, headers });
-  } catch (networkErr) {
-    logger.error(`[apiFetch] network error for ${url}:`, networkErr);
-    throw new ApiError("Network request failed", 0, "NETWORK_ERROR");
+    try {
+      response = await fetch(url, { ...rest, headers, signal: controller.signal });
+    } catch (networkErr: any) {
+      if (isTimeout) {
+        if (retryBudget > 0 && !userSignal?.aborted) {
+          logger.warn(
+            `[apiFetch] ${method} ${url} timed out after ${timeoutMs}ms, retrying (${retryBudget} retries left)...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+          return apiFetch<T>(url, {
+            ...options,
+            retries: retryBudget - 1,
+            _isRetry: true,
+          });
+        }
+        logger.error(`[apiFetch] ${method} ${url} timed out after ${timeoutMs}ms`);
+        throw new ApiError(
+          `Request timed out after ${Math.round(timeoutMs / 1000)} seconds. Please check your connection and try again.`,
+          408,
+          "TIMEOUT",
+        );
+      }
+
+      if (userSignal?.aborted) {
+        throw new ApiError("Request cancelled", 0, "CANCELLED");
+      }
+
+      logger.error(`[apiFetch] network error for ${url}:`, networkErr);
+
+      if (retryBudget > 0 && !userSignal?.aborted) {
+        logger.warn(
+          `[apiFetch] Network error for ${url}, retrying (${retryBudget} retries left)...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        return apiFetch<T>(url, {
+          ...options,
+          retries: retryBudget - 1,
+          _isRetry: true,
+        });
+      }
+
+      throw new ApiError("Network request failed", 0, "NETWORK_ERROR");
+    }
+
+    let body: any = null;
+    try {
+      body = await response.json();
+    } catch {}
+
+    // Transient server errors (502, 503, 504) — retry budget if idempotent or explicitly allowed
+    const isTransientServerError =
+      response.status === 502 || response.status === 503 || response.status === 504;
+    if (isTransientServerError && retryBudget > 0 && !userSignal?.aborted) {
+      logger.warn(
+        `[apiFetch] Server returned ${response.status} for ${url}, retrying (${retryBudget} retries left)...`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      return apiFetch<T>(url, {
+        ...options,
+        retries: retryBudget - 1,
+        _isRetry: true,
+      });
+    }
+
+    // Session/account-validity codes — handled centrally, emit session event.
+    const code = body?.code as SessionInvalidReason | undefined;
+    if (
+      response.status === 401 &&
+      (code === "SESSION_TERMINATED" ||
+        code === "ACCOUNT_DEACTIVATED" ||
+        code === "COMPANY_DEACTIVATED")
+    ) {
+      logger.warn(
+        `[apiFetch] session invalid (${code}) — emitting sessionEvents`,
+      );
+      emitSessionInvalid(code);
+      throw new ApiError(
+        body?.message ?? "Session invalid",
+        response.status,
+        code,
+      );
+    }
+
+    // Generic 401 (most likely an expired/invalid token) — force logout
+    if (response.status === 401 && !options.public) {
+      logger.error(`[apiFetch] 401 on ${url} — session expired/invalid — emitting SESSION_TERMINATED`);
+      emitSessionInvalid("SESSION_TERMINATED");
+      throw new ApiError("Session expired. Please log in again.", 401, "SESSION_TERMINATED");
+    }
+
+    if (!response.ok) {
+      logger.error(`[apiFetch] ${response.status} for ${url}:`, body);
+      throw new ApiError(
+        body?.detail ?? body?.message ?? `HTTP error! status: ${response.status}`,
+        response.status,
+        code,
+      );
+    }
+
+    return body as T;
+  } finally {
+    clearTimeout(timer);
+    if (userSignal && onUserAbort) {
+      userSignal.removeEventListener("abort", onUserAbort);
+    }
   }
-
-  let body: any = null;
-  try {
-    body = await response.json();
-  } catch {}
-
-  // Session/account-validity codes — handled centrally, emit session event.
-  const code = body?.code as SessionInvalidReason | undefined;
-  if (
-    response.status === 401 &&
-    (code === "SESSION_TERMINATED" ||
-      code === "ACCOUNT_DEACTIVATED" ||
-      code === "COMPANY_DEACTIVATED")
-  ) {
-    logger.warn(
-      `[apiFetch] session invalid (${code}) — emitting sessionEvents`,
-    );
-    emitSessionInvalid(code);
-    throw new ApiError(
-      body?.message ?? "Session invalid",
-      response.status,
-      code,
-    );
-  }
-
-  // Generic 401 (most likely an expired/invalid token) — force logout
-  if (response.status === 401 && !options.public) {
-    logger.error(`[apiFetch] 401 on ${url} — session expired/invalid — emitting SESSION_TERMINATED`);
-    emitSessionInvalid("SESSION_TERMINATED");
-    throw new ApiError("Session expired. Please log in again.", 401, "SESSION_TERMINATED");
-  }
-
-  if (!response.ok) {
-    logger.error(`[apiFetch] ${response.status} for ${url}:`, body);
-    throw new ApiError(
-      body?.detail ?? body?.message ?? `HTTP error! status: ${response.status}`,
-      response.status,
-      code,
-    );
-  }
-
-  return body as T;
 }
 
 // 1. Get user by email
@@ -327,16 +426,10 @@ export const getUserByEmail = async (email: string): Promise<UserResponse> => {
   try {
     const url = `${API_BASE_URL}/users/by-email/${encodeURIComponent(email)}`;
     logger.debug("[Request] getUserByEmail →", url);
-    const response = await fetch(url, {
+    const json = await apiFetch<UserResponse>(url, {
       method: "GET",
-      headers: getPublicHeaders(),
+      public: true,
     });
-    if (!response.ok) {
-      const body = await response.text();
-      logger.error(`[Request] getUserByEmail ${response.status}:`, body);
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const json = await response.json();
     if (json.user) {
       logger.debug("[Request] getUserByEmail ✅ user_id:", json.user.user_id);
     } else {
