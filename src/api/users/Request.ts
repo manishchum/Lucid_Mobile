@@ -392,35 +392,8 @@ export async function apiFetch<T = any>(
 }
 
 // 1. Get user by email
-export interface PresignedUploadResponse {
-  upload_url: string;
-  file_url: string;
-  path: string;
-  category: string;
-  mime_type: string;
-  max_size_bytes: number;
-  max_size_human: string;
-}
+export { PresignedUploadResponse, getPresignedUploadUrlApi } from "../../services/storageUpload";
 
-export const getPresignedUploadUrlApi = async (
-  fileName: string,
-  contentType: string,
-  fileSize?: number,
-  userId?: string,
-): Promise<PresignedUploadResponse> => {
-  const params: string[] = [
-    `file_name=${encodeURIComponent(fileName)}`,
-    `content_type=${encodeURIComponent(contentType)}`,
-  ];
-  if (fileSize !== undefined && fileSize !== null) {
-    params.push(`file_size=${fileSize}`);
-  }
-  const url = `${API_BASE_URL}/generate-upload-url?${params.join("&")}`;
-  return apiFetch<PresignedUploadResponse>(url, {
-    method: "GET",
-    userId,
-  });
-};
 
 export const getUserByEmail = async (email: string): Promise<UserResponse> => {
   try {
