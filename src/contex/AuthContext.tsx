@@ -19,6 +19,8 @@ import {
 import { onSessionInvalid, SessionInvalidReason } from "../api/sessionEvents";
 import { logger } from "../utils/UnifiedLogger";
 import { offlineQueue } from "../utils/offlineQueue";
+import { appStorage } from "../utils/appStorage";
+import { purgeAllMobileLocalCache } from "../utils/cacheManager";
 import {
   getAuth,
   onAuthStateChanged,
@@ -121,10 +123,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<any>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState<string>(
+    () => appStorage.getString(PHONE_NUMBER_KEY) || "",
+  );
   const [otpStep, setOtpStep] = useState(false);
   const [confirmation, setConfirmation] = useState<any>(null);
-  const [cachedUser, setCachedUser] = useState<CachedUser | null>(null);
+  const [cachedUser, setCachedUser] = useState<CachedUser | null>(
+    () => appStorage.getObject<CachedUser>(CACHED_USER_KEY),
+  );
   const [forcedLogoutReason, setForcedLogoutReason] = useState<
     "user_deactivated" | "company_deactivated" | "session_terminated" | null
   >(null);
@@ -144,12 +150,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
         if (storedPhone) {
           setPhoneNumber(storedPhone);
+          appStorage.setString(PHONE_NUMBER_KEY, storedPhone);
         }
 
         if (storedUserJson) {
           try {
             const user: CachedUser = JSON.parse(storedUserJson);
             setCachedUser(user);
+            appStorage.setObject(CACHED_USER_KEY, user);
             console.log("[Auth] Restored cachedUser from AsyncStorage:", user.userId);
           } catch (e) {
             console.error("[Auth] Error parsing cachedUser:", e);
@@ -297,6 +305,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             isActive: res.user.is_active,
           };
           setCachedUser(user);
+          appStorage.setObject(CACHED_USER_KEY, user);
+          appStorage.setString(PHONE_NUMBER_KEY, phoneNumber);
           await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(user));
         }
 
@@ -330,52 +340,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const logout = async () => {
     try {
       console.log("[Auth] Logging out from Firebase...");
-      await signOut(getAuth());
-      
+      await signOut(getAuth()).catch((err) => {
+        console.warn("[Auth] Firebase signOut warning:", err);
+      });
+
       setCachedUser(null);
       setPhoneNumber("");
       setOtpStep(false);
       setConfirmation(null);
 
-      // Purge offline queue immediately on logout to prevent token or body replay
-      await offlineQueue.purgeQueue().catch((err) =>
-        console.error("[Auth] Error purging offline queue on logout:", err),
-      );
-
-      // Clear persistent storage on logout — both auth keys AND every app-data cache
-      try {
-        const allKeys = await AsyncStorage.getAllKeys();
-        const appDataKeyPrefixes = [
-          "@dashboard_data_",
-          "@module_progress_",
-          "@processed_module_",
-          "@company_data_",
-          "@auth_modules_",
-          "@leaderboard_highlight_",
-          "@content_categories_",
-          "@content_items_",
-          "@career_journeys_",
-          "lucid_module_unified_trans_v3_",
-        ];
-        const keysToRemove = allKeys.filter(
-          (key) =>
-            key === CACHED_USER_KEY ||
-            key === PHONE_NUMBER_KEY ||
-            key === "@offline_queue" ||
-            appDataKeyPrefixes.some((prefix) => key.startsWith(prefix)),
-        );
-        if (keysToRemove.length > 0) {
-          await AsyncStorage.multiRemove(keysToRemove);
-        }
-        // JWT lives in SecureStore — delete it if present
-        await SecureStore.deleteItemAsync(JWT_TOKEN_KEY).catch(() => {});
-        console.log(
-          `[Auth] Cleared ${keysToRemove.length} AsyncStorage key(s) + SecureStore JWT on logout:`,
-          keysToRemove,
-        );
-      } catch (error) {
-        console.error("[Auth] Error clearing AsyncStorage on logout:", error);
-      }
+      // Invalidate and purge ALL mobile local caches (MMKV, memory maps, AsyncStorage, SecureStore, in-flight requests, offline queue)
+      await purgeAllMobileLocalCache();
+      console.log("[Auth] All mobile local caches purged successfully on sign out.");
     } catch (error) {
       console.error("[Auth] Logout Error:", error);
     }

@@ -28,31 +28,41 @@ import RefreshSpinner from "../../../components/pullToRefresh/RefreshSpinner";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-const ProgressRing = ({ percentage }: { percentage: number }) => {
+const ProgressRing = ({
+  percentage,
+  refreshKey = 0,
+}: {
+  percentage: number;
+  refreshKey?: number;
+}) => {
   const size = 72;
   const strokeWidth = 7;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
 
   const validPercentage = Math.min(Math.max(percentage || 0, 0), 100);
-  const animatedVal = React.useRef(new Animated.Value(validPercentage)).current;
-  const [displayPercentage, setDisplayPercentage] = React.useState(Math.round(validPercentage));
+  const animatedVal = React.useRef(new Animated.Value(0)).current;
+  const [displayPercentage, setDisplayPercentage] = React.useState(0);
 
   React.useEffect(() => {
-    Animated.timing(animatedVal, {
-      toValue: validPercentage,
-      duration: 650,
-      useNativeDriver: false,
-    }).start();
+    const timer = setTimeout(() => {
+      animatedVal.setValue(0);
+      Animated.timing(animatedVal, {
+        toValue: validPercentage,
+        duration: 850,
+        useNativeDriver: false,
+      }).start();
+    }, 120);
 
     const listenerId = animatedVal.addListener(({ value }) => {
       setDisplayPercentage(Math.round(value));
     });
 
     return () => {
+      clearTimeout(timer);
       animatedVal.removeListener(listenerId);
     };
-  }, [validPercentage, animatedVal]);
+  }, [validPercentage, refreshKey, animatedVal]);
 
   const strokeDashoffset = animatedVal.interpolate({
     inputRange: [0, 100],
@@ -106,6 +116,39 @@ const ProgressRing = ({ percentage }: { percentage: number }) => {
   );
 };
 
+const AnimatedStatVal = ({
+  value,
+  refreshKey = 0,
+}: {
+  value: number;
+  refreshKey?: number;
+}) => {
+  const animatedVal = React.useRef(new Animated.Value(0)).current;
+  const [displayVal, setDisplayVal] = React.useState(0);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      animatedVal.setValue(0);
+      Animated.timing(animatedVal, {
+        toValue: value || 0,
+        duration: 750,
+        useNativeDriver: false,
+      }).start();
+    }, 120);
+
+    const listenerId = animatedVal.addListener(({ value: v }) => {
+      setDisplayVal(Math.round(v));
+    });
+
+    return () => {
+      clearTimeout(timer);
+      animatedVal.removeListener(listenerId);
+    };
+  }, [value, refreshKey, animatedVal]);
+
+  return <Text style={styles.statVal}>{displayVal}</Text>;
+};
+
 const getGreeting = (): string => {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning,";
@@ -148,6 +191,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const companyId = user?.company_id ?? cachedUser?.companyId ?? null;
 
   const {
+    dashboardData,
     resolvedPlanCards,
     stats,
     isLoading: dashboardLoading,
@@ -177,6 +221,28 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   }, [resolvedPlanCards, activeSprint, setActiveSprint]);
 
   const [refreshing, setRefreshing] = React.useState(false);
+  const [refreshKey, setRefreshKey] = React.useState(0);
+
+  // Content Mounting Animation (Smooth 350ms opacity fade & 12px Y-translation slide-up)
+  const mountFade = React.useRef(new Animated.Value(0)).current;
+  const mountTranslateY = React.useRef(new Animated.Value(12)).current;
+
+  const triggerMountAnimation = React.useCallback(() => {
+    mountFade.setValue(0);
+    mountTranslateY.setValue(12);
+    Animated.parallel([
+      Animated.timing(mountFade, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      Animated.timing(mountTranslateY, {
+        toValue: 0,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [mountFade, mountTranslateY]);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -186,8 +252,10 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       console.error("[HomeScreen] Refresh error:", err);
     } finally {
       setRefreshing(false);
+      setRefreshKey((prev) => prev + 1);
+      triggerMountAnimation();
     }
-  }, [refetch]);
+  }, [refetch, triggerMountAnimation]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -242,7 +310,52 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   });
 
 
-  const isLoading = (userLoading && !cachedUser) || dashboardLoading;
+  // Initial loading is true if:
+  // 1. User fetching is active without cached user
+  // 2. Dashboard network fetch is loading AND we don't have resolved cards yet
+  // 3. Dashboard data has not loaded yet (is null) or plan cards are currently resolving
+  const isInitialLoading =
+    (userLoading && !cachedUser) ||
+    (dashboardLoading && resolvedPlanCards.length === 0) ||
+    (dashboardData === null && !dashboardError) ||
+    (dashboardData !== null &&
+      Array.isArray((dashboardData as any)?.plans) &&
+      (dashboardData as any).plans.length > 0 &&
+      resolvedPlanCards.length === 0 &&
+      !dashboardError);
+
+  const isLoading = isInitialLoading;
+
+  React.useEffect(() => {
+    if (!isLoading) {
+      Animated.parallel([
+        Animated.timing(mountFade, {
+          toValue: 1,
+          duration: 350,
+          useNativeDriver: true,
+        }),
+        Animated.timing(mountTranslateY, {
+          toValue: 0,
+          duration: 350,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      mountFade.setValue(0);
+      mountTranslateY.setValue(12);
+    }
+  }, [isLoading, mountFade, mountTranslateY]);
+
+  // Log exact performance timing metadata when HomeScreen mounts populated data
+  const hasLoggedMountRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!isLoading && !hasLoggedMountRef.current) {
+      hasLoggedMountRef.current = true;
+      console.log(
+        `[PerfMeter] 🎯 HomeScreen SUCCESSFULLY MOUNTED: Total Resolved Cards=${resolvedPlanCards.length} | Completed=${stats.completedCount} | Progress=${stats.progressPercentage}% | UserID=${userId ?? "guest"} | MetaTimestamp=${new Date().toISOString()}`
+      );
+    }
+  }, [isLoading, resolvedPlanCards.length, stats.completedCount, stats.progressPercentage, userId]);
 
   // Skeleton Breathing Animation State
   const [skeletonOpacity] = React.useState(new Animated.Value(0.3));
@@ -373,14 +486,21 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          refreshControl={RefreshSpinner(refreshing, onRefresh)}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets
+        <Animated.View
+          style={{
+            flex: 1,
+            opacity: mountFade,
+            transform: [{ translateY: mountTranslateY }],
+          }}
         >
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            refreshControl={RefreshSpinner(refreshing, onRefresh)}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            automaticallyAdjustKeyboardInsets
+          >
           {/* ── CONSOLIDATED HERO ──────────────────────────────────────────── */}
           <View style={styles.welcomeContainer}>
             <View style={styles.welcomeHeaderRow}>
@@ -394,7 +514,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                 </Text> */}
               </View>
               <View style={styles.ringWrapper}>
-                <ProgressRing percentage={progressPercentage} />
+                <ProgressRing percentage={progressPercentage} refreshKey={refreshKey} />
               </View>
             </View>
           </View>
@@ -405,7 +525,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
               <View style={styles.statItem}>
                 <View style={styles.statValueRow}>
                   <MaterialCommunityIcons name="book-open-variant" size={17} color="#4F46E5" />
-                  <Text style={styles.statVal}>{resolvedPlanCards.length}</Text>
+                  <AnimatedStatVal value={resolvedPlanCards.length} refreshKey={refreshKey} />
                 </View>
                 <Text style={styles.statLabel}>Sprints</Text>
               </View>
@@ -415,7 +535,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
               <View style={styles.statItem}>
                 <View style={styles.statValueRow}>
                   <MaterialCommunityIcons name="check-circle-outline" size={17} color="#10B981" />
-                  <Text style={styles.statVal}>{completedCount}</Text>
+                  <AnimatedStatVal value={completedCount} refreshKey={refreshKey} />
                 </View>
                 <Text style={styles.statLabel}>Completed</Text>
               </View>
@@ -425,9 +545,12 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
               <View style={styles.statItem}>
                 <View style={styles.statValueRow}>
                   <MaterialCommunityIcons name="clock-outline" size={17} color="#F59E0B" />
-                  <Text style={styles.statVal}>
-                    {resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS").length}
-                  </Text>
+                  <AnimatedStatVal
+                    value={
+                      resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS").length
+                    }
+                    refreshKey={refreshKey}
+                  />
                 </View>
                 <Text style={styles.statLabel}>In Progress</Text>
               </View>
@@ -441,8 +564,10 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             userId={userId ?? null}
             companyId={companyId ?? null}
             userName={user?.name ?? null}
+            refreshKey={refreshKey}
           />
         </ScrollView>
+      </Animated.View>
       </KeyboardAvoidingView>
       {/* iOS screen-recording overlay — invisible on Android */}
       <ScreenRecordingGuard isRecording={isRecording} />

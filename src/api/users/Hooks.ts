@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { appStorage } from "../../utils/appStorage";
 import { eventBus } from "../../utils/EventBus";
 import { logger } from "../../utils/UnifiedLogger";
 import { useTenant } from "../../contex/TenantContext";
@@ -47,6 +48,14 @@ const processedModuleMetadata = new Map<
   string,
   { title: string; recommended_time: number }
 >();
+
+export const clearHooksMemoryCaches = (): void => {
+  logger.debug(
+    `[Hooks] Clearing in-memory module metadata (${processedModuleMetadata.size}) and authModules (${authModulesCache.size}) caches on sign out`,
+  );
+  processedModuleMetadata.clear();
+  authModulesCache.clear();
+};
 
 export const USER_QUERY_KEY = ["user"];
 
@@ -1143,11 +1152,31 @@ export const useGetDashboardSummary = (
   companyId: string | null,
 ): UseGetDashboardSummaryReturn => {
   const [dashboardData, setDashboardData] =
-    useState<DashboardSummaryResponse | null>(null);
+    useState<DashboardSummaryResponse | null>(() => {
+      if (!userId) return null;
+      return appStorage.getObject<DashboardSummaryResponse>(
+        `@dashboard_data_${userId}`,
+      );
+    });
   const [resolvedPlanCards, setResolvedPlanCards] = useState<
     ResolvedPlanCard[]
-  >([]);
-  const [isLoading, setIsLoading] = useState(false);
+  >(() => {
+    if (!userId) return [];
+    return (
+      appStorage.getObject<ResolvedPlanCard[]>(`@resolved_cards_${userId}`) ||
+      []
+    );
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    if (!userId || !companyId) return false;
+    const initialCache = appStorage.getObject<DashboardSummaryResponse>(
+      `@dashboard_data_${userId}`,
+    );
+    const initialCards = appStorage.getObject<ResolvedPlanCard[]>(
+      `@resolved_cards_${userId}`,
+    );
+    return !initialCache || !initialCards;
+  });
   const [error, setError] = useState<Error | null>(null);
   const fetchPromiseRef = useRef<Promise<any> | null>(null);
   const { setCompanyFromDashboard } = useTenant();
@@ -1189,7 +1218,6 @@ export const useGetDashboardSummary = (
             `[Timing] getDashboardSummary API took ${apiEnd - apiStart}ms`,
           );
 
-          setDashboardData(data);
           setCompanyFromDashboard((data as any)?.company ?? null);
 
           const moduleMap = new Map<string, any>();
@@ -1331,15 +1359,19 @@ export const useGetDashboardSummary = (
             }),
           );
 
+          // Atomic state update: Set dashboard data & resolved cards together
+          setDashboardData(data);
           setResolvedPlanCards(cards);
           logger.debug(
-            "[Hook] ✅ Fresh dashboard summary resolved:",
+            "[Hook] ✅ Fresh dashboard summary & cards resolved:",
             cards.length,
           );
 
-          // Save to cache
+          // Save to persistent storage (MMKV + AsyncStorage)
           const cacheKey = `@dashboard_data_${userId}`;
-          await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
+          const cardsCacheKey = `@resolved_cards_${userId}`;
+          appStorage.setObject(cacheKey, data);
+          appStorage.setObject(cardsCacheKey, cards);
 
           if (hasPlaceholderTitles(cards)) {
             reconcilePlaceholderTitles(cards, userId)
@@ -1356,8 +1388,12 @@ export const useGetDashboardSummary = (
               );
           }
 
+          const totalDuration = Date.now() - startTime;
+          console.log(
+            `[PerfMeter] 📊 getDashboardSummary NETWORK FETCH COMPLETED: API Call=${apiEnd - apiStart}ms | Total Processing=${totalDuration}ms | Resolved Cards=${cards.length} | UserID=${userId}`
+          );
           logger.debug(
-            `[Timing] Total fetchDashboardData took ${Date.now() - startTime}ms`,
+            `[Timing] Total fetchDashboardData took ${totalDuration}ms`,
           );
           return data;
         } catch (err) {
@@ -1386,20 +1422,33 @@ export const useGetDashboardSummary = (
     const loadAndFetch = async () => {
       if (!userId || !companyId) return;
 
-      setIsLoading(true);
-      setError(null);
+      const cacheKey = `@dashboard_data_${userId}`;
+      let cachedData =
+        dashboardData ||
+        appStorage.getObject<DashboardSummaryResponse>(cacheKey);
+
+      // Fallback check from AsyncStorage if not loaded yet into MMKV/memory
+      if (!cachedData) {
+        try {
+          const cachedJson = await AsyncStorage.getItem(cacheKey);
+          if (cachedJson) {
+            cachedData = JSON.parse(cachedJson) as DashboardSummaryResponse;
+            appStorage.setObject(cacheKey, cachedData);
+          }
+        } catch (err) {
+          logger.warn("[Hook] Failed to load cached dashboard data:", err);
+        }
+      }
 
       let hasCache = false;
-
-      // 1. Try to load from cache first
-      try {
-        const cacheKey = `@dashboard_data_${userId}`;
-        const cachedJson = await AsyncStorage.getItem(cacheKey);
-        if (cachedJson) {
-          const cachedData = JSON.parse(cachedJson) as DashboardSummaryResponse;
-          setDashboardData(cachedData);
+      if (cachedData) {
+        setDashboardData(cachedData);
+        try {
           const cards = await processDashboardResponse(cachedData, userId);
           setResolvedPlanCards(cards);
+          console.log(
+            `[PerfMeter] ⚡ Loaded Dashboard summary from PERSISTENT CACHE: Cards=${cards.length} | UserID=${userId}`
+          );
           logger.debug(
             "[Hook] ✅ Loaded dashboard data from cache:",
             cards.length,
@@ -1417,22 +1466,22 @@ export const useGetDashboardSummary = (
                 ),
               );
           }
-
-          hasCache = true;
-          // Cache loaded! Dismiss spinner immediately so user sees cached screen
-          setIsLoading(false);
+        } catch (cardErr) {
+          logger.warn("[Hook] Failed to process cached cards:", cardErr);
         }
-      } catch (err) {
-        logger.warn("[Hook] Failed to load cached dashboard data:", err);
+        hasCache = true;
+        // Cache loaded! Dismiss spinner immediately so user sees cached screen instantly
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
       }
 
-      // 2. Fetch fresh data from network
+      setError(null);
+
+      // 2. Fetch fresh data from network in background (SWR pattern)
       try {
-        // If we don't have a cache, keep the spinner visible.
-        // If we DO have a cache, fetch silently in the background.
         await fetchDashboardData(!hasCache);
       } catch (err) {
-        // If we don't even have cached data, propagate the error to the UI
         if (!hasCache) {
           setError(
             err instanceof Error ? err : new Error("Failed to fetch dashboard"),
@@ -1802,7 +1851,12 @@ export const useGetLeaderboardHighlight = (
   enabled: boolean = true,
 ): UseGetLeaderboardHighlightReturn => {
   const [leaderboardData, setLeaderboardData] =
-    useState<LeaderboardHighlightData | null>(null);
+    useState<LeaderboardHighlightData | null>(() => {
+      if (!companyId || !userId) return null;
+      return appStorage.getObject<LeaderboardHighlightData>(
+        `@leaderboard_highlight_${companyId}_${userId}`,
+      );
+    });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const fetchPromiseRef = useRef<Promise<any> | null>(null);
@@ -1828,11 +1882,12 @@ export const useGetLeaderboardHighlight = (
       fetchPromiseRef.current = promise;
 
       try {
-        const response = await promise;
+        const response: LeaderboardHighlightResponse = await promise;
         if (response.success && response.data) {
           setLeaderboardData(response.data);
+          // Save to persistent storage (MMKV + AsyncStorage)
           const cacheKey = `@leaderboard_highlight_${companyId}_${userId}`;
-          await AsyncStorage.setItem(cacheKey, JSON.stringify(response.data));
+          appStorage.setObject(cacheKey, response.data);
         } else if (response.error) {
           throw new Error(response.error);
         }
@@ -1854,27 +1909,36 @@ export const useGetLeaderboardHighlight = (
     const loadAndFetch = async () => {
       if (!companyId || !userId) return;
 
-      setIsLoading(true);
-      setError(null);
+      const cacheKey = `@leaderboard_highlight_${companyId}_${userId}`;
+      let cachedData =
+        leaderboardData ||
+        appStorage.getObject<LeaderboardHighlightData>(cacheKey);
 
-      let hasCache = false;
-
-      // 1. Try to load from cache first
-      try {
-        const cacheKey = `@leaderboard_highlight_${companyId}_${userId}`;
-        const cachedJson = await AsyncStorage.getItem(cacheKey);
-        if (cachedJson) {
-          const cachedData = JSON.parse(cachedJson) as LeaderboardHighlightData;
-          setLeaderboardData(cachedData);
-          logger.debug("[Hook] ✅ Loaded leaderboard from cache");
-          hasCache = true;
-          setIsLoading(false); // Cache found, stop spinner early
+      if (!cachedData) {
+        try {
+          const cachedJson = await AsyncStorage.getItem(cacheKey);
+          if (cachedJson) {
+            cachedData = JSON.parse(cachedJson) as LeaderboardHighlightData;
+            appStorage.setObject(cacheKey, cachedData);
+          }
+        } catch (err) {
+          logger.warn("[Hook] Failed to load cached leaderboard:", err);
         }
-      } catch (err) {
-        logger.warn("[Hook] Failed to load cached leaderboard:", err);
       }
 
-      // 2. Fetch fresh data from network
+      let hasCache = false;
+      if (cachedData) {
+        setLeaderboardData(cachedData);
+        logger.debug("[Hook] ✅ Loaded leaderboard from cache");
+        hasCache = true;
+        setIsLoading(false); // Cache found, stop spinner early
+      } else {
+        setIsLoading(true);
+      }
+
+      setError(null);
+
+      // 2. Fetch fresh data from network in background
       try {
         await fetchLeaderboard(!hasCache);
       } catch (err) {

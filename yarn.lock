@@ -2103,16 +2103,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@react-native-firebase/messaging@npm:^25.1.0":
-  version: 25.1.0
-  resolution: "@react-native-firebase/messaging@npm:25.1.0"
+"@react-native-firebase/messaging@npm:^24.1.1":
+  version: 24.1.1
+  resolution: "@react-native-firebase/messaging@npm:24.1.1"
   peerDependencies:
-    "@react-native-firebase/app": 25.1.0
+    "@react-native-firebase/app": 24.1.1
     expo: ">=47.0.0"
   peerDependenciesMeta:
     expo:
       optional: true
-  checksum: 10c0/e505693d2f443ab5b064e647f5add9e52cdd10d6a2335ed58291d211c5baafbdd3d63fbf1836cdd928aeca14bbd61ccc234193692e1158dfafd6f68e665b2a3c
+  checksum: 10c0/49dee5ab08731e9acbbbe4f05926f6bdc2cf6fed114c5c1359507c1d56ed564608e6ba602ff35dda34f689c58812927b06bf864eb17d6bcd160c904cdcd0530e
   languageName: node
   linkType: hard
 
@@ -4704,7 +4704,7 @@ __metadata:
     "@react-native-community/slider": "npm:5.2.0"
     "@react-native-firebase/app": "npm:^24.0.0"
     "@react-native-firebase/auth": "npm:^24.0.0"
-    "@react-native-firebase/messaging": "npm:^25.1.0"
+    "@react-native-firebase/messaging": "npm:^24.1.1"
     "@react-navigation/bottom-tabs": "npm:^7.15.7"
     "@react-navigation/native": "npm:^7.2.0"
     "@react-navigation/native-stack": "npm:^7.14.7"
@@ -4733,6 +4733,8 @@ __metadata:
     react-native: "npm:0.86.3"
     react-native-gesture-handler: "npm:~2.32.0"
     react-native-image-crop-picker: "npm:^0.51.1"
+    react-native-mmkv: "npm:^4.3.2"
+    react-native-nitro-modules: "npm:^0.37.1"
     react-native-reanimated: "npm:4.5.1"
     react-native-safe-area-context: "npm:~5.7.0"
     react-native-screens: "npm:~4.26.0"
@@ -5515,6 +5517,27 @@ __metadata:
     react: "*"
     react-native: "*"
   checksum: 10c0/28cebd5f1f3632864ff5e342278721d1e5e38627ae73859a8814012116ef15c629fee7137a6c9c97bb05d94bbe639b0b47e69b36fc2735ab53ed31570140663f
+  languageName: node
+  linkType: hard
+
+"react-native-mmkv@npm:^4.3.2":
+  version: 4.3.2
+  resolution: "react-native-mmkv@npm:4.3.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+    react-native-nitro-modules: "*"
+  checksum: 10c0/47c86114ee0ddbc8245dda174f419df9390a8ce0a6bcee0ded5eabd0b257e2b49257ddaf3b39eb5ab95ad7eed0ffa6d6b1e7c6bf8a3e56e6508408e49b98ed07
+  languageName: node
+  linkType: hard
+
+"react-native-nitro-modules@npm:^0.37.1":
+  version: 0.37.1
+  resolution: "react-native-nitro-modules@npm:0.37.1"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  checksum: 10c0/5178f2ee891cb746b084fdf382b6020e366d8e4a81922a3f1d60a453d34fca6ebb1b00c4c28785c36385bc182ab76a30cba70441c39abbc25d3ad54db612e46e
   languageName: node
   linkType: hard
 

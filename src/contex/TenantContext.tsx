@@ -4,6 +4,7 @@ import React, {
   useState,
   useCallback,
   useMemo,
+  useEffect,
 } from "react";
 import { useAuth } from "./AuthContext";
 import { getDashboardSummary } from "../api/users/Request";
@@ -100,6 +101,14 @@ export const TenantProvider = ({
   const [company, setCompany] = useState<CompanyInfo | null>(null);
   const [loadingAddons, setLoadingAddons] = useState(true);
   const [addonsKnown, setAddonsKnown] = useState(false);
+
+  useEffect(() => {
+    if (!cachedUser) {
+      setCompany(null);
+      setAddonsKnown(false);
+      setLoadingAddons(true);
+    }
+  }, [cachedUser]);
 
   const setCompanyFromDashboard = useCallback((companyLike: any) => {
     if (!companyLike) {

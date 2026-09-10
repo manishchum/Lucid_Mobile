@@ -228,26 +228,50 @@ export interface ApiFetchOptions extends RequestInit {
   retryDelayMs?: number;
 }
 
+// Concurrent in-flight request deduplication map
+const inFlightRequests = new Map<string, Promise<any>>();
+
+export const clearInFlightRequests = (): void => {
+  logger.debug(`[Request] Clearing inFlightRequests map (${inFlightRequests.size} active)`);
+  inFlightRequests.clear();
+};
+
 export async function apiFetch<T = any>(
   url: string,
   options: ApiFetchOptions = {},
 ): Promise<T> {
-  const {
-    userId,
-    companyId,
-    noCache,
-    public: isPublic,
-    headers: extraHeaders,
-    timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
-    retries,
-    retryDelayMs = DEFAULT_RETRY_DELAY_MS,
-    signal: userSignal,
-    ...rest
-  } = options;
+  const method = (options.method ?? "GET").toUpperCase();
+  const shouldDeduplicate =
+    method === "GET" &&
+    !options.noCache &&
+    !options._isRetry &&
+    !options.signal;
 
-  const method = (rest.method ?? "GET").toUpperCase();
-  const isIdempotent = method === "GET" || method === "HEAD" || method === "OPTIONS";
-  const retryBudget = retries ?? (isIdempotent ? 1 : 0);
+  const dedupKey = shouldDeduplicate
+    ? `${method}:${url}:${options.userId || ""}:${options.companyId || ""}`
+    : null;
+
+  if (dedupKey && inFlightRequests.has(dedupKey)) {
+    logger.debug(`[apiFetch] In-flight deduplication hit for ${dedupKey}`);
+    return inFlightRequests.get(dedupKey) as Promise<T>;
+  }
+
+  const executionPromise = (async (): Promise<T> => {
+    const {
+      userId,
+      companyId,
+      noCache,
+      public: isPublic,
+      headers: extraHeaders,
+      timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
+      retries,
+      retryDelayMs = DEFAULT_RETRY_DELAY_MS,
+      signal: userSignal,
+      ...rest
+    } = options;
+
+    const isIdempotent = method === "GET" || method === "HEAD" || method === "OPTIONS";
+    const retryBudget = retries ?? (isIdempotent ? 1 : 0);
 
   const baseHeaders = isPublic
     ? getPublicHeaders(userId, companyId)
@@ -389,6 +413,16 @@ export async function apiFetch<T = any>(
       userSignal.removeEventListener("abort", onUserAbort);
     }
   }
+  })();
+
+  if (dedupKey) {
+    inFlightRequests.set(dedupKey, executionPromise);
+    executionPromise.finally(() => {
+      inFlightRequests.delete(dedupKey);
+    });
+  }
+
+  return executionPromise;
 }
 
 // 1. Get user by email
@@ -994,7 +1028,8 @@ export const getDashboardSummary = async (
     const json = await apiFetch<any>(url, {
       method: "GET",
       userId,
-      noCache: true,
+      companyId,
+      timeoutMs: 30000,
       headers: { "X-Company-ID": companyId },
     });
 

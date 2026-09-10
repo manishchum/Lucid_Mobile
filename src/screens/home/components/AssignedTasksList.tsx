@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { friendlyError } from "../../../utils/friendlyError";
 import {
   View,
@@ -6,10 +6,67 @@ import {
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
+  Animated,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Task } from "../../../api/users";
 import TaskAccordionItem from "./TaskAccordionItem";
+
+const AnimatedTaskCard = ({
+  children,
+  index,
+  refreshKey = 0,
+}: {
+  children: React.ReactNode;
+  index: number;
+  refreshKey?: number;
+}) => {
+  const animFade = useRef(new Animated.Value(0)).current;
+  const animTranslateY = useRef(new Animated.Value(24)).current;
+  const animScale = useRef(new Animated.Value(0.95)).current;
+
+  useEffect(() => {
+    animFade.setValue(0);
+    animTranslateY.setValue(24);
+    animScale.setValue(0.95);
+
+    const delay = Math.min(index * 75, 450);
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(animFade, {
+          toValue: 1,
+          duration: 380,
+          useNativeDriver: true,
+        }),
+        Animated.spring(animTranslateY, {
+          toValue: 0,
+          friction: 7,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+        Animated.spring(animScale, {
+          toValue: 1,
+          friction: 7,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, delay);
+
+    return () => clearTimeout(timer);
+  }, [index, refreshKey, animFade, animTranslateY, animScale]);
+
+  return (
+    <Animated.View
+      style={{
+        opacity: animFade,
+        transform: [{ translateY: animTranslateY }, { scale: animScale }],
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+};
 
 interface AssignedTasksListProps {
   tasks: Task[];
@@ -19,6 +76,7 @@ interface AssignedTasksListProps {
   userId?: string | null;
   onTaskSubmitted?: (task: Task) => void;
   isFiltered?: boolean;
+  refreshKey?: number;
 }
 
 const isOverdue = (dueDate: string | null): boolean => {
@@ -45,6 +103,7 @@ export default function AssignedTasksList({
   userId,
   onTaskSubmitted,
   isFiltered,
+  refreshKey = 0,
 }: AssignedTasksListProps) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
 
@@ -183,16 +242,21 @@ export default function AssignedTasksList({
         <Text style={styles.totalText}>{safeTasks.length} total</Text>
       </View>
 
-      {safeTasks.map((task) => (
-        <TaskAccordionItem
-          key={task.task_id}
-          task={task}
-          userId={userId}
-          onSubmit={(t, payload) => {
-            console.log("Submit task:", t.task_id, payload);
-          }}
-          onSubmitted={onTaskSubmitted}
-        />
+      {safeTasks.map((task, idx) => (
+        <AnimatedTaskCard
+          key={`${task.task_id}_${statusFilter}_${refreshKey}`}
+          index={idx}
+          refreshKey={refreshKey}
+        >
+          <TaskAccordionItem
+            task={task}
+            userId={userId}
+            onSubmit={(t, payload) => {
+              console.log("Submit task:", t.task_id, payload);
+            }}
+            onSubmitted={onTaskSubmitted}
+          />
+        </AnimatedTaskCard>
       ))}
     </View>
   );
