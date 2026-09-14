@@ -1,4 +1,4 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# EAS Ignore File - controls what files EAS CLI uploads to EAS Build
 
 # dependencies
 node_modules/
@@ -53,17 +53,11 @@ ios/*.xcworkspace/xcuserdata/
 ios/*.xcodeproj/xcuserdata/
 ios/*.xcodeproj/project.xcworkspace/xcuserdata/
 
-
 # API Keys & Secrets
 .env
 .env.development
 .env.production
 .env.example
-google-services.json
-GoogleService-Info.plist
-# !google-services.json
-# !android/app/google-services.json
-# !GoogleService-Info.plist
 
 # IDEs and Editors
 .vscode/

@@ -170,13 +170,39 @@ function AppNavigatorContent() {
     setIsNotificationsOpen,
   } = useDrawer();
 
-  const [isSplashActive, setIsSplashActive] = useState(true);
+  const [isSplashActive, setIsSplashActive] = useState(false);
+  const isInitialStateSetRef = useRef(false);
+  const prevIsLoggedInRef = useRef<boolean | null>(null);
   const appStartTimeRef = useRef(Date.now());
 
   useEffect(() => {
-    // Hide native Expo splash screen as soon as custom React component mounts
-    ExpoSplashScreen.hideAsync().catch(() => {});
-  }, []);
+    if (isInitializing) return;
+
+    if (!isInitialStateSetRef.current) {
+      isInitialStateSetRef.current = true;
+      // Hide native Expo splash screen as soon as JS auth initialization is complete
+      ExpoSplashScreen.hideAsync().catch(() => {});
+
+      if (isLoggedIn) {
+        // Scenario 2: Recurring user (already logged in) -> show animated splash screen
+        console.log("[AppNavigator] Launching recurring user flow -> showing splash screen");
+        setIsSplashActive(true);
+      } else {
+        // Scenario 1: First-time user / unauthenticated -> skip pre-login splash, go to login screen directly
+        console.log("[AppNavigator] Launching first-time / unauthenticated flow -> showing login screen");
+        setIsSplashActive(false);
+      }
+    } else {
+      // Handle post-login transition (unauthenticated -> authenticated)
+      if (prevIsLoggedInRef.current === false && isLoggedIn) {
+        console.log("[AppNavigator] Post-login transition detected -> triggering splash screen");
+        appStartTimeRef.current = Date.now();
+        setIsSplashActive(true);
+      }
+    }
+
+    prevIsLoggedInRef.current = isLoggedIn;
+  }, [isInitializing, isLoggedIn]);
 
   const handleSplashComplete = useCallback(() => {
     const splashDuration = Date.now() - appStartTimeRef.current;
@@ -241,7 +267,11 @@ function AppNavigatorContent() {
   // Data is fully ready when auth initialization completes AND if logged in, initial dashboard summary has finished fetching
   const isDataReady = !isInitializing && (!isLoggedIn || !isDashboardLoading);
 
-  if (isInitializing || isSplashActive) {
+  if (isInitializing) {
+    return <View style={{ flex: 1, backgroundColor: "#FFFFFF" }} />;
+  }
+
+  if (isSplashActive) {
     return (
       <SplashScreen
         isDataReady={isDataReady}
