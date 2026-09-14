@@ -61,6 +61,9 @@ ios/*.xcodeproj/project.xcworkspace/xcuserdata/
 .env.example
 google-services.json
 GoogleService-Info.plist
+# !google-services.json
+# !android/app/google-services.json
+# !GoogleService-Info.plist
 
 # IDEs and Editors
 .vscode/

@@ -11,11 +11,13 @@ import {
   Image,
   Modal,
 } from "react-native";
-import { Video, ResizeMode, Audio, AVPlaybackStatus } from "expo-av";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { simplifyHindiText } from "./HindiSimplifier";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTenant } from "../../../contex/TenantContext";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -127,6 +129,46 @@ function parseTable(tableHtml: string): {
     if (cells.length > 0) rows.push(cells.map((td) => stripTags(td)));
   });
   return { headers, rows };
+}
+
+function MediaVideoPlayer({
+  src,
+  title,
+  description,
+  onPlayingChange,
+}: {
+  src: string;
+  title?: string;
+  description?: string;
+  onPlayingChange: (playing: boolean) => void;
+}) {
+  const player = useVideoPlayer(src, (p) => {
+    p.loop = false;
+  });
+
+  useEffect(() => {
+    if (!player) return;
+    const playingSub = player.addListener("playingChange", (evt: any) => {
+      onPlayingChange(evt.isPlaying ?? evt);
+    });
+    return () => playingSub.remove();
+  }, [player, onPlayingChange]);
+
+  return (
+    <View style={styles.mediaWrapper}>
+      <VideoView
+        style={styles.mediaVideo}
+        player={player}
+        fullscreenOptions={{ enable: true }}
+        allowsPictureInPicture
+        contentFit="contain"
+      />
+      {!!title && <Text style={styles.mediaTitle}>{title}</Text>}
+      {!!description && (
+        <Text style={styles.mediaDescription}>{description}</Text>
+      )}
+    </View>
+  );
 }
 
 // ─── Tab label logic ──────────────────────────────────────────────────────────
@@ -652,7 +694,7 @@ function renderFormattedText(text: string, textStyle: any) {
 // ─── Media embed renderer (video / audio / image) ─────────────────────────────
 
 function MediaEmbedView({ media }: { media: MediaItem }) {
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [positionMillis, setPositionMillis] = useState(0);
@@ -660,7 +702,9 @@ function MediaEmbedView({ media }: { media: MediaItem }) {
 
   useEffect(() => {
     return () => {
-      soundRef.current?.unloadAsync().catch(() => {});
+      try {
+        soundRef.current?.remove();
+      } catch {}
     };
   }, []);
 
@@ -671,35 +715,34 @@ function MediaEmbedView({ media }: { media: MediaItem }) {
     return `${min}:${sec < 10 ? "0" : ""}${sec}`;
   };
 
-  const onAudioStatusUpdate = (status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
-    setPositionMillis(status.positionMillis ?? 0);
-    setDurationMillis(status.durationMillis ?? 0);
-    setIsPlaying(status.isPlaying ?? false);
-    if (status.didJustFinish) {
-      setIsPlaying(false);
-      soundRef.current?.setPositionAsync(0).catch(() => {});
-    }
-  };
-
   const toggleAudioPlayback = async () => {
     try {
       if (!soundRef.current) {
         setIsLoadingAudio(true);
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: media.src },
-          { shouldPlay: true },
-          onAudioStatusUpdate,
-        );
-        soundRef.current = sound;
+        await setAudioModeAsync({ playsInSilentMode: true });
+        const player = createAudioPlayer({ uri: media.src });
+        soundRef.current = player;
+
+        player.addListener("playbackStatusUpdate", (status) => {
+          setPositionMillis(Math.round((status.currentTime || 0) * 1000));
+          setDurationMillis(Math.round((status.duration || 0) * 1000));
+          setIsPlaying(status.playing);
+          if (status.playing === false && status.currentTime >= status.duration && status.duration > 0) {
+            setIsPlaying(false);
+            player.seekTo(0);
+          }
+        });
+
+        player.play();
+        setIsPlaying(true);
         setIsLoadingAudio(false);
         return;
       }
-      const status = await soundRef.current.getStatusAsync();
-      if (status.isLoaded && status.isPlaying) {
-        await soundRef.current.pauseAsync();
+
+      if (isPlaying) {
+        soundRef.current.pause();
       } else {
-        await soundRef.current.playAsync();
+        soundRef.current.play();
       }
     } catch (err) {
       console.error("[CoreContentSection] Audio playback error:", err);
@@ -708,20 +751,27 @@ function MediaEmbedView({ media }: { media: MediaItem }) {
     }
   };
 
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+
+  useEffect(() => {
+    if (isVideoPlaying) {
+      activateKeepAwakeAsync("CoreContentVideo").catch(() => {});
+    } else {
+      deactivateKeepAwake("CoreContentVideo").catch(() => {});
+    }
+    return () => {
+      deactivateKeepAwake("CoreContentVideo").catch(() => {});
+    };
+  }, [isVideoPlaying]);
+
   if (media.type === "video") {
     return (
-      <View style={styles.mediaWrapper}>
-        <Video
-          source={{ uri: media.src }}
-          style={styles.mediaVideo}
-          useNativeControls
-          resizeMode={ResizeMode.CONTAIN}
-        />
-        {!!media.title && <Text style={styles.mediaTitle}>{media.title}</Text>}
-        {!!media.description && (
-          <Text style={styles.mediaDescription}>{media.description}</Text>
-        )}
-      </View>
+      <MediaVideoPlayer
+        src={media.src}
+        title={media.title}
+        description={media.description}
+        onPlayingChange={setIsVideoPlaying}
+      />
     );
   }
 
@@ -1006,7 +1056,7 @@ export default function CoreContentSection({
           />
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.title}>Core Content</Text>
+          <Text style={styles.title}>Playbook</Text>
           {/* <Text style={styles.subtitle}>
             {sections.length > 0
               ? `${sections.length} section${sections.length > 1 ? "s" : ""} · Tap to read`

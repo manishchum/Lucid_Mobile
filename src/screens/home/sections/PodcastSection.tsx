@@ -11,8 +11,9 @@ import {
   FlatList,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Audio, AVPlaybackStatus } from "expo-av";
 import { useTenant } from "../../../contex/TenantContext";
+import { usePodcastPlayer } from "../../../contex/PodcastPlayerContext";
+import { useIsFocused } from "@react-navigation/native";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ interface TranscriptEntry {
 }
 
 interface PodcastSectionProps {
+  title?: string;
   isExpanded: boolean;
   onToggle: () => void;
   lang?: string;
@@ -139,6 +141,7 @@ function speakerColors(speaker: string) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PodcastSection({
+  title,
   isExpanded,
   onToggle,
   lang,
@@ -202,30 +205,69 @@ export default function PodcastSection({
     podcastTimelineMarathi,
     podcastTimelineBengali,
   ]);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [positionMillis, setPositionMillis] = useState(0);
-  const [durationMillis, setDurationMillis] = useState(0);
+  const {
+    activeTrackInfo,
+    isPlaying,
+    isLoading,
+    positionMillis,
+    durationMillis,
+    playPodcast,
+    togglePlayPause,
+    seekTo,
+    setAccordionExpanded,
+  } = usePodcastPlayer();
+
+  const isCurrentTrackActive =
+    activeTrackInfo !== null &&
+    activeAudioUrl !== null &&
+    activeTrackInfo.audioUrl === activeAudioUrl;
+
+  const isThisPlaying = isCurrentTrackActive && isPlaying;
+  const isThisLoading = isCurrentTrackActive && isLoading;
+  const thisPositionMillis = isCurrentTrackActive ? positionMillis : 0;
+  const thisDurationMillis = isCurrentTrackActive ? durationMillis : 0;
+  const thisProgressRatio =
+    thisDurationMillis > 0 ? thisPositionMillis / thisDurationMillis : 0;
+  const thisRemainingMillis = Math.max(
+    0,
+    thisDurationMillis - thisPositionMillis,
+  );
+
+  const isFocused = useIsFocused();
+
+  useEffect(() => {
+    if (isCurrentTrackActive && isFocused && isExpanded) {
+      setAccordionExpanded(true);
+    } else {
+      setAccordionExpanded(false);
+    }
+    return () => {
+      setAccordionExpanded(false);
+    };
+  }, [isExpanded, isCurrentTrackActive, isFocused, setAccordionExpanded]);
+
   const [showTranscript, setShowTranscript] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
   const progressBarWidth = useRef(0);
   const transcriptScrollRef = useRef<ScrollView>(null);
   const itemHeights = useRef<Record<number, number>>({});
   const itemOffsets = useRef<Record<number, number>>({});
 
   const entries = parseTimeline(rawTimeline);
-  const positionSec = positionMillis / 1000;
 
   // ── Sync active transcript line ──────────────────────────────────────────
   useEffect(() => {
-    if (!isPlaying || entries.length === 0) return;
+    if (!isThisPlaying || entries.length === 0) {
+      if (!isCurrentTrackActive) setActiveIndex(-1);
+      return;
+    }
+    const posSec = thisPositionMillis / 1000;
     const idx = entries.findIndex(
-      (e) => positionSec >= e.startSec && positionSec < e.endSec,
+      (e) => posSec >= e.startSec && posSec < e.endSec,
     );
     if (idx !== -1 && idx !== activeIndex) setActiveIndex(idx);
-  }, [positionSec, isPlaying, entries]);
+  }, [thisPositionMillis, isThisPlaying, entries, activeIndex, isCurrentTrackActive]);
 
   // ── Auto-scroll transcript to active line ────────────────────────────────
   useEffect(() => {
@@ -239,79 +281,27 @@ export default function PodcastSection({
     }
   }, [activeIndex, showTranscript]);
 
-  // ── Reset on language switch ─────────────────────────────────────────────
-  useEffect(() => {
-    const reset = async () => {
-      if (soundRef.current) {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-      setIsPlaying(false);
-      setPositionMillis(0);
-      setDurationMillis(0);
-      setActiveIndex(-1);
-    };
-    reset();
-  }, [activeAudioUrl]);
-
-  // ── Pause when section collapses ─────────────────────────────────────────
-  useEffect(() => {
-    if (!isExpanded) soundRef.current?.pauseAsync();
-  }, [isExpanded]);
-
-  // ── Cleanup on unmount ───────────────────────────────────────────────────
-  useEffect(
-    () => () => {
-      soundRef.current?.unloadAsync();
-    },
-    [],
-  );
-
-  // ── Load & play ──────────────────────────────────────────────────────────
-  const loadAndPlay = useCallback(async () => {
-    if (!activeAudioUrl) return;
-    setIsLoading(true);
-    try {
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: activeAudioUrl },
-        { shouldPlay: true },
-        (status: AVPlaybackStatus) => {
-          if (status.isLoaded) {
-            setPositionMillis(status.positionMillis ?? 0);
-            setDurationMillis(status.durationMillis ?? 0);
-            setIsPlaying(status.isPlaying);
-            if (status.didJustFinish) {
-              setIsPlaying(false);
-              setPositionMillis(0);
-              setActiveIndex(-1);
-            }
-          }
-        },
-      );
-      soundRef.current = sound;
-    } catch (e) {
-      console.error("Audio error:", e);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeAudioUrl]);
-
   const handlePlayPause = async () => {
-    if (!soundRef.current) {
-      await loadAndPlay();
-      return;
+    if (!activeAudioUrl) return;
+    if (!isCurrentTrackActive) {
+      await playPodcast({
+        audioUrl: activeAudioUrl,
+        title: title ?? "Podcast Lesson",
+        rawTimeline,
+        transcript,
+        lang,
+      });
+    } else {
+      await togglePlayPause();
     }
-    isPlaying
-      ? await soundRef.current.pauseAsync()
-      : await soundRef.current.playAsync();
   };
 
   const handleSeek = async (ratio: number) => {
+    if (!isCurrentTrackActive) return;
     const clamped = Math.max(0, Math.min(1, ratio));
-    if (soundRef.current && durationMillis > 0) {
-      await soundRef.current.setPositionAsync(clamped * durationMillis);
+    if (thisDurationMillis > 0) {
+      const targetSec = clamped * (thisDurationMillis / 1000);
+      await seekTo(targetSec);
     }
   };
 
@@ -328,17 +318,18 @@ export default function PodcastSection({
 
   const handleTranscriptTap = async (entry: TranscriptEntry, idx: number) => {
     setActiveIndex(idx);
-    if (!soundRef.current) {
-      await loadAndPlay();
-      return;
+    if (!activeAudioUrl) return;
+    if (!isCurrentTrackActive) {
+      await playPodcast({
+        audioUrl: activeAudioUrl,
+        title: title ?? "Podcast Lesson",
+        rawTimeline,
+        transcript,
+        lang,
+      });
     }
-    await soundRef.current.setPositionAsync(entry.startSec * 1000);
-    if (!isPlaying) await soundRef.current.playAsync();
+    await seekTo(entry.startSec);
   };
-
-  const progressRatio =
-    durationMillis > 0 ? positionMillis / durationMillis : 0;
-  const remainingMillis = Math.max(0, durationMillis - positionMillis);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -355,11 +346,6 @@ export default function PodcastSection({
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.title}>Podcast</Text>
-          {/* <Text style={styles.subtitle}>
-            {durationMillis > 0
-              ? `${formatTime(durationMillis)} · Listen on the go`
-              : "Listen on the go"}
-          </Text> */}
         </View>
         <MaterialCommunityIcons
           name={isExpanded ? "chevron-up" : "chevron-down"}
@@ -394,24 +380,24 @@ export default function PodcastSection({
                     <View
                       style={[
                         styles.fill,
-                        { width: `${progressRatio * 100}%` as any },
+                        { width: `${thisProgressRatio * 100}%` as any },
                       ]}
                     />
                   </View>
                   <View
                     style={[
                       styles.thumb,
-                      { left: `${progressRatio * 100}%` as any },
+                      { left: `${thisProgressRatio * 100}%` as any },
                     ]}
                   />
                 </View>
 
                 <View style={styles.timeRow}>
                   <Text style={styles.timeText}>
-                    {formatTime(positionMillis)}
+                    {formatTime(thisPositionMillis)}
                   </Text>
                   <Text style={styles.timeText}>
-                    −{formatTime(remainingMillis)}
+                    −{formatTime(thisRemainingMillis)}
                   </Text>
                 </View>
 
@@ -419,9 +405,7 @@ export default function PodcastSection({
                   <TouchableOpacity
                     style={styles.skipBtn}
                     onPress={() =>
-                      soundRef.current?.setPositionAsync(
-                        Math.max(0, positionMillis - 15000),
-                      )
+                      seekTo(Math.max(0, (thisPositionMillis - 15000) / 1000))
                     }
                   >
                     <MaterialCommunityIcons
@@ -434,14 +418,14 @@ export default function PodcastSection({
                   <TouchableOpacity
                     style={styles.playBtn}
                     onPress={handlePlayPause}
-                    disabled={isLoading}
+                    disabled={isThisLoading}
                     activeOpacity={0.85}
                   >
-                    {isLoading ? (
+                    {isThisLoading ? (
                       <ActivityIndicator color="white" size="small" />
                     ) : (
                       <MaterialCommunityIcons
-                        name={isPlaying ? "pause" : "play"}
+                        name={isThisPlaying ? "pause" : "play"}
                         size={30}
                         color="white"
                       />
@@ -451,9 +435,7 @@ export default function PodcastSection({
                   <TouchableOpacity
                     style={styles.skipBtn}
                     onPress={() =>
-                      soundRef.current?.setPositionAsync(
-                        Math.min(durationMillis, positionMillis + 15000),
-                      )
+                      seekTo(Math.min(thisDurationMillis / 1000, (thisPositionMillis + 15000) / 1000))
                     }
                   >
                     <MaterialCommunityIcons
@@ -503,9 +485,10 @@ export default function PodcastSection({
                   >
                     {entries.map((entry, idx) => {
                       const isActive = idx === activeIndex;
-                      const isPast = positionSec > entry.endSec && !isActive;
+                      const thisPositionSec = thisPositionMillis / 1000;
+                      const isPast = thisPositionSec > entry.endSec && !isActive;
                       const isFuture =
-                        positionSec < entry.startSec && !isActive;
+                        thisPositionSec < entry.startSec && !isActive;
                       const colors = speakerColors(entry.speaker);
                       const showSpeakerLabel =
                         idx === 0 || entries[idx - 1].speaker !== entry.speaker;
@@ -635,13 +618,13 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: "#F59E0B",
     top: "50%",
-    marginTop: -7,
+    marginTop: 5,
     marginLeft: -7,
-    shadowColor: "#F59E0B",
-    shadowOpacity: 0.45,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 3,
+    // shadowColor: "#F59E0B",
+    // shadowOpacity: 0.45,
+    // shadowRadius: 5,
+    // shadowOffset: { width: 0, height: 0 },
+    // elevation: 3,
   },
   timeRow: {
     flexDirection: "row",
@@ -669,11 +652,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#F59E0B",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#F59E0B",
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+    // shadowColor: "#F59E0B",
+    // shadowOpacity: 0.4,
+    // shadowRadius: 10,
+    // shadowOffset: { width: 0, height: 4 },
+    // elevation: 5,
   },
 
   transcriptToggle: {

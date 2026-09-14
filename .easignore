@@ -1,0 +1,75 @@
+# EAS Ignore File - controls what files EAS CLI uploads to EAS Build
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# Android build artifacts and local configs
+android/.gradle/
+android/build/
+android/local.properties
+android/app/build/
+android/captures/
+*.ims
+*.apk
+*.bundle
+
+# iOS build artifacts and local configs
+ios/build/
+ios/DerivedData/
+ios/*.xcworkspace/xcuserdata/
+ios/*.xcodeproj/xcuserdata/
+ios/*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# API Keys & Secrets
+.env
+.env.development
+.env.production
+.env.example
+
+# IDEs and Editors
+.vscode/
+.idea/
+
+# Yarn
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# Android signing keys
+my-release-key.keystore

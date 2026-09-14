@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   Modal,
   ScrollView,
+  Animated,
+  Easing,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LeaderboardHighlightData, LeaderboardUser } from "../../api/users";
@@ -22,6 +24,143 @@ interface LeaderboardModalProps {
   currentProgressPercentage: number;
   onRefresh: () => void;
 }
+
+// ── 1. Silky Smooth Animated Progress Bar Fill ─────────────────────────────────
+const AnimatedProgressBar = ({
+  percentage,
+  color = "#2563EB",
+}: {
+  percentage: number;
+  color?: string;
+}) => {
+  const fillAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    fillAnim.setValue(0);
+    Animated.timing(fillAnim, {
+      toValue: Math.min(Math.max(percentage, 0), 100),
+      duration: 750,
+      easing: Easing.bezier(0.25, 1, 0.5, 1), // Ultra-fluid Apple ease-out curve
+      useNativeDriver: false,
+    }).start();
+  }, [percentage, fillAnim]);
+
+  const widthStyle = fillAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ["0%", "100%"],
+  });
+
+  return (
+    <View style={styles.rowProgressBarTrack}>
+      <Animated.View
+        style={[
+          styles.rowProgressBarFill,
+          { width: widthStyle, backgroundColor: color },
+        ]}
+      />
+    </View>
+  );
+};
+
+// ── 2. Silky Smooth Live Number Count-Up Animation ─────────────────────────────
+const AnimatedStatValue = ({
+  value,
+  prefix = "",
+  suffix = "",
+}: {
+  value: number;
+  prefix?: string;
+  suffix?: string;
+}) => {
+  const countAnim = useRef(new Animated.Value(0)).current;
+  const [displayVal, setDisplayVal] = useState(0);
+
+  useEffect(() => {
+    countAnim.setValue(0);
+    const anim = Animated.timing(countAnim, {
+      toValue: value || 0,
+      duration: 800,
+      easing: Easing.bezier(0.16, 1, 0.3, 1), // Apple-like smooth deceleration
+      useNativeDriver: false,
+    });
+
+    const listenerId = countAnim.addListener(({ value: v }) => {
+      setDisplayVal(Math.round(v));
+    });
+
+    anim.start();
+
+    return () => {
+      countAnim.removeListener(listenerId);
+    };
+  }, [value, countAnim]);
+
+  return (
+    <Text style={styles.userRankStatValue}>
+      {prefix}
+      {displayVal}
+      {suffix}
+    </Text>
+  );
+};
+
+// ── 3. Staggered Row Waterfall Entrance Component ─────────────────────────────
+const AnimatedLeaderboardRow = ({
+  children,
+  index,
+  isMe,
+}: {
+  children: React.ReactNode;
+  index: number;
+  isMe?: boolean;
+}) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const translateYAnim = useRef(new Animated.Value(14)).current;
+  const scaleAnim = useRef(new Animated.Value(isMe ? 0.97 : 1)).current;
+
+  useEffect(() => {
+    fadeAnim.setValue(0);
+    translateYAnim.setValue(14);
+
+    // Wait 150ms for native modal slide transition to settle before cascading rows
+    const delay = 150 + Math.min(index * 35, 350);
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(translateYAnim, {
+          toValue: 0,
+          friction: 8,
+          tension: 42,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 8,
+          tension: 42,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, delay);
+
+    return () => clearTimeout(timer);
+  }, [index, isMe, fadeAnim, translateYAnim, scaleAnim]);
+
+  return (
+    <Animated.View
+      style={{
+        opacity: fadeAnim,
+        transform: [{ translateY: translateYAnim }, { scale: scaleAnim }],
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+};
 
 export default function LeaderboardModal({
   isOpen,
@@ -56,11 +195,11 @@ export default function LeaderboardModal({
   const getMedalIcon = (rank: number) => {
     switch (rank) {
       case 1:
-        return <MaterialCommunityIcons name="crown" size={20} color="#d97706" />;
+        return <MaterialCommunityIcons name="crown" size={20} color="#D97706" />;
       case 2:
-        return <MaterialCommunityIcons name="medal" size={20} color="#94a3b8" />;
+        return <MaterialCommunityIcons name="medal" size={20} color="#94A3B8" />;
       case 3:
-        return <MaterialCommunityIcons name="medal" size={20} color="#b45309" />;
+        return <MaterialCommunityIcons name="medal" size={20} color="#B45309" />;
       default:
         return (
           <View style={styles.rankCircleBadge}>
@@ -95,11 +234,11 @@ export default function LeaderboardModal({
           {/* Modal Header */}
           <View style={styles.leaderboardHeader}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <MaterialCommunityIcons name="trophy" size={24} color="#d97706" />
+              <MaterialCommunityIcons name="trophy" size={24} color="#D97706" />
               <Text style={styles.leaderboardTitle}>Leaderboard</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <MaterialCommunityIcons name="close" size={22} color="#64748b" />
+              <MaterialCommunityIcons name="close" size={22} color="#64748B" />
             </TouchableOpacity>
           </View>
 
@@ -122,35 +261,37 @@ export default function LeaderboardModal({
             </View>
           ) : topPerformers.length === 0 ? (
             <View style={styles.leaderboardLoader}>
-              <MaterialCommunityIcons name="trophy-outline" size={40} color="#cbd5e1" />
+              <MaterialCommunityIcons name="trophy-outline" size={40} color="#CBD5E1" />
               <Text style={{ marginTop: 10, color: "#64748B", textAlign: "center" }}>
                 No rankings available yet.
               </Text>
             </View>
           ) : (
             <View style={{ flex: 1 }}>
-              {/* Current User Stats Highlights at Top */}
+              {/* Current User Stats Highlights at Top with Ultra-Smooth Count-Up */}
               <View style={styles.userRankCard}>
                 <Text style={styles.userRankTitle}>Your Standing</Text>
                 <View style={styles.userRankStatsRow}>
                   <View style={styles.userRankStatItem}>
-                    <Text style={styles.userRankStatValue}>
-                      {resolvedRank ? `#${resolvedRank}` : "N/A"}
-                    </Text>
+                    {resolvedRank ? (
+                      <AnimatedStatValue value={resolvedRank} prefix="#" />
+                    ) : (
+                      <Text style={styles.userRankStatValue}>N/A</Text>
+                    )}
                     <Text style={styles.userRankStatLabel}>Rank</Text>
                   </View>
                   <View style={styles.userRankDivider} />
                   <View style={styles.userRankStatItem}>
-                    <Text style={styles.userRankStatValue}>
-                      {resolvedPercentile !== null ? `${resolvedPercentile}%` : "Top 100%"}
-                    </Text>
+                    {resolvedPercentile !== null ? (
+                      <AnimatedStatValue value={resolvedPercentile} suffix="%" />
+                    ) : (
+                      <Text style={styles.userRankStatValue}>Top 100%</Text>
+                    )}
                     <Text style={styles.userRankStatLabel}>Top Percentile</Text>
                   </View>
                   <View style={styles.userRankDivider} />
                   <View style={styles.userRankStatItem}>
-                    <Text style={styles.userRankStatValue}>
-                      {currentProgressPercentage.toFixed(0)}%
-                    </Text>
+                    <AnimatedStatValue value={currentProgressPercentage} suffix="%" />
                     <Text style={styles.userRankStatLabel}>Completion</Text>
                   </View>
                 </View>
@@ -164,116 +305,120 @@ export default function LeaderboardModal({
                   RefreshSpinner(refreshing, onRefreshInternal)
                 }
               >
-                {topPerformers.map((entry: LeaderboardUser) => {
+                {topPerformers.map((entry: LeaderboardUser, idx: number) => {
                   const isMe =
                     entry.user_id === currentUser?.user_id ||
                     entry.user_id === currentUser?.userId;
                   return (
-                    <View
-                      key={entry.user_id}
-                      style={[
-                        styles.leaderboardRow,
-                        isMe && styles.leaderboardRowMe,
-                      ]}
-                    >
-                      {/* Medal / Position */}
-                      <View style={styles.rankIconContainer}>
-                        {getMedalIcon(entry.rank)}
-                      </View>
+                    <AnimatedLeaderboardRow key={entry.user_id} index={idx} isMe={isMe}>
+                      <View
+                        style={[
+                          styles.leaderboardRow,
+                        ]}
+                      >
+                        {/* Medal / Position */}
+                        <View style={styles.rankIconContainer}>
+                          {getMedalIcon(entry.rank)}
+                        </View>
 
-                      {/* Initials / Avatar */}
-                      <View style={styles.leaderboardAvatar}>
-                        <Text style={styles.leaderboardAvatarText}>
-                          {getInitials(entry.name)}
-                        </Text>
-                      </View>
-
-                      {/* Name & Module Info */}
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        {/* Initials / Avatar */}
+                        <View
+                          style={[
+                            styles.leaderboardAvatar,
+                            entry.rank === 1 && styles.avatarGold,
+                            entry.rank === 2 && styles.avatarSilver,
+                            entry.rank === 3 && styles.avatarBronze,
+                          ]}
+                        >
                           <Text
                             style={[
-                              styles.rowUserName,
-                              isMe && { fontWeight: "800", color: "#1e1b4b" },
+                              styles.leaderboardAvatarText,
+                              entry.rank <= 3 && styles.avatarTextTopThree,
                             ]}
-                            numberOfLines={1}
                           >
-                            {entry.name}
+                            {getInitials(entry.name)}
                           </Text>
-                          {isMe && (
-                            <View style={styles.meBadge}>
-                              <Text style={styles.meBadgeText}>You</Text>
-                            </View>
-                          )}
                         </View>
-                        {/* Modules completed count */}
-                        <Text style={styles.rowUserModules}>
-                          {entry.modules_completed} / {entry.modules_assigned} Modules
-                        </Text>
-                        {/* Progress Bar */}
-                        <View style={styles.rowProgressBarTrack}>
-                          <View
-                            style={[
-                              styles.rowProgressBarFill,
-                              { width: `${entry.completion_percentage}%` },
-                            ]}
+
+                        {/* Name & Module Info */}
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                            <Text
+                              style={[
+                                styles.rowUserName,
+                                isMe && { fontWeight: "800", color: "#1E1B4B" },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {entry.name}
+                            </Text>
+                            {isMe && (
+                              <View style={styles.meBadge}>
+                                <Text style={styles.meBadgeText}>You</Text>
+                              </View>
+                            )}
+                          </View>
+                          {/* Modules completed count */}
+                          <Text style={styles.rowUserModules}>
+                            {entry.modules_completed} / {entry.modules_assigned} Modules
+                          </Text>
+
+                          {/* Silky Smooth Animated Progress Bar */}
+                          <AnimatedProgressBar
+                            percentage={entry.completion_percentage}
+                            color={isMe ? "#4F46E5" : entry.rank === 1 ? "#D97706" : "#2563EB"}
                           />
                         </View>
-                      </View>
 
-                      {/* Score/Percentage */}
-                      <View style={{ alignItems: "flex-end", paddingLeft: 8 }}>
-                        <Text style={styles.rowUserPercentage}>
-                          {entry.completion_percentage}%
-                        </Text>
-                        <Text style={styles.rowUserSubText}>Complete</Text>
+                        {/* Score/Percentage */}
+                        <View style={{ alignItems: "flex-end", paddingLeft: 8 }}>
+                          <Text style={styles.rowUserPercentage}>
+                            {entry.completion_percentage}%
+                          </Text>
+                          <Text style={styles.rowUserSubText}>Complete</Text>
+                        </View>
                       </View>
-                    </View>
+                    </AnimatedLeaderboardRow>
                   );
                 })}
 
                 {/* If user is not in top N, show user rank row at the bottom of the list */}
                 {userRankInfo && !isUserInTop && (
-                  <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: "#e2e8f0", paddingTop: 12 }}>
-                    <Text style={styles.outOfTopLabel}>Your Rank Position</Text>
-                    <View style={[styles.leaderboardRow, styles.leaderboardRowMe, { marginTop: 6 }]}>
-                      <View style={styles.rankIconContainer}>
-                        <Text style={styles.rankCircleBadgeText}>#{userRankInfo.rank}</Text>
-                      </View>
-                      <View style={styles.leaderboardAvatar}>
-                        <Text style={styles.leaderboardAvatarText}>
-                          {getInitials(currentUser?.name || "")}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          <Text style={[styles.rowUserName, { fontWeight: "800", color: "#1e1b4b" }]} numberOfLines={1}>
-                            {currentUser?.name || "You"}
+                  <AnimatedLeaderboardRow index={topPerformers.length + 1} isMe={true}>
+                    <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: "#E2E8F0", paddingTop: 12 }}>
+                      <Text style={styles.outOfTopLabel}>Your Rank Position</Text>
+                      <View style={[styles.leaderboardRow, { marginTop: 6 }]}>
+                        <View style={styles.rankIconContainer}>
+                          <Text style={styles.rankCircleBadgeText}>#{userRankInfo.rank}</Text>
+                        </View>
+                        <View style={styles.leaderboardAvatar}>
+                          <Text style={styles.leaderboardAvatarText}>
+                            {getInitials(currentUser?.name || "")}
                           </Text>
-                          <View style={styles.meBadge}>
-                            <Text style={styles.meBadgeText}>You</Text>
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                            <Text style={[styles.rowUserName, { fontWeight: "800", color: "#1E1B4B" }]} numberOfLines={1}>
+                              {currentUser?.name || "You"}
+                            </Text>
+                            <View style={styles.meBadge}>
+                              <Text style={styles.meBadgeText}>You</Text>
+                            </View>
                           </View>
+                          <Text style={styles.rowUserModules}>
+                            {userRankInfo.modules_completed} Modules Completed
+                          </Text>
+                          <AnimatedProgressBar percentage={currentProgressPercentage} color="#4F46E5" />
                         </View>
-                        <Text style={styles.rowUserModules}>
-                          {userRankInfo.modules_completed} Modules Completed
-                        </Text>
-                        <View style={styles.rowProgressBarTrack}>
-                          <View
-                            style={[
-                              styles.rowProgressBarFill,
-                              { width: `${currentProgressPercentage}%` },
-                            ]}
-                          />
+                        <View style={{ alignItems: "flex-end", paddingLeft: 8 }}>
+                          <Text style={styles.rowUserPercentage}>
+                            {currentProgressPercentage.toFixed(0)}%
+                          </Text>
+                          <Text style={styles.rowUserSubText}>Complete</Text>
                         </View>
-                      </View>
-                      <View style={{ alignItems: "flex-end", paddingLeft: 8 }}>
-                        <Text style={styles.rowUserPercentage}>
-                          {currentProgressPercentage.toFixed(0)}%
-                        </Text>
-                        <Text style={styles.rowUserSubText}>Complete</Text>
                       </View>
                     </View>
-                  </View>
+                  </AnimatedLeaderboardRow>
                 )}
               </ScrollView>
 
@@ -307,7 +452,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   leaderboardContainer: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     height: "85%",
@@ -329,13 +474,13 @@ const styles = StyleSheet.create({
   leaderboardTitle: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#1e293b",
+    color: "#1E293B",
   },
   closeBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -352,21 +497,21 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   retryBtnText: {
-    color: "#ffffff",
+    color: "#FFFFFF",
     fontWeight: "600",
   },
   userRankCard: {
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#F8FAFC",
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#e2e8f0",
+    borderColor: "#E2E8F0",
     marginBottom: 16,
   },
   userRankTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#64748b",
+    color: "#64748B",
     marginBottom: 12,
   },
   userRankStatsRow: {
@@ -380,18 +525,18 @@ const styles = StyleSheet.create({
   userRankStatValue: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#1e293b",
+    color: "#1E293B",
   },
   userRankStatLabel: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#94a3b8",
+    color: "#94A3B8",
     marginTop: 4,
   },
   userRankDivider: {
     width: 1,
     height: 28,
-    backgroundColor: "#e2e8f0",
+    backgroundColor: "#E2E8F0",
   },
   leaderboardList: {
     flex: 1,
@@ -401,14 +546,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-  },
-  leaderboardRowMe: {
-    backgroundColor: "#eff6ff",
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    borderBottomWidth: 0,
-    marginVertical: 2,
+    borderBottomColor: "#F1F5F9",
   },
   rankIconContainer: {
     width: 32,
@@ -419,28 +557,47 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
   },
   rankCircleBadgeText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#64748b",
+    color: "#64748B",
   },
   leaderboardAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
     marginHorizontal: 8,
+  },
+  avatarGold: {
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1.5,
+    borderColor: "#F59E0B",
+  },
+  avatarSilver: {
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1.5,
+    borderColor: "#94A3B8",
+  },
+  avatarBronze: {
+    backgroundColor: "#FFEDD5",
+    borderWidth: 1.5,
+    borderColor: "#D97706",
   },
   leaderboardAvatarText: {
     fontSize: 14,
     fontWeight: "700",
     color: "#475569",
+  },
+  avatarTextTopThree: {
+    color: "#78350F",
+    fontWeight: "800",
   },
   rowUserName: {
     fontSize: 14,
@@ -448,7 +605,7 @@ const styles = StyleSheet.create({
     color: "#334155",
   },
   meBadge: {
-    backgroundColor: "#dbeafe",
+    backgroundColor: "#DBEAFE",
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -456,22 +613,23 @@ const styles = StyleSheet.create({
   meBadgeText: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#2563eb",
+    color: "#2563EB",
   },
   rowUserModules: {
     fontSize: 11,
-    color: "#64748b",
+    color: "#64748B",
     marginTop: 4,
   },
   rowProgressBarTrack: {
     height: 4,
-    backgroundColor: "#e2e8f0",
+    backgroundColor: "#E2E8F0",
     borderRadius: 2,
     marginTop: 6,
+    overflow: "hidden",
   },
   rowProgressBarFill: {
     height: "100%",
-    backgroundColor: "#2563eb",
+    backgroundColor: "#2563EB",
     borderRadius: 2,
   },
   rowUserPercentage: {
@@ -481,19 +639,19 @@ const styles = StyleSheet.create({
   },
   rowUserSubText: {
     fontSize: 10,
-    color: "#94a3b8",
+    color: "#94A3B8",
     marginTop: 2,
   },
   outOfTopLabel: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#64748b",
+    color: "#64748B",
     marginBottom: 6,
   },
   leaderboardFooter: {
     flexDirection: "row",
     borderTopWidth: 1,
-    borderTopColor: "#e2e8f0",
+    borderTopColor: "#E2E8F0",
     paddingTop: 16,
     marginTop: 12,
   },
@@ -504,12 +662,12 @@ const styles = StyleSheet.create({
   footerStatValue: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#1e293b",
+    color: "#1E293B",
   },
   footerStatLabel: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#94a3b8",
+    color: "#94A3B8",
     marginTop: 4,
   },
 });

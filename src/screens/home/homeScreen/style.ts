@@ -46,7 +46,7 @@ const createStyles = () => {
       fontWeight: '800',
     },
 
-    sectionWrapper: { marginTop: 20, paddingHorizontal: 20 },
+    sectionWrapper: { paddingHorizontal: 20 },
     sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1E293B', marginBottom: 14 },
 
     // ── Consolidated Hero ──────────────────────────────────────────────────
@@ -89,18 +89,49 @@ const createStyles = () => {
       alignItems: 'center',
     },
 
-    // ── Stats Grid ────────────────────────────────────────────────────────
-    statsGrid: { flexDirection: 'row', gap: 12 },
-    statCard: {
-      flex: 1, backgroundColor: '#fff', borderRadius: 20, padding: 16,
-      alignItems: 'center', borderWidth: 1, borderColor: "#e2e8f0",
+    // ── Minimalist Sprint Stats Bar ──────────────────────────────────────────
+    statsBar: {
+      flexDirection: 'row',
+      backgroundColor: '#FFFFFF',
+      borderRadius: 20,
+      paddingVertical: 16,
+      paddingHorizontal: 12,
+      borderWidth: 1,
+      borderColor: '#E2E8F0',
+      // shadowColor: '#0F172A',
+      // shadowOffset: { width: 0, height: 2 },
+      // shadowOpacity: 0.03,
+      // shadowRadius: 8,
+      // elevation: 2,
+      alignItems: 'center',
     },
-    statIconBox: {
-      width: 40, height: 40, borderRadius: 12,
-      justifyContent: 'center', alignItems: 'center', marginBottom: 12,
+    statItem: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    statVal: { fontSize: 18, fontWeight: '800', color: '#1E293B' },
-    statLabel: { fontSize: 12, color: '#94A3B8', fontWeight: '600', marginTop: 2 },
+    statDivider: {
+      width: 1,
+      height: 28,
+      backgroundColor: '#E2E8F0',
+    },
+    statValueRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 3,
+    },
+    statVal: {
+      fontSize: 18,
+      fontWeight: '800',
+      color: '#0F172A',
+    },
+    statLabel: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: '#64748B',
+      letterSpacing: 0.2,
+    },
 
     // ── Plan / Sprint Cards ────────────────────────────────────────────────
     planCard: {

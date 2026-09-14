@@ -1,5 +1,10 @@
-import { useState, useCallback, useRef } from "react";
-import { Audio } from "expo-av";
+import { useState, useCallback } from "react";
+import {
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder as useExpoAudioRecorder,
+  RecordingPresets,
+} from "expo-audio";
 import { Alert, Platform } from "react-native";
 
 export type AudioResult =
@@ -25,11 +30,12 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
   const [isPreparing, setIsPreparing] = useState(false);
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
   const [durationMs, setDurationMs] = useState(0);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+
+  const recorder = useExpoAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   const requestPermission = async (): Promise<boolean> => {
     if (Platform.OS === "web") return false;
-    const { status, canAskAgain } = await Audio.requestPermissionsAsync();
+    const { status, canAskAgain } = await requestRecordingPermissionsAsync();
     if (status === "granted") return true;
     if (!canAskAgain) {
       Alert.alert(
@@ -53,15 +59,14 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
       const granted = await requestPermission();
       if (!granted) return false;
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
 
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-      );
-      recordingRef.current = recording;
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+
       setRecordedUri(null);
       setDurationMs(0);
       setIsRecording(true);
@@ -75,18 +80,14 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
     } finally {
       setIsPreparing(false);
     }
-  }, []);
+  }, [recorder]);
 
   const stopRecording = useCallback(async (): Promise<AudioResult> => {
-    const recording = recordingRef.current;
-    if (!recording) {
-      return { success: false, reason: "error", error: "No active recording." };
-    }
     try {
-      await recording.stopAndUnloadAsync();
-      const status = await recording.getStatusAsync();
-      const uri = recording.getURI();
-      recordingRef.current = null;
+      await recorder.stop();
+      const uri = recorder.uri;
+      const durationSeconds = recorder.currentTime || 0;
+      const durationMillis = Math.round(durationSeconds * 1000);
       setIsRecording(false);
 
       if (!uri) {
@@ -98,13 +99,13 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
       }
 
       setRecordedUri(uri);
-      setDurationMs(status.durationMillis ?? 0);
+      setDurationMs(durationMillis);
 
       return {
         success: true,
         uri,
         mimeType: Platform.OS === "ios" ? "audio/m4a" : "audio/3gp",
-        durationMs: status.durationMillis,
+        durationMs: durationMillis,
       };
     } catch (err: any) {
       setIsRecording(false);
@@ -112,7 +113,7 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
       Alert.alert("Recording error", message);
       return { success: false, reason: "error", error: message };
     }
-  }, []);
+  }, [recorder]);
 
   const reset = useCallback(() => {
     setRecordedUri(null);

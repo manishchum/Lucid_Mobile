@@ -11,11 +11,12 @@ import {
   Modal,
   FlatList,
 } from "react-native";
-import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTenant } from "../../contex/TenantContext";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 
 // ─── Language Types ────────────────────────────────────────────────────────────
 
@@ -67,11 +68,12 @@ export default function VideoSection({
   videoUrlTelugu,
   videoUrlMarathi,
 }: VideoSectionProps) {
-  const videoRef = useRef<any>(null);
-  const fsVideoRef = useRef<any>(null);
-  const [status, setStatus] = useState<AVPlaybackStatus | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [positionMs, setPositionMs] = useState(0);
+  const [durationMs, setDurationMs] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [screenDims, setScreenDims] = useState(Dimensions.get("window"));
   const [showControls, setShowControls] = useState(true);
@@ -103,16 +105,55 @@ export default function VideoSection({
     videoUrlMarathi,
   ]);
 
-  const isLoaded = status?.isLoaded ?? false;
-  const isPlaying = isLoaded && (status as any).isPlaying;
-  const durationMs = isLoaded ? ((status as any).durationMillis ?? 0) : 0;
-  const positionMs = isLoaded ? ((status as any).positionMillis ?? 0) : 0;
+  const player = useVideoPlayer(activeVideoUrl ?? "", (p) => {
+    p.loop = false;
+  });
+
+  useEffect(() => {
+    if (!player) return;
+
+    const timeSub = player.addListener("timeUpdate", (evt: any) => {
+      setPositionMs(Math.floor(evt.currentTime * 1000));
+      if (player.duration > 0) {
+        setDurationMs(Math.floor(player.duration * 1000));
+      }
+    });
+
+    const statusSub = player.addListener("statusChange", (evt: any) => {
+      const status = evt?.status ?? evt;
+      setIsLoaded(status === "readyToPlay");
+      setIsBuffering(status === "loading");
+      if (status === "readyToPlay") setIsTransitioning(false);
+    });
+
+    const playingSub = player.addListener("playingChange", (evt: any) => {
+      setIsPlaying(evt?.isPlaying ?? evt);
+    });
+
+    return () => {
+      timeSub.remove();
+      statusSub.remove();
+      playingSub.remove();
+    };
+  }, [player]);
+
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
+
+  // Keep screen awake while video is playing
+  useEffect(() => {
+    if (isPlaying) {
+      activateKeepAwakeAsync("VideoSection").catch(() => {});
+    } else {
+      deactivateKeepAwake("VideoSection").catch(() => {});
+    }
+    return () => {
+      deactivateKeepAwake("VideoSection").catch(() => {});
+    };
+  }, [isPlaying]);
 
   // Reset on language switch — show transition overlay while new source loads
   useEffect(() => {
     setIsTransitioning(true);
-    setStatus(null);
     setIsBuffering(false);
   }, [activeVideoUrl]);
 
@@ -159,77 +200,40 @@ export default function VideoSection({
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
-  const handleStatus = useCallback((s: AVPlaybackStatus) => {
-    setStatus(s);
-    if (s.isLoaded) {
-      setIsBuffering(s.isBuffering ?? false);
-      // First valid status from the new source — transition complete
-      setIsTransitioning(false);
-    }
-  }, []);
-
-  const togglePlay = async (ref?: React.RefObject<Video>) => {
-    const target = ref?.current ?? videoRef.current;
-    if (!target || !isLoaded || isTransitioning) return;
+  const togglePlay = async () => {
+    if (!player) return;
     if (isPlaying) {
-      await target.pauseAsync();
+      player.pause();
     } else {
-      if (isLoaded && (status as any).didJustFinish) {
-        await target.replayAsync();
-      } else {
-        await target.playAsync();
-      }
+      player.play();
     }
     resetControlsTimer();
   };
 
-  const seekBy = async (seconds: number, ref?: React.RefObject<Video>) => {
-    const target = ref?.current ?? videoRef.current;
-    if (!target || !isLoaded || isTransitioning) return;
-    const newPos = Math.max(
-      0,
-      Math.min(positionMs + seconds * 1000, durationMs),
-    );
-    await target.setPositionAsync(newPos);
+  const seekBy = async (seconds: number) => {
+    if (!player) return;
+    player.seekBy(seconds);
     resetControlsTimer();
   };
 
   const handleToggle = async () => {
-    if (isExpanded && isPlaying) await videoRef.current?.pauseAsync();
+    if (isExpanded && isPlaying) player.pause();
     onToggle();
   };
 
   const enterFullscreen = async () => {
-    const currentPos = positionMs;
-    const wasPlaying = isPlaying;
-    await videoRef.current?.pauseAsync();
     setIsFullscreen(true);
     StatusBar.setHidden(true, "fade");
-    await ScreenOrientation.unlockAsync();
-    setTimeout(async () => {
-      if (fsVideoRef.current) {
-        await fsVideoRef.current.setPositionAsync(currentPos);
-        if (wasPlaying) await fsVideoRef.current.playAsync();
-      }
-    }, 300);
+    await ScreenOrientation.unlockAsync().catch(() => {});
     resetControlsTimer();
   };
 
   const exitFullscreen = async () => {
-    const currentPos = positionMs;
-    const wasPlaying = isPlaying;
-    await fsVideoRef.current?.pauseAsync();
     setIsFullscreen(false);
     StatusBar.setHidden(false, "fade");
     await ScreenOrientation.lockAsync(
       ScreenOrientation.OrientationLock.PORTRAIT_UP,
-    );
-    setTimeout(async () => {
-      if (videoRef.current) {
-        await videoRef.current.setPositionAsync(currentPos);
-        if (wasPlaying) await videoRef.current.playAsync();
-      }
-    }, 200);
+    ).catch(() => {});
   };
 
   const handleFsTap = () => {
@@ -264,15 +268,13 @@ export default function VideoSection({
         onRequestClose={exitFullscreen}
       >
         <View style={[fsStyles.container, { width: fsW, height: fsH }]}>
-          <Video
-            key={activeVideoUrl ?? "no-video"}
-            ref={fsVideoRef}
-            source={{ uri: activeVideoUrl ?? "" }}
+          <VideoView
             style={StyleSheet.absoluteFill}
-            resizeMode={ResizeMode.CONTAIN}
-            onPlaybackStatusUpdate={handleStatus}
-            useNativeControls={false}
-            shouldPlay={false}
+            player={player}
+            fullscreenOptions={{ enable: true }}
+            allowsPictureInPicture
+            contentFit="contain"
+            nativeControls={false}
           />
 
           {isBuffering && (
@@ -320,7 +322,7 @@ export default function VideoSection({
                 <View style={fsStyles.centreControls} pointerEvents="box-none">
                   <TouchableOpacity
                     style={fsStyles.ctrlBtn}
-                    onPress={() => seekBy(-10, fsVideoRef)}
+                    onPress={() => seekBy(-10)}
                     disabled={!isLoaded}
                   >
                     <MaterialCommunityIcons
@@ -332,7 +334,7 @@ export default function VideoSection({
 
                   <TouchableOpacity
                     style={fsStyles.playBtn}
-                    onPress={() => togglePlay(fsVideoRef)}
+                    onPress={togglePlay}
                     disabled={!isLoaded || isBuffering}
                   >
                     <MaterialCommunityIcons
@@ -344,7 +346,7 @@ export default function VideoSection({
 
                   <TouchableOpacity
                     style={fsStyles.ctrlBtn}
-                    onPress={() => seekBy(10, fsVideoRef)}
+                    onPress={() => seekBy(10)}
                     disabled={!isLoaded}
                   >
                     <MaterialCommunityIcons
@@ -442,15 +444,13 @@ export default function VideoSection({
               <>
                 {/* Inline player */}
                 <View style={[styles.playerContainer, { height: PLAYER_H }]}>
-                  <Video
-                    key={activeVideoUrl ?? "no-video"}
-                    ref={videoRef}
-                    source={{ uri: activeVideoUrl }}
+                  <VideoView
                     style={StyleSheet.absoluteFill}
-                    resizeMode={ResizeMode.CONTAIN}
-                    onPlaybackStatusUpdate={handleStatus}
-                    useNativeControls={false}
-                    shouldPlay={false}
+                    player={player}
+                    fullscreenOptions={{ enable: true }}
+                    allowsPictureInPicture
+                    contentFit="contain"
+                    nativeControls={false}
                   />
 
                   {(isBuffering || isTransitioning) && (
@@ -462,7 +462,7 @@ export default function VideoSection({
                   {!isBuffering && (
                     <TouchableOpacity
                       style={styles.overlay}
-                      onPress={() => togglePlay(videoRef)}
+                      onPress={togglePlay}
                       activeOpacity={1}
                     >
                       {!isPlaying && (
@@ -519,7 +519,7 @@ export default function VideoSection({
 
                     <TouchableOpacity
                       style={styles.playBtn}
-                      onPress={() => togglePlay(videoRef)}
+                      onPress={togglePlay}
                       disabled={!isLoaded || isBuffering}
                     >
                       {isBuffering ? (
@@ -563,7 +563,7 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
   },
   header: { flexDirection: "row", alignItems: "center", padding: 16, gap: 12 },
   iconBox: {
@@ -588,7 +588,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -654,7 +654,7 @@ const styles = StyleSheet.create({
 const fsStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   bufferOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.3)",

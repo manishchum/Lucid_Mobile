@@ -28,31 +28,41 @@ import RefreshSpinner from "../../../components/pullToRefresh/RefreshSpinner";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-const ProgressRing = ({ percentage }: { percentage: number }) => {
+const ProgressRing = ({
+  percentage,
+  refreshKey = 0,
+}: {
+  percentage: number;
+  refreshKey?: number;
+}) => {
   const size = 72;
   const strokeWidth = 7;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
 
   const validPercentage = Math.min(Math.max(percentage || 0, 0), 100);
-  const animatedVal = React.useRef(new Animated.Value(validPercentage)).current;
-  const [displayPercentage, setDisplayPercentage] = React.useState(Math.round(validPercentage));
+  const animatedVal = React.useRef(new Animated.Value(0)).current;
+  const [displayPercentage, setDisplayPercentage] = React.useState(0);
 
   React.useEffect(() => {
-    Animated.timing(animatedVal, {
-      toValue: validPercentage,
-      duration: 650,
-      useNativeDriver: false,
-    }).start();
+    const timer = setTimeout(() => {
+      animatedVal.setValue(0);
+      Animated.timing(animatedVal, {
+        toValue: validPercentage,
+        duration: 850,
+        useNativeDriver: false,
+      }).start();
+    }, 120);
 
     const listenerId = animatedVal.addListener(({ value }) => {
       setDisplayPercentage(Math.round(value));
     });
 
     return () => {
+      clearTimeout(timer);
       animatedVal.removeListener(listenerId);
     };
-  }, [validPercentage, animatedVal]);
+  }, [validPercentage, refreshKey, animatedVal]);
 
   const strokeDashoffset = animatedVal.interpolate({
     inputRange: [0, 100],
@@ -106,12 +116,52 @@ const ProgressRing = ({ percentage }: { percentage: number }) => {
   );
 };
 
+const AnimatedStatVal = ({
+  value,
+  refreshKey = 0,
+}: {
+  value: number;
+  refreshKey?: number;
+}) => {
+  const animatedVal = React.useRef(new Animated.Value(0)).current;
+  const [displayVal, setDisplayVal] = React.useState(0);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      animatedVal.setValue(0);
+      Animated.timing(animatedVal, {
+        toValue: value || 0,
+        duration: 750,
+        useNativeDriver: false,
+      }).start();
+    }, 120);
+
+    const listenerId = animatedVal.addListener(({ value: v }) => {
+      setDisplayVal(Math.round(v));
+    });
+
+    return () => {
+      clearTimeout(timer);
+      animatedVal.removeListener(listenerId);
+    };
+  }, [value, refreshKey, animatedVal]);
+
+  return <Text style={styles.statVal}>{displayVal}</Text>;
+};
+
+const getGreeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning,";
+  if (hour < 17) return "Good afternoon,";
+  return "Good evening,";
+}
 
 const styles = createStyles();
 
 // ── Main screen ────────────────────────────────────────────────────────────────
-export default function HomeScreen({ navigation }: { navigation: any }) {
+export default function HomeScreen({ navigation, route }: { navigation: any; route?: any }) {
   const { cachedUser, phoneNumber } = useAuth();
+  const initialTab = route?.params?.initialTab;
 
   // ── Screen capture protection (blocks screenshots + recording) ──────────────
   const { isRecording } = useScreenProtection({ tag: "HomeScreen" });
@@ -142,6 +192,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const companyId = user?.company_id ?? cachedUser?.companyId ?? null;
 
   const {
+    dashboardData,
     resolvedPlanCards,
     stats,
     isLoading: dashboardLoading,
@@ -171,17 +222,42 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   }, [resolvedPlanCards, activeSprint, setActiveSprint]);
 
   const [refreshing, setRefreshing] = React.useState(false);
+  const [refreshKey, setRefreshKey] = React.useState(0);
+
+  // Content Mounting Animation (Smooth 350ms opacity fade & 12px Y-translation slide-up)
+  const mountFade = React.useRef(new Animated.Value(0)).current;
+  const mountTranslateY = React.useRef(new Animated.Value(12)).current;
+
+  const triggerMountAnimation = React.useCallback(() => {
+    mountFade.setValue(0);
+    mountTranslateY.setValue(12);
+    Animated.parallel([
+      Animated.timing(mountFade, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      Animated.timing(mountTranslateY, {
+        toValue: 0,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [mountFade, mountTranslateY]);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
       await refetch(true);
+      eventBus.emit("refresh_dashboard");
     } catch (err) {
       console.error("[HomeScreen] Refresh error:", err);
     } finally {
       setRefreshing(false);
+      setRefreshKey((prev) => prev + 1);
+      triggerMountAnimation();
     }
-  }, [refetch]);
+  }, [refetch, triggerMountAnimation]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -236,7 +312,52 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   });
 
 
-  const isLoading = (userLoading && !cachedUser) || dashboardLoading;
+  // Initial loading is true if:
+  // 1. User fetching is active without cached user
+  // 2. Dashboard network fetch is loading AND we don't have resolved cards yet
+  // 3. Dashboard data has not loaded yet (is null) or plan cards are currently resolving
+  const isInitialLoading =
+    (userLoading && !cachedUser) ||
+    (dashboardLoading && resolvedPlanCards.length === 0) ||
+    (dashboardData === null && !dashboardError) ||
+    (dashboardData !== null &&
+      Array.isArray((dashboardData as any)?.plans) &&
+      (dashboardData as any).plans.length > 0 &&
+      resolvedPlanCards.length === 0 &&
+      !dashboardError);
+
+  const isLoading = isInitialLoading;
+
+  React.useEffect(() => {
+    if (!isLoading) {
+      Animated.parallel([
+        Animated.timing(mountFade, {
+          toValue: 1,
+          duration: 350,
+          useNativeDriver: true,
+        }),
+        Animated.timing(mountTranslateY, {
+          toValue: 0,
+          duration: 350,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      mountFade.setValue(0);
+      mountTranslateY.setValue(12);
+    }
+  }, [isLoading, mountFade, mountTranslateY]);
+
+  // Log exact performance timing metadata when HomeScreen mounts populated data
+  const hasLoggedMountRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!isLoading && !hasLoggedMountRef.current) {
+      hasLoggedMountRef.current = true;
+      console.log(
+        `[PerfMeter] 🎯 HomeScreen SUCCESSFULLY MOUNTED: Total Resolved Cards=${resolvedPlanCards.length} | Completed=${stats.completedCount} | Progress=${stats.progressPercentage}% | UserID=${userId ?? "guest"} | MetaTimestamp=${new Date().toISOString()}`
+      );
+    }
+  }, [isLoading, resolvedPlanCards.length, stats.completedCount, stats.progressPercentage, userId]);
 
   // Skeleton Breathing Animation State
   const [skeletonOpacity] = React.useState(new Animated.Value(0.3));
@@ -282,15 +403,17 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             </View>
           </View>
 
-          {/* STATS GRID SKELETON */}
+          {/* STATS BAR SKELETON */}
           <View style={styles.sectionWrapper}>
-            <View style={styles.statsGrid}>
+            <View style={styles.statsBar}>
               {Array.from({ length: 3 }).map((_, idx) => (
-                <View key={idx} style={styles.statCard}>
-                  <Animated.View style={[styles.skeletonIconBox, { opacity: skeletonOpacity }]} />
-                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 30, height: 14, marginBottom: 6 }]} />
-                  <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 50, height: 10 }]} />
-                </View>
+                <React.Fragment key={idx}>
+                  {idx > 0 && <View style={styles.statDivider} />}
+                  <View style={styles.statItem}>
+                    <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 44, height: 16, marginBottom: 4 }]} />
+                    <Animated.View style={[styles.skeletonLineShort, { opacity: skeletonOpacity, width: 50, height: 10 }]} />
+                  </View>
+                </React.Fragment>
               ))}
             </View>
           </View>
@@ -356,6 +479,8 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
   const { completedCount, totalAssigned, progressPercentage } = stats;
 
+  const greeting = getGreeting();
+
   return (
     <View style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
@@ -363,59 +488,74 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          refreshControl={RefreshSpinner(refreshing, onRefresh)}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets
+        <Animated.View
+          style={{
+            flex: 1,
+            opacity: mountFade,
+            transform: [{ translateY: mountTranslateY }],
+          }}
         >
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            refreshControl={RefreshSpinner(refreshing, onRefresh)}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            automaticallyAdjustKeyboardInsets
+          >
           {/* ── CONSOLIDATED HERO ──────────────────────────────────────────── */}
           <View style={styles.welcomeContainer}>
             <View style={styles.welcomeHeaderRow}>
               <View style={styles.welcomeTextColumn}>
-                <Text style={styles.welcomeSub}>Welcome back,</Text>
+                <Text style={styles.welcomeSub}>{greeting}</Text>
                 <Text style={styles.welcomeName}>
                   {(user?.name || "Learner").split(" ")[0]}!
                 </Text>
-                <Text style={styles.welcomeTagline}>
+                {/* <Text style={styles.welcomeTagline}>
                   Keep learning, keep growing.
-                </Text>
+                </Text> */}
               </View>
               <View style={styles.ringWrapper}>
-                <ProgressRing percentage={progressPercentage} />
+                <ProgressRing percentage={progressPercentage} refreshKey={refreshKey} />
               </View>
             </View>
           </View>
 
           {/* ── QUICK STATS ─────────────────────────────────────────── */}
           <View style={styles.sectionWrapper}>
-            <View style={styles.statsGrid}>
-              <StatCard
-                icon="book-multiple"
-                color="#EEF2FF"
-                iconColor="#4F46E5"
-                val={String(resolvedPlanCards.length)}
-                label="Sprints"
-              />
-              <StatCard
-                icon="check-decagram"
-                color="#ECFDF5"
-                iconColor="#10B981"
-                val={String(completedCount)}
-                label="Completed"
-              />
-              <StatCard
-                icon="clock-time-eight-outline"
-                color="#FFF7ED"
-                iconColor="#F59E0B"
-                val={String(
-                  resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS")
-                    .length,
-                )}
-                label="In Progress"
-              />
+            <View style={styles.statsBar}>
+              <View style={styles.statItem}>
+                <View style={styles.statValueRow}>
+                  <MaterialCommunityIcons name="book-open-variant" size={17} color="#4F46E5" />
+                  <AnimatedStatVal value={resolvedPlanCards.length} refreshKey={refreshKey} />
+                </View>
+                <Text style={styles.statLabel}>Sprints</Text>
+              </View>
+
+              <View style={styles.statDivider} />
+
+              <View style={styles.statItem}>
+                <View style={styles.statValueRow}>
+                  <MaterialCommunityIcons name="check-circle-outline" size={17} color="#10B981" />
+                  <AnimatedStatVal value={completedCount} refreshKey={refreshKey} />
+                </View>
+                <Text style={styles.statLabel}>Completed</Text>
+              </View>
+
+              <View style={styles.statDivider} />
+
+              <View style={styles.statItem}>
+                <View style={styles.statValueRow}>
+                  <MaterialCommunityIcons name="clock-outline" size={17} color="#F59E0B" />
+                  <AnimatedStatVal
+                    value={
+                      resolvedPlanCards.filter((p) => p.status === "IN_PROGRESS").length
+                    }
+                    refreshKey={refreshKey}
+                  />
+                </View>
+                <Text style={styles.statLabel}>In Progress</Text>
+              </View>
             </View>
           </View>
 
@@ -426,21 +566,14 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             userId={userId ?? null}
             companyId={companyId ?? null}
             userName={user?.name ?? null}
+            refreshKey={refreshKey}
+            initialTab={initialTab}
           />
         </ScrollView>
+      </Animated.View>
       </KeyboardAvoidingView>
       {/* iOS screen-recording overlay — invisible on Android */}
       <ScreenRecordingGuard isRecording={isRecording} />
     </View>
   );
 }
-
-const StatCard = ({ icon, color, iconColor, val, label }: any) => (
-  <View style={styles.statCard}>
-    <View style={[styles.statIconBox, { backgroundColor: color }]}>
-      <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
-    </View>
-    <Text style={styles.statVal}>{val}</Text>
-    <Text style={styles.statLabel}>{label}</Text>
-  </View>
-);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TextInput,
   Modal,
   Pressable,
+  Animated,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useGetTasks } from "../../../api/users";
@@ -17,6 +18,7 @@ import AssignedSprintsList, {
 import AssignedTasksList from "./AssignedTasksList";
 import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
 import { useRealtimeSubscription } from "../../../hooks/useRealtimeSubscription";
+import { eventBus } from "../../../utils/EventBus";
 
 type TabId = "sprints" | "tasks";
 type SprintSortOption = "title" | "dueDate" | "progress";
@@ -48,6 +50,8 @@ interface AssignedSectionProps {
   userId: string | null;
   companyId: string | null;
   userName?: string | null;
+  refreshKey?: number;
+  initialTab?: TabId;
 }
 
 export default function AssignedSection({
@@ -56,8 +60,16 @@ export default function AssignedSection({
   userId,
   companyId,
   userName,
+  refreshKey = 0,
+  initialTab,
 }: AssignedSectionProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("sprints");
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab || "sprints");
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const [optimisticCompletedIds, setOptimisticCompletedIds] = useState<
     Set<string>
@@ -81,6 +93,35 @@ export default function AssignedSection({
     companyId,
     showTaskManagement,
   );
+
+  // ── EventBus & RefreshKey Listeners ─────────────────────────────────
+  useEffect(() => {
+    if (refreshKey > 0) {
+      refetch();
+    }
+  }, [refreshKey, refetch]);
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      refetch();
+    };
+    eventBus.on("refresh_dashboard", handleRefresh);
+    eventBus.on("refresh_tasks", handleRefresh);
+
+    return () => {
+      eventBus.off("refresh_dashboard", handleRefresh);
+      eventBus.off("refresh_tasks", handleRefresh);
+    };
+  }, [refetch]);
+
+  // ── 15-Second Polling Fallback ──────────────────────────────────────
+  useEffect(() => {
+    if (!showTaskManagement) return;
+    const interval = setInterval(() => {
+      refetch();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [showTaskManagement, refetch]);
 
   // ── Real-time task change listeners ─────────────────────────────────
   useRealtimeSubscription({
@@ -133,6 +174,12 @@ export default function AssignedSection({
   const sprintCount = planCards.length;
   const taskCount = total > 0 ? total : effectiveTasks.length;
 
+  const pendingTasksCount = useMemo(() => {
+    return effectiveTasks.filter(
+      (t) => !(t.submitted === true || t.status === "completed"),
+    ).length;
+  }, [effectiveTasks]);
+
   const effectiveTab: TabId =
     activeTab === "tasks" && !showTaskManagement ? "sprints" : activeTab;
 
@@ -141,6 +188,44 @@ export default function AssignedSection({
     : ["sprints"];
 
   const switchTab = (tab: TabId) => setActiveTab(tab);
+
+  // ── Tab transition animation ───────────────────────────────────────
+  const [tabBarWidth, setTabBarWidth] = useState(0);
+  const tabAnim = useRef(
+    new Animated.Value(effectiveTab === "sprints" ? 0 : 1),
+  ).current;
+
+  useEffect(() => {
+    Animated.spring(tabAnim, {
+      toValue: effectiveTab === "sprints" ? 0 : 1,
+      friction: 9,
+      tension: 65,
+      useNativeDriver: true,
+    }).start();
+  }, [effectiveTab, tabAnim]);
+
+  // ── Content fade & slide transition ───────────────────────────────
+  const contentFade = useRef(new Animated.Value(1)).current;
+  const contentTranslateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    contentFade.setValue(0.5);
+    contentTranslateY.setValue(6);
+
+    Animated.parallel([
+      Animated.timing(contentFade, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.spring(contentTranslateY, {
+        toValue: 0,
+        friction: 8,
+        tension: 65,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [effectiveTab, contentFade, contentTranslateY]);
 
   // ── Filtered + sorted sprints ─────────────────────────────────────────
   const filteredSprints = useMemo(() => {
@@ -220,10 +305,30 @@ export default function AssignedSection({
     <View style={styles.container}>
       {/* ── Tab bar — Sprints always shown; Tasks only if addon is on ── */}
       {visibleTabs.length > 1 && (
-        <View style={styles.tabBar}>
+        <View
+          style={styles.tabBar}
+          onLayout={(e) => setTabBarWidth(e.nativeEvent.layout.width)}
+        >
+          {tabBarWidth > 0 && (
+            <Animated.View
+              style={[
+                styles.slidingPill,
+                {
+                  width: (tabBarWidth - 8) / 2,
+                  transform: [
+                    {
+                      translateX: tabAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, (tabBarWidth - 8) / 2],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            />
+          )}
           {visibleTabs.map((tab) => {
             const isActive = effectiveTab === tab;
-            const count = tab === "sprints" ? sprintCount : taskCount;
             const icon =
               tab === "sprints" ? "lightning-bolt" : "clipboard-list-outline";
             const label = tab === "sprints" ? "Sprints" : "Tasks";
@@ -231,7 +336,7 @@ export default function AssignedSection({
             return (
               <TouchableOpacity
                 key={tab}
-                style={[styles.tabBtn, isActive && styles.tabBtnActive]}
+                style={styles.tabBtn}
                 onPress={() => switchTab(tab)}
                 activeOpacity={0.75}
               >
@@ -245,6 +350,13 @@ export default function AssignedSection({
                 >
                   {label}
                 </Text>
+                {tab === "tasks" && pendingTasksCount > 0 && (
+                  <View style={styles.pendingBadge}>
+                    <Text style={styles.pendingBadgeText}>
+                      {pendingTasksCount > 99 ? "99+" : pendingTasksCount}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
             );
           })}
@@ -375,35 +487,44 @@ export default function AssignedSection({
       </View>
 
       {/* ── Content ───────────────────────────────────────────────── */}
-      {effectiveTab === "sprints" ? (
-        <AssignedSprintsList
-          planCards={filteredSprints}
-          navigation={navigation}
-          userName={userName}
-          emptyMessage={
-            sprintQuery
-              ? "No sprints match your search"
-              : "No sprints assigned yet"
-          }
-        />
-      ) : (
-        <AssignedTasksList
-          tasks={filteredTasks}
-          isLoading={isLoading}
-          error={error}
-          onRetry={refetch}
-          userId={userId}
-          isFiltered={taskQuery.trim().length > 0}
-          onTaskSubmitted={(task) => {
-            setOptimisticCompletedIds((prev) => {
-              const next = new Set(prev);
-              next.add(task.task_id);
-              return next;
-            });
-            refetch();
-          }}
-        />
-      )}
+      <Animated.View
+        style={{
+          opacity: contentFade,
+          transform: [{ translateY: contentTranslateY }],
+        }}
+      >
+        {effectiveTab === "sprints" ? (
+          <AssignedSprintsList
+            planCards={filteredSprints}
+            navigation={navigation}
+            userName={userName}
+            refreshKey={refreshKey}
+            emptyMessage={
+              sprintQuery
+                ? "No sprints match your search"
+                : "No sprints assigned yet"
+            }
+          />
+        ) : (
+          <AssignedTasksList
+            tasks={filteredTasks}
+            isLoading={isLoading}
+            error={error}
+            onRetry={refetch}
+            userId={userId}
+            refreshKey={refreshKey}
+            isFiltered={taskQuery.trim().length > 0}
+            onTaskSubmitted={(task) => {
+              setOptimisticCompletedIds((prev) => {
+                const next = new Set(prev);
+                next.add(task.task_id);
+                return next;
+              });
+              refetch();
+            }}
+          />
+        )}
+      </Animated.View>
     </View>
   );
 }
@@ -436,7 +557,21 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 4,
     marginBottom: 16,
-    gap: 4,
+    position: "relative",
+    overflow: "visible",
+  },
+  slidingPill: {
+    position: "absolute",
+    top: 4,
+    left: 4,
+    bottom: 4,
+    backgroundColor: "#ffffff",
+    borderRadius: 13,
+    shadowColor: "#64748B",
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   tabBtn: {
     flex: 1,
@@ -447,6 +582,9 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 6,
     borderRadius: 13,
+    position: "relative",
+    overflow: "visible",
+    zIndex: 1,
   },
   tabBtnActive: {
     backgroundColor: "#fff",
@@ -470,6 +608,31 @@ const styles = StyleSheet.create({
   tabCountActive: { backgroundColor: "#EFF6FF" },
   tabCountText: { fontSize: 10, fontWeight: "800", color: "#94A3B8" },
   tabCountTextActive: { color: "#2563EB" },
+  pendingBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: "#EF4444",
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    // elevation: 3,
+  },
+  pendingBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "800",
+    lineHeight: 11,
+  },
 
   // ── Toolbar: search + sort ──────────────────────────────────────
   toolbarRow: {

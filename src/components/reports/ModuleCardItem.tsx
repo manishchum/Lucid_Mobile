@@ -100,9 +100,9 @@ export const ModuleCardItem = React.memo<ModuleCardItemProps>(
                     <Text style={styles.attemptDate}>
                       {new Date(
                         attempt.completed_at || attempt.created_at,
-                      ).toLocaleDateString("en-US", {
+                      ).toLocaleDateString("en-IN", {
                         year: "numeric",
-                        month: "short",
+                        month: "long",
                         day: "numeric",
                       })}
                     </Text>

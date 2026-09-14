@@ -1,7 +1,7 @@
 import { logger } from "../../utils/UnifiedLogger";
 import { emitSessionInvalid, SessionInvalidReason } from "../sessionEvents";
 import * as SecureStore from "expo-secure-store";
-import auth from "@react-native-firebase/auth";
+import { getAuth, getIdToken } from "@react-native-firebase/auth";
 import {
   UserResponse,
   UserRolesResponse,
@@ -21,6 +21,7 @@ import {
   SubmissionFormat,
   FormatAnswer,
 } from "./Dto";
+import { uploadMediaToStorage } from "../../services/storageUpload";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -33,9 +34,10 @@ export const JWT_TOKEN_KEY = "auth_jwt_token";
 
 export const getFirebaseToken = async (): Promise<string | null> => {
   try {
-    const currentUser = auth().currentUser;
+    const authInstance = getAuth();
+    const currentUser = authInstance.currentUser;
     if (currentUser) {
-      const token = await currentUser.getIdToken();
+      const token = await getIdToken(currentUser);
       return token;
     }
   } catch (e) {
@@ -51,7 +53,10 @@ export const sendOtpApi = async (
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
       body: JSON.stringify({ phone }),
     });
     const data = await response.json();
@@ -76,7 +81,10 @@ export const verifyOtpApi = async (
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
       body: JSON.stringify({ phone, otp }),
     });
     const data = await response.json();
@@ -118,18 +126,27 @@ export const postModuleChat = async (
 ): Promise<PostModuleChatResponseDto> => {
   logger.info("[Request] postModuleChat", {
     processed_module_id: data.processed_module_id,
+    module_id: data.module_id,
   });
+
+  const payload: Record<string, any> = {
+    user_message: data.user_message,
+    user_id: data.user_id,
+    company_id: data.company_id,
+    chat_history: data.chat_history,
+  };
+
+  if (data.processed_module_id) {
+    payload.processed_module_id = data.processed_module_id;
+  }
+  if (data.module_id) {
+    payload.module_id = data.module_id;
+  }
 
   const result = await apiFetch<PostModuleChatResponseDto>(MODULE_CHAT_URL, {
     method: "POST",
     userId: data.user_id,
-    body: JSON.stringify({
-      processed_module_id: data.processed_module_id,
-      user_message: data.user_message,
-      user_id: data.user_id,
-      company_id: data.company_id,
-      chat_history: data.chat_history,
-    }),
+    body: JSON.stringify(payload),
   });
 
   logger.info("[Request] postModuleChat success");
@@ -178,6 +195,9 @@ const getPublicHeaders = (userId?: string, companyId?: string): Record<string, s
 };
 
 // ==================== CENTRALIZED FETCH WRAPPER ====================
+export const DEFAULT_FETCH_TIMEOUT_MS = 15_000; // 15 seconds
+export const DEFAULT_RETRY_DELAY_MS = 800; // 800ms
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -189,7 +209,7 @@ export class ApiError extends Error {
   }
 }
 
-interface ApiFetchOptions extends RequestInit {
+export interface ApiFetchOptions extends RequestInit {
   userId?: string;
   companyId?: string;
   noCache?: boolean;
@@ -197,20 +217,61 @@ interface ApiFetchOptions extends RequestInit {
   public?: boolean;
   /** Internal flag — prevents infinite refresh loops */
   _isRetry?: boolean;
+  /** Timeout in milliseconds before aborting (default: 15_000ms / 15s) */
+  timeoutMs?: number;
+  /**
+   * Number of retries on network error, timeout, or 502/503/504 status.
+   * Default: 1 for idempotent methods (GET, HEAD, OPTIONS), 0 for mutations.
+   */
+  retries?: number;
+  /** Base delay between retries in milliseconds (default: 800ms) */
+  retryDelayMs?: number;
 }
 
-async function apiFetch<T = any>(
+// Concurrent in-flight request deduplication map
+const inFlightRequests = new Map<string, Promise<any>>();
+
+export const clearInFlightRequests = (): void => {
+  logger.debug(`[Request] Clearing inFlightRequests map (${inFlightRequests.size} active)`);
+  inFlightRequests.clear();
+};
+
+export async function apiFetch<T = any>(
   url: string,
   options: ApiFetchOptions = {},
 ): Promise<T> {
-  const {
-    userId,
-    companyId,
-    noCache,
-    public: isPublic,
-    headers: extraHeaders,
-    ...rest
-  } = options;
+  const method = (options.method ?? "GET").toUpperCase();
+  const shouldDeduplicate =
+    method === "GET" &&
+    !options.noCache &&
+    !options._isRetry &&
+    !options.signal;
+
+  const dedupKey = shouldDeduplicate
+    ? `${method}:${url}:${options.userId || ""}:${options.companyId || ""}`
+    : null;
+
+  if (dedupKey && inFlightRequests.has(dedupKey)) {
+    logger.debug(`[apiFetch] In-flight deduplication hit for ${dedupKey}`);
+    return inFlightRequests.get(dedupKey) as Promise<T>;
+  }
+
+  const executionPromise = (async (): Promise<T> => {
+    const {
+      userId,
+      companyId,
+      noCache,
+      public: isPublic,
+      headers: extraHeaders,
+      timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
+      retries,
+      retryDelayMs = DEFAULT_RETRY_DELAY_MS,
+      signal: userSignal,
+      ...rest
+    } = options;
+
+    const isIdempotent = method === "GET" || method === "HEAD" || method === "OPTIONS";
+    const retryBudget = retries ?? (isIdempotent ? 1 : 0);
 
   const baseHeaders = isPublic
     ? getPublicHeaders(userId, companyId)
@@ -221,75 +282,161 @@ async function apiFetch<T = any>(
     ...(extraHeaders as Record<string, string> | undefined),
   };
 
-  logger.debug(`[apiFetch] ${rest.method ?? "GET"} → ${url}`);
+  logger.debug(`[apiFetch] ${method} → ${url} (timeout: ${timeoutMs}ms, retries: ${retryBudget})`);
 
+  const controller = new AbortController();
+  let isTimeout = false;
+
+  const timer = setTimeout(() => {
+    isTimeout = true;
+    controller.abort();
+  }, timeoutMs);
+
+  let onUserAbort: (() => void) | undefined;
+  if (userSignal) {
+    if (userSignal.aborted) {
+      clearTimeout(timer);
+      controller.abort(userSignal.reason);
+    } else {
+      onUserAbort = () => {
+        controller.abort(userSignal.reason);
+      };
+      userSignal.addEventListener("abort", onUserAbort, { once: true });
+    }
+  }
 
   let response: Response;
   try {
-    response = await fetch(url, { ...rest, headers });
-  } catch (networkErr) {
-    logger.error(`[apiFetch] network error for ${url}:`, networkErr);
-    throw new ApiError("Network request failed", 0, "NETWORK_ERROR");
+    try {
+      response = await fetch(url, { ...rest, headers, signal: controller.signal });
+    } catch (networkErr: any) {
+      if (isTimeout) {
+        if (retryBudget > 0 && !userSignal?.aborted) {
+          logger.warn(
+            `[apiFetch] ${method} ${url} timed out after ${timeoutMs}ms, retrying (${retryBudget} retries left)...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+          return apiFetch<T>(url, {
+            ...options,
+            retries: retryBudget - 1,
+            _isRetry: true,
+          });
+        }
+        logger.error(`[apiFetch] ${method} ${url} timed out after ${timeoutMs}ms`);
+        throw new ApiError(
+          `Request timed out after ${Math.round(timeoutMs / 1000)} seconds. Please check your connection and try again.`,
+          408,
+          "TIMEOUT",
+        );
+      }
+
+      if (userSignal?.aborted) {
+        throw new ApiError("Request cancelled", 0, "CANCELLED");
+      }
+
+      logger.error(`[apiFetch] network error for ${url}:`, networkErr);
+
+      if (retryBudget > 0 && !userSignal?.aborted) {
+        logger.warn(
+          `[apiFetch] Network error for ${url}, retrying (${retryBudget} retries left)...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        return apiFetch<T>(url, {
+          ...options,
+          retries: retryBudget - 1,
+          _isRetry: true,
+        });
+      }
+
+      throw new ApiError("Network request failed", 0, "NETWORK_ERROR");
+    }
+
+    let body: any = null;
+    try {
+      body = await response.json();
+    } catch {}
+
+    // Transient server errors (502, 503, 504) — retry budget if idempotent or explicitly allowed
+    const isTransientServerError =
+      response.status === 502 || response.status === 503 || response.status === 504;
+    if (isTransientServerError && retryBudget > 0 && !userSignal?.aborted) {
+      logger.warn(
+        `[apiFetch] Server returned ${response.status} for ${url}, retrying (${retryBudget} retries left)...`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      return apiFetch<T>(url, {
+        ...options,
+        retries: retryBudget - 1,
+        _isRetry: true,
+      });
+    }
+
+    // Session/account-validity codes — handled centrally, emit session event.
+    const code = body?.code as SessionInvalidReason | undefined;
+    if (
+      response.status === 401 &&
+      (code === "SESSION_TERMINATED" ||
+        code === "ACCOUNT_DEACTIVATED" ||
+        code === "COMPANY_DEACTIVATED")
+    ) {
+      logger.warn(
+        `[apiFetch] session invalid (${code}) — emitting sessionEvents`,
+      );
+      emitSessionInvalid(code);
+      throw new ApiError(
+        body?.message ?? "Session invalid",
+        response.status,
+        code,
+      );
+    }
+
+    // Generic 401 (most likely an expired/invalid token) — force logout
+    if (response.status === 401 && !options.public) {
+      logger.error(`[apiFetch] 401 on ${url} — session expired/invalid — emitting SESSION_TERMINATED`);
+      emitSessionInvalid("SESSION_TERMINATED");
+      throw new ApiError("Session expired. Please log in again.", 401, "SESSION_TERMINATED");
+    }
+
+    if (!response.ok) {
+      logger.error(`[apiFetch] ${response.status} for ${url}:`, body);
+      throw new ApiError(
+        body?.detail ?? body?.message ?? `HTTP error! status: ${response.status}`,
+        response.status,
+        code,
+      );
+    }
+
+    return body as T;
+  } finally {
+    clearTimeout(timer);
+    if (userSignal && onUserAbort) {
+      userSignal.removeEventListener("abort", onUserAbort);
+    }
+  }
+  })();
+
+  if (dedupKey) {
+    inFlightRequests.set(dedupKey, executionPromise);
+    executionPromise.finally(() => {
+      inFlightRequests.delete(dedupKey);
+    });
   }
 
-  let body: any = null;
-  try {
-    body = await response.json();
-  } catch {}
-
-  // Session/account-validity codes — handled centrally, emit session event.
-  const code = body?.code as SessionInvalidReason | undefined;
-  if (
-    response.status === 401 &&
-    (code === "SESSION_TERMINATED" ||
-      code === "ACCOUNT_DEACTIVATED" ||
-      code === "COMPANY_DEACTIVATED")
-  ) {
-    logger.warn(
-      `[apiFetch] session invalid (${code}) — emitting sessionEvents`,
-    );
-    emitSessionInvalid(code);
-    throw new ApiError(
-      body?.message ?? "Session invalid",
-      response.status,
-      code,
-    );
-  }
-
-  // Generic 401 (most likely an expired/invalid token) — force logout
-  if (response.status === 401 && !options.public) {
-    logger.error(`[apiFetch] 401 on ${url} — session expired/invalid — emitting SESSION_TERMINATED`);
-    emitSessionInvalid("SESSION_TERMINATED");
-    throw new ApiError("Session expired. Please log in again.", 401, "SESSION_TERMINATED");
-  }
-
-  if (!response.ok) {
-    logger.error(`[apiFetch] ${response.status} for ${url}:`, body);
-    throw new ApiError(
-      body?.message ?? `HTTP error! status: ${response.status}`,
-      response.status,
-      code,
-    );
-  }
-
-  return body as T;
+  return executionPromise;
 }
 
 // 1. Get user by email
+export { PresignedUploadResponse, getPresignedUploadUrlApi } from "../../services/storageUpload";
+
+
 export const getUserByEmail = async (email: string): Promise<UserResponse> => {
   try {
     const url = `${API_BASE_URL}/users/by-email/${encodeURIComponent(email)}`;
     logger.debug("[Request] getUserByEmail →", url);
-    const response = await fetch(url, {
+    const json = await apiFetch<UserResponse>(url, {
       method: "GET",
-      headers: getPublicHeaders(),
+      public: true,
     });
-    if (!response.ok) {
-      const body = await response.text();
-      logger.error(`[Request] getUserByEmail ${response.status}:`, body);
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const json = await response.json();
     if (json.user) {
       logger.debug("[Request] getUserByEmail ✅ user_id:", json.user.user_id);
     } else {
@@ -381,6 +528,7 @@ export const recordUserLogin = async (userId: string): Promise<any> => {
 
 export const getModuleProgress = async (
   userId: string,
+  options?: { timeoutMs?: number; retries?: number },
 ): Promise<ModuleProgress> => {
   try {
     const url = `${API_BASE_URL}/module-progress/user/${userId}`;
@@ -388,7 +536,8 @@ export const getModuleProgress = async (
     const json = await apiFetch<any>(url, {
       method: "GET",
       userId,
-      noCache: true,
+      timeoutMs: options?.timeoutMs ?? 25000,
+      retries: options?.retries ?? 1,
     });
     logger.debug(
       "[Request] getModuleProgress ✅ count:",
@@ -398,7 +547,7 @@ export const getModuleProgress = async (
     );
     return json;
   } catch (error) {
-    logger.error("[Request] Error fetching module progress:", error);
+    logger.warn("[Request] Error fetching module progress:", error);
     throw error;
   }
 };
@@ -881,7 +1030,8 @@ export const getDashboardSummary = async (
     const json = await apiFetch<any>(url, {
       method: "GET",
       userId,
-      noCache: true,
+      companyId,
+      timeoutMs: 30000,
       headers: { "X-Company-ID": companyId },
     });
 
@@ -914,6 +1064,14 @@ export const getDashboardSummary = async (
   }
 };
 
+const isUuidFormat = (val?: string | null): boolean =>
+  Boolean(
+    val &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        val,
+      ),
+  );
+
 // 14. Get tasks (Task Manager) — GET /task-manager/tasks/user/{userId}
 
 export const getTasks = async (
@@ -921,13 +1079,22 @@ export const getTasks = async (
   companyId: string,
 ): Promise<TasksResponse> => {
   try {
-    const url = `${API_BASE_URL}/task-manager/tasks/user/${userId}`;
+    let resolvedUserId = userId;
+    if (resolvedUserId && !isUuidFormat(resolvedUserId)) {
+      try {
+        const res = await getUserByEmail(resolvedUserId);
+        if (res?.user?.user_id) resolvedUserId = res.user.user_id;
+      } catch (e) {
+        logger.warn("[Request] getTasks — Failed to resolve userId to UUID:", e);
+      }
+    }
+    const url = `${API_BASE_URL}/task-manager/tasks/user/${resolvedUserId}`;
     logger.debug("[Request] getTasks →", url);
     const json = await apiFetch<any>(url, {
       method: "GET",
-      userId,
+      userId: resolvedUserId,
+      companyId,
       noCache: true,
-      headers: { "X-Company-ID": companyId },
     });
     logger.debug(
       "[Request] getTasks ✅ total:",
@@ -1174,6 +1341,16 @@ export const submitFormatAnswer = async (
     formatAnswer,
   } = input;
 
+  let resolvedUserId = userId;
+  if (resolvedUserId && !isUuidFormat(resolvedUserId)) {
+    try {
+      const res = await getUserByEmail(resolvedUserId);
+      if (res?.user?.user_id) resolvedUserId = res.user.user_id;
+    } catch (e) {
+      logger.warn("[Request] submitFormatAnswer — Failed to resolve userId to UUID:", e);
+    }
+  }
+
   const usesTextAnalysis = TEXT_ANALYSIS_FORMATS.includes(format);
   const url = usesTextAnalysis
     ? `${API_BASE_URL}/text-analysis/submit`
@@ -1182,7 +1359,7 @@ export const submitFormatAnswer = async (
   const body: Record<string, any> = {
     task_id: taskId,
     assignment_id: assignmentId,
-    user_id: userId,
+    user_id: resolvedUserId,
     max_score: maxScore,
     score: score,
     submission_type: format,
@@ -1197,15 +1374,27 @@ export const submitFormatAnswer = async (
   } else if (format === "multiple_choice") {
     body.answers = formatAnswer.answers ?? [];
   } else if (format === "image") {
-    body.image_url = formatAnswer.image_url ?? "";
+    let imgUrl = formatAnswer.image_url ?? "";
+    if (imgUrl && (imgUrl.startsWith("file://") || imgUrl.startsWith("file:/"))) {
+      imgUrl = await uploadMediaToStorage(imgUrl, "image/jpeg", { userId: resolvedUserId ?? undefined });
+    }
+    body.image_url = imgUrl;
   } else if (format === "video") {
-    body.video_url = formatAnswer.video_url ?? "";
+    let vidUrl = formatAnswer.video_url ?? "";
+    if (vidUrl && (vidUrl.startsWith("file://") || vidUrl.startsWith("file:/"))) {
+      vidUrl = await uploadMediaToStorage(vidUrl, "video/mp4", { userId: resolvedUserId ?? undefined });
+    }
+    body.video_url = vidUrl;
   } else if (format === "audio") {
-    body.audio_url = formatAnswer.audio_url ?? "";
+    let audUrl = formatAnswer.audio_url ?? "";
+    if (audUrl && (audUrl.startsWith("file://") || audUrl.startsWith("file:/"))) {
+      audUrl = await uploadMediaToStorage(audUrl, "audio/m4a", { userId: resolvedUserId ?? undefined });
+    }
+    body.audio_url = audUrl;
   }
 
   try {
-    const headers = await getHeaders(userId);
+    const headers = await getHeaders(resolvedUserId ?? undefined);
     logger.debug("[Request] submitFormatAnswer →", url, {
       task_id: taskId,
       format,
@@ -1219,11 +1408,16 @@ export const submitFormatAnswer = async (
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
+      let parsedDetail = "";
+      try {
+        const parsed = JSON.parse(errText);
+        parsedDetail = parsed.detail || parsed.message || "";
+      } catch {}
       logger.error(
-        `[Request] submitFormathhAnswer(${format}) ${response.status}:`,
+        `[Request] submitFormatAnswer(${format}) ${response.status}:`,
         errText,
       );
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(parsedDetail || `HTTP error! status: ${response.status}`);
     }
 
     const json = (await response.json()) as TaskSubmissionResponse;
@@ -1246,7 +1440,16 @@ export const submitTaskAnswer = async (
   payload: TaskSubmissionPayload,
 ): Promise<TaskSubmissionResponse> => {
   try {
-    const headers = await getHeaders(userId);
+    let resolvedUserId = payload.user_id || userId;
+    if (resolvedUserId && !isUuidFormat(resolvedUserId)) {
+      try {
+        const res = await getUserByEmail(resolvedUserId);
+        if (res?.user?.user_id) resolvedUserId = res.user.user_id;
+      } catch (e) {
+        logger.warn("[Request] submitTaskAnswer — Failed to resolve userId to UUID:", e);
+      }
+    }
+    const headers = await getHeaders(resolvedUserId ?? undefined);
     const url = `${API_BASE_URL}/task-manager/tasks/submit`;
 
     // Map internal submission_type → the wire value the API actually expects.
@@ -1259,14 +1462,18 @@ export const submitTaskAnswer = async (
     const body: Record<string, any> = {
       task_id: payload.task_id,
       assignment_id: payload.assignment_id,
-      user_id: payload.user_id,
+      user_id: resolvedUserId,
       submission_type: wireSubmissionType,
       max_score: payload.max_score,
       score: payload.score,
     };
 
     if (payload.submission_type === "image") {
-      body.image_url = payload.image_url ?? "";
+      let imgUrl = payload.image_url ?? "";
+      if (imgUrl && (imgUrl.startsWith("file://") || imgUrl.startsWith("file:/"))) {
+        imgUrl = await uploadMediaToStorage(imgUrl, "image/jpeg", { userId });
+      }
+      body.image_url = imgUrl;
     } else if (payload.submission_type === "text") {
       body.text_response = payload.text_answer ?? "";
     } else if (payload.submission_type === "options") {
@@ -1292,8 +1499,13 @@ export const submitTaskAnswer = async (
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
+      let parsedDetail = "";
+      try {
+        const parsed = JSON.parse(errText);
+        parsedDetail = parsed.detail || parsed.message || "";
+      } catch {}
       logger.error(`[Request] submitTaskAnswer ${response.status}:`, errText);
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(parsedDetail || `HTTP error! status: ${response.status}`);
     }
 
     const json = (await response.json()) as TaskSubmissionResponse;
@@ -1331,6 +1543,7 @@ export const getLeaderboardHighlight = async (
     const json = await apiFetch<any>(url, {
       method: "GET",
       userId,
+      companyId,
       noCache: true,
     });
     return json;

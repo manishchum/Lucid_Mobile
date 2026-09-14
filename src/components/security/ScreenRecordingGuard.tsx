@@ -95,7 +95,7 @@ function IOSRecordingOverlay({ isRecording }: { isRecording: boolean }) {
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "#0F172A",
     zIndex: 9999,
     justifyContent: "center",

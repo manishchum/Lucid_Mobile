@@ -49,6 +49,7 @@ eventBus.on("refresh_reports", () => {
 // Enable LayoutAnimation for Android
 if (
   Platform.OS === "android" &&
+  !(globalThis as any).nativeFabricUIManager &&
   UIManager.setLayoutAnimationEnabledExperimental
 ) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -1287,9 +1288,9 @@ export default function ReportsScreen() {
                       Attempted on{" "}
                       {new Date(
                         selectedAttempt.completed_at || selectedAttempt.created_at,
-                      ).toLocaleDateString("en-US", {
+                      ).toLocaleDateString("en-IN", {
                         year: "numeric",
-                        month: "short",
+                        month: "long",
                         day: "numeric",
                       })}
                     </Text>

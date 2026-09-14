@@ -5,10 +5,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  PanResponder,
 } from "react-native";
+import Slider from "@react-native-community/slider";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Audio, AVPlaybackStatus } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
 import { safeHaptics } from "../../utils/haptics";
 
 interface AudioContentViewerProps {
@@ -37,28 +37,34 @@ export default function AudioContentViewer({
   const [positionMillis, setPositionMillis] = useState(0);
   const [durationMillis, setDurationMillis] = useState(0);
   const [speedIndex, setSpeedIndex] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubPosition, setScrubPosition] = useState(0);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const progressBarWidth = useRef(0);
+  const playerRef = useRef<AudioPlayer | null>(null);
+  const isScrubbingRef = useRef(false);
 
   const playbackSpeed = PLAYBACK_SPEEDS[speedIndex];
 
-  // Cleanup sound on unmount
+  // Cleanup player on unmount
   useEffect(() => {
     return () => {
-      if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(() => {});
+      if (playerRef.current) {
+        try {
+          playerRef.current.remove();
+        } catch {}
       }
     };
   }, []);
 
-  // Stop & unload if audioUrl changes
+  // Stop & remove if audioUrl changes
   useEffect(() => {
     const resetAudio = async () => {
-      if (soundRef.current) {
-        await soundRef.current.stopAsync().catch(() => {});
-        await soundRef.current.unloadAsync().catch(() => {});
-        soundRef.current = null;
+      if (playerRef.current) {
+        try {
+          playerRef.current.pause();
+          playerRef.current.remove();
+        } catch {}
+        playerRef.current = null;
       }
       setIsPlaying(false);
       setPositionMillis(0);
@@ -71,27 +77,29 @@ export default function AudioContentViewer({
     if (!audioUrl) return;
     setIsLoading(true);
     try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: true,
       });
 
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
-        { shouldPlay: true, rate: playbackSpeed, shouldCorrectPitch: true },
-        (status: AVPlaybackStatus) => {
-          if (status.isLoaded) {
-            setPositionMillis(status.positionMillis ?? 0);
-            setDurationMillis(status.durationMillis ?? 0);
-            setIsPlaying(status.isPlaying);
-            if (status.didJustFinish) {
-              setIsPlaying(false);
-              setPositionMillis(0);
-            }
-          }
+      const player = createAudioPlayer({ uri: audioUrl });
+      player.playbackRate = playbackSpeed;
+      playerRef.current = player;
+
+      player.addListener("playbackStatusUpdate", (status) => {
+        if (!isScrubbingRef.current) {
+          setPositionMillis(Math.round((status.currentTime || 0) * 1000));
         }
-      );
-      soundRef.current = sound;
+        setDurationMillis(Math.round((status.duration || 0) * 1000));
+        setIsPlaying(status.playing);
+        if (status.playing === false && status.currentTime >= status.duration && status.duration > 0) {
+          setIsPlaying(false);
+          setPositionMillis(0);
+        }
+      });
+
+      player.play();
+      setIsPlaying(true);
     } catch (error) {
       console.error("[AudioContentViewer] Failed to load audio:", error);
     } finally {
@@ -101,32 +109,32 @@ export default function AudioContentViewer({
 
   const handlePlayPause = async () => {
     safeHaptics.lightImpact();
-    if (!soundRef.current) {
+    if (!playerRef.current) {
       await loadAndPlay();
       return;
     }
     if (isPlaying) {
-      await soundRef.current.pauseAsync();
+      playerRef.current.pause();
     } else {
-      await soundRef.current.playAsync();
+      playerRef.current.play();
     }
   };
 
-  const handleSeek = async (ratio: number) => {
-    const clamped = Math.max(0, Math.min(1, ratio));
-    if (soundRef.current && durationMillis > 0) {
-      await soundRef.current.setPositionAsync(clamped * durationMillis);
+  const handleSeek = async (millis: number) => {
+    const clamped = Math.max(0, Math.min(durationMillis, millis));
+    if (playerRef.current && durationMillis > 0) {
+      await playerRef.current.seekTo(clamped / 1000);
     }
   };
 
   const handleSkip = async (seconds: number) => {
     safeHaptics.lightImpact();
-    if (soundRef.current && durationMillis > 0) {
-      const targetPos = Math.max(
+    if (playerRef.current && durationMillis > 0) {
+      const targetPosMillis = Math.max(
         0,
         Math.min(durationMillis, positionMillis + seconds * 1000)
       );
-      await soundRef.current.setPositionAsync(targetPos);
+      await playerRef.current.seekTo(targetPosMillis / 1000);
     }
   };
 
@@ -135,31 +143,13 @@ export default function AudioContentViewer({
     const nextIdx = (speedIndex + 1) % PLAYBACK_SPEEDS.length;
     setSpeedIndex(nextIdx);
     const nextSpeed = PLAYBACK_SPEEDS[nextIdx];
-    if (soundRef.current) {
-      await soundRef.current.setRateAsync(nextSpeed, true);
+    if (playerRef.current) {
+      playerRef.current.playbackRate = nextSpeed;
     }
   };
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => {
-        if (progressBarWidth.current > 0) {
-          handleSeek(evt.nativeEvent.locationX / progressBarWidth.current);
-        }
-      },
-      onPanResponderMove: (evt) => {
-        if (progressBarWidth.current > 0) {
-          handleSeek(evt.nativeEvent.locationX / progressBarWidth.current);
-        }
-      },
-    })
-  ).current;
-
-  const progressRatio =
-    durationMillis > 0 ? positionMillis / durationMillis : 0;
-  const remainingMillis = Math.max(0, durationMillis - positionMillis);
+  const displayPosition = isScrubbing ? scrubPosition : positionMillis;
+  const remainingMillis = Math.max(0, durationMillis - displayPosition);
 
   return (
     <View style={styles.container}>
@@ -178,33 +168,39 @@ export default function AudioContentViewer({
 
       {/* Player Card */}
       <View style={styles.playerCard}>
-        {/* Scrubber */}
-        <View
-          style={styles.progressHitSlop}
-          {...panResponder.panHandlers}
-          onLayout={(e) => {
-            progressBarWidth.current = e.nativeEvent.layout.width;
-          }}
-        >
-          <View style={styles.track}>
-            <View
-              style={[
-                styles.fill,
-                { width: `${Math.min(100, Math.max(0, progressRatio * 100))}%` },
-              ]}
-            />
-          </View>
-          <View
-            style={[
-              styles.thumb,
-              { left: `${Math.min(100, Math.max(0, progressRatio * 100))}%` },
-            ]}
+        {/* Timeline Slider for forward and backward audio scrubbing */}
+        <View style={styles.sliderContainer}>
+          <Slider
+            style={styles.slider}
+            minimumValue={0}
+            maximumValue={durationMillis > 0 ? durationMillis : 1}
+            value={displayPosition}
+            minimumTrackTintColor="#7C3AED"
+            maximumTrackTintColor="#E2E8F0"
+            thumbTintColor="#7C3AED"
+            disabled={durationMillis === 0}
+            onSlidingStart={() => {
+              isScrubbingRef.current = true;
+              setIsScrubbing(true);
+              setScrubPosition(positionMillis);
+            }}
+            onValueChange={(val) => {
+              setScrubPosition(val);
+            }}
+            onSlidingComplete={async (val) => {
+              isScrubbingRef.current = false;
+              setIsScrubbing(false);
+              setPositionMillis(val);
+              if (playerRef.current) {
+                await playerRef.current.seekTo(val / 1000);
+              }
+            }}
           />
         </View>
 
         {/* Time display */}
         <View style={styles.timeRow}>
-          <Text style={styles.timeText}>{formatTime(positionMillis)}</Text>
+          <Text style={styles.timeText}>{formatTime(displayPosition)}</Text>
           <Text style={styles.timeText}>−{formatTime(remainingMillis)}</Text>
         </View>
 
@@ -289,10 +285,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     borderWidth: 1,
     borderColor: "#F1F5F9",
-    // shadowColor: "#7C3AED",
-    // shadowOpacity: 0.08,
-    // shadowRadius: 20,
-    // shadowOffset: { width: 0, height: 8 },
     elevation: 4,
   },
   iconCircle: {
@@ -340,35 +332,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
   },
-  progressHitSlop: {
-    paddingVertical: 12,
+  sliderContainer: {
+    paddingVertical: 6,
     justifyContent: "center",
   },
-  track: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#E2E8F0",
-    overflow: "hidden",
-  },
-  fill: {
-    height: "100%",
-    borderRadius: 4,
-    backgroundColor: "#7C3AED",
-  },
-  thumb: {
-    position: "absolute",
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "#7C3AED",
-    top: "50%",
-    marginTop: 3,
-    marginLeft: -9,
-    // shadowColor: "#7C3AED",
-    // shadowOpacity: 0.35,
-    // shadowRadius: 6,
-    // shadowOffset: { width: 0, height: 2 },
-    // elevation: 3,
+  slider: {
+    width: "100%",
+    height: 20,
   },
   timeRow: {
     flexDirection: "row",
@@ -414,10 +384,5 @@ const styles = StyleSheet.create({
     backgroundColor: "#7C3AED",
     alignItems: "center",
     justifyContent: "center",
-    // shadowColor: "#7C3AED",
-    // shadowOpacity: 0.35,
-    // shadowRadius: 12,
-    // shadowOffset: { width: 0, height: 6 },
-    // elevation: 6,
   },
 });

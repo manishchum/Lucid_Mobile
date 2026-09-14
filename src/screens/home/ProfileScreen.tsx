@@ -185,9 +185,9 @@ export default function ProfileScreen() {
   const formatDate = (dateString: string) => {
     if (!dateString) return "-";
     const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
+    return date.toLocaleDateString("en-IN", {
       year: "numeric",
-      month: "short",
+      month: "long",
       day: "numeric",
     });
   };
@@ -292,9 +292,22 @@ export default function ProfileScreen() {
         </View>
 
         {/* RATE YOUR EXPERIENCE SECTION */}
-        <View style={styles.section}>
+        {/* <View style={styles.section}>
           <Text style={styles.sectionTitle}>Rate Your Experience</Text>
           <FeedbackCard />
+        </View> */}
+
+        {/* ADMIN NOTICE */}
+        <View style={styles.adminNotice}>
+          <MaterialCommunityIcons
+            name="information-outline"
+            size={20}
+            color="#64748B"
+          />
+          <Text style={styles.adminNoticeText}>
+            Profile details are managed by your administrator. Contact admin to
+            update information.
+          </Text>
         </View>
 
         {/* SIGN OUT BUTTON */}
@@ -306,19 +319,6 @@ export default function ProfileScreen() {
           <MaterialCommunityIcons name="logout" size={20} color="#EF4444" style={{ marginRight: 8 }} />
           <Text style={styles.profileSignOutText}>Sign Out</Text>
         </TouchableOpacity>
-
-        {/* ADMIN NOTICE */}
-        <View style={styles.adminNotice}>
-          <MaterialCommunityIcons
-            name="information-outline"
-            size={20}
-            color="#64748B"
-          />
-          <Text style={styles.adminNoticeText}>
-            Profile details are managed by your administrator. Contact HR to
-            update information.
-          </Text>
-        </View>
 
         {/* Version Footer */}
         <View style={styles.versionFooter}>

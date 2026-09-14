@@ -159,7 +159,7 @@ export default function ContentDetailScreen({ route, navigation }: any) {
               <View style={styles.metaRow}>
                 <View style={styles.metaBadge}>
                   <MaterialCommunityIcons name="book-open-variant" size={14} color="#4F46E5" />
-                  <Text style={styles.metaText}>Core Content</Text>
+                  <Text style={styles.metaText}>Playbook</Text>
                 </View>
                 {primaryModule.audio_url && (
                   <View style={styles.metaBadge}>
@@ -212,6 +212,7 @@ export default function ContentDetailScreen({ route, navigation }: any) {
             />
 
             <PodcastSection
+              title={primaryModule?.title ?? moduleTitle ?? "Podcast Lesson"}
               isExpanded={expanded === 'podcast'}
               onToggle={() => toggle('podcast')}
               lang={lang}

@@ -20,6 +20,9 @@ export const STACK_ROUTES = {
   MODULE_QUIZ: "ModuleQuiz",
   NOTIFICATIONS: "Notifications",
   CONTENT_VIEWER: "ContentViewer",
+  ROLEPLAY: "Roleplay",
+  ROLEPLAY_SESSION: "RoleplaySession",
+  ROLEPLAY_REPORT: "RoleplayReport",
 } as const;
 
 // Type exports

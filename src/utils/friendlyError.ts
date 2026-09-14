@@ -37,6 +37,17 @@ export function friendlyError(err: unknown): string {
 
   const lower = msg.toLowerCase();
 
+  // ── Specific file size limit messages (preserve exact details) ────────────
+  if (
+    (lower.includes("image size") ||
+      lower.includes("audio size") ||
+      lower.includes("video size") ||
+      lower.includes("file size")) &&
+    (lower.includes("exceeds") || lower.includes("limit"))
+  ) {
+    return msg;
+  }
+
   // ── Network / offline ────────────────────────────────────────────────────
   if (
     lower.includes("network request failed") ||

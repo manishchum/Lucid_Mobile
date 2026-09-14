@@ -18,7 +18,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useDrawer } from "../../contex/DrawerContext";
 import { useAuth } from "../../contex/AuthContext";
 import { getUserByPhone } from "../../api/users/Request";
-import { APP_ROUTES } from "../../navigations/Routes";
+import { APP_ROUTES, STACK_ROUTES } from "../../navigations/Routes";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 
 import SignOutModal from "../modals/SignOutModal";
@@ -138,6 +138,11 @@ export default function AppDrawer() {
     navigation.navigate(APP_ROUTES.REPORTS);
   };
 
+  const handleRoleplayPress = () => {
+    closeDrawer();
+    navigation.navigate(STACK_ROUTES.ROLEPLAY as never);
+  };
+
   const getInitials = (name: string) => {
     return name
       ? name
@@ -158,7 +163,7 @@ export default function AppDrawer() {
   const displayEmail = user?.email || cachedUser?.email || "";
 
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents={isDrawerOpen ? "auto" : "none"}>
+    <View style={StyleSheet.absoluteFill} pointerEvents={isDrawerOpen ? "auto" : "none"}>
       {/* Backdrop overlay */}
       <TouchableWithoutFeedback onPress={closeDrawer}>
         <Animated.View style={[styles.overlay, { opacity: opacityAnim }]} />
@@ -230,6 +235,20 @@ export default function AppDrawer() {
               </TouchableOpacity>
             )}
 
+            {hasFeature(FEATURES.ROLE_PLAY) && (
+              <TouchableOpacity
+                onPress={handleRoleplayPress}
+                activeOpacity={0.7}
+                style={[styles.navItem, { marginTop: 12 }]}
+              >
+                <View style={styles.navIconWrapper}>
+                  <MaterialCommunityIcons name="account-voice" size={24} color="#6366F1" />
+                </View>
+                <Text style={styles.navItemText}>Roleplay</Text>
+                <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               onPress={handleSupportPress}
               activeOpacity={0.7}
@@ -270,7 +289,7 @@ export default function AppDrawer() {
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(15, 23, 42, 0.4)",
   },
   drawerContainer: {

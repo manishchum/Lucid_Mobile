@@ -1,9 +1,14 @@
-import React, { useEffect } from "react";
-import { View, ActivityIndicator, StyleSheet, Alert } from "react-native";
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import { View, StyleSheet, Alert } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import {
+  createBottomTabNavigator,
+  BottomTabBar,
+} from "@react-navigation/bottom-tabs";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useObserve } from "expo-observe";
+import * as ExpoSplashScreen from "expo-splash-screen";
 
 import { useAuth } from "../contex/AuthContext";
 import { TenantProvider, useTenant } from "../contex/TenantContext";
@@ -12,9 +17,15 @@ import {
   ActiveSprintProvider,
   useActiveSprint,
 } from "../contex/ActiveSprintContext";
+import {
+  PodcastPlayerProvider,
+  usePodcastPlayer,
+} from "../contex/PodcastPlayerContext";
+import { PodcastMiniPlayer } from "../components/podcast/PodcastMiniPlayer";
 import { APP_ROUTES, STACK_ROUTES } from "./Routes";
 import { initMobileErrorReporting } from "../utils/errorReporter";
 import { initOfflineQueueListener } from "../utils/offlineQueue";
+import { SplashScreen } from "../components/splash/SplashScreen";
 
 // Screens
 import LoginScreen from "../screens/auth/loginScreen/LoginScreen";
@@ -29,6 +40,9 @@ import ContentLibraryScreen from "../screens/home/ContentLibraryScreen";
 import ContentViewerScreen from "../screens/home/ContentViewerScreen";
 import SprintverseScreen from "../screens/home/SprintverseScreen";
 import ReportsScreen from "../screens/home/ReportsScreen";
+import RoleplayScreen from "../screens/home/roleplay/RoleplayScreen";
+import RoleplaySessionScreen from "../screens/home/roleplay/RoleplaySessionScreen";
+import RoleplayReportScreen from "../screens/home/roleplay/RoleplayReportScreen";
 
 // Components
 import AppHeader from "../components/navigation/AppHeader";
@@ -40,6 +54,9 @@ import {
   useGetLeaderboardHighlight,
 } from "../api/users";
 
+// Prevent Expo splash screen from auto-hiding until our custom animated splash renders
+ExpoSplashScreen.preventAutoHideAsync().catch(() => {});
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -49,6 +66,12 @@ function BottomTabNavigator() {
 
   return (
     <Tab.Navigator
+      tabBar={(props) => (
+        <View style={{ backgroundColor: "#ffffff" }}>
+          <PodcastMiniPlayer />
+          <BottomTabBar {...props} />
+        </View>
+      )}
       screenOptions={({ route }: any) => ({
         headerShown: true,
         header: () => <AppHeader />,
@@ -58,14 +81,17 @@ function BottomTabNavigator() {
           borderTopWidth: 1,
           borderTopColor: "#e5e7eb",
           backgroundColor: "#ffffff",
-          paddingBottom: insets.bottom + 8,
-          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom > 0 ? insets.bottom : 4,
+          paddingVertical: 8,
+          height: 52 + (insets.bottom > 0 ? insets.bottom : 0),
         },
         tabBarLabelStyle: {
-          fontSize: 12,
-          marginTop: 4,
+          fontSize: 11,
+          fontWeight: "600",
+          marginTop: 0,
+          marginBottom: 2,
         },
-        tabBarIcon: ({ color, size }: any) => {
+        tabBarIcon: ({ color }: any) => {
           let iconName: React.ComponentProps<
             typeof MaterialCommunityIcons
           >["name"];
@@ -91,7 +117,7 @@ function BottomTabNavigator() {
           }
 
           return (
-            <MaterialCommunityIcons name={iconName} size={size} color={color} />
+            <MaterialCommunityIcons name={iconName} size={22} color={color} />
           );
         },
       })}
@@ -150,6 +176,48 @@ function AppNavigatorContent() {
     setIsNotificationsOpen,
   } = useDrawer();
 
+  const [isSplashActive, setIsSplashActive] = useState(false);
+  const isInitialStateSetRef = useRef(false);
+  const prevIsLoggedInRef = useRef<boolean | null>(null);
+  const appStartTimeRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (isInitializing) return;
+
+    if (!isInitialStateSetRef.current) {
+      isInitialStateSetRef.current = true;
+      // Hide native Expo splash screen as soon as JS auth initialization is complete
+      ExpoSplashScreen.hideAsync().catch(() => {});
+
+      if (isLoggedIn) {
+        // Scenario 2: Recurring user (already logged in) -> show animated splash screen
+        console.log("[AppNavigator] Launching recurring user flow -> showing splash screen");
+        setIsSplashActive(true);
+      } else {
+        // Scenario 1: First-time user / unauthenticated -> skip pre-login splash, go to login screen directly
+        console.log("[AppNavigator] Launching first-time / unauthenticated flow -> showing login screen");
+        setIsSplashActive(false);
+      }
+    } else {
+      // Handle post-login transition (unauthenticated -> authenticated)
+      if (prevIsLoggedInRef.current === false && isLoggedIn) {
+        console.log("[AppNavigator] Post-login transition detected -> triggering splash screen");
+        appStartTimeRef.current = Date.now();
+        setIsSplashActive(true);
+      }
+    }
+
+    prevIsLoggedInRef.current = isLoggedIn;
+  }, [isInitializing, isLoggedIn]);
+
+  const handleSplashComplete = useCallback(() => {
+    const splashDuration = Date.now() - appStartTimeRef.current;
+    console.log(
+      `[PerfMeter] 🚀 APP INITIALIZATION & SPLASH COMPLETED: Total Splash Active=${splashDuration}ms | IsLoggedIn=${isLoggedIn} | UserId=${cachedUser?.userId ?? "guest"}`
+    );
+    setIsSplashActive(false);
+  }, [isLoggedIn, cachedUser]);
+
   useEffect(() => {
     if (!forcedLogoutReason) return;
     const message =
@@ -166,8 +234,10 @@ function AppNavigatorContent() {
   const userId = cachedUser?.userId ?? null;
   const companyId = cachedUser?.companyId ?? null;
 
+  const { markInteractive } = useObserve();
+
   // Start production crash/error reporting to the same /api/logs endpoint web points to
-  const cachedEmailRef = React.useRef<string | null>(null);
+  const cachedEmailRef = useRef<string | null>(null);
   cachedEmailRef.current = cachedUser?.email ?? null;
   useEffect(() => {
     initMobileErrorReporting(() => cachedEmailRef.current);
@@ -175,7 +245,13 @@ function AppNavigatorContent() {
     initOfflineQueueListener();
   }, []);
 
-  // Global leaderboard state and fetching
+  useEffect(() => {
+    if (!isInitializing) {
+      markInteractive();
+    }
+  }, [isInitializing, markInteractive]);
+
+  // Pre-fetch global leaderboard state & dashboard summary while splash screen is active
   const {
     leaderboardData,
     isLoading: leaderboardLoading,
@@ -188,17 +264,26 @@ function AppNavigatorContent() {
     isLeaderboardOpen,
   );
 
-  const { stats } = useGetDashboardSummary(
+  const { stats, isLoading: isDashboardLoading } = useGetDashboardSummary(
     isLoggedIn ? userId : null,
     isLoggedIn ? companyId : null,
   );
   const progressPercentage = stats?.progressPercentage ?? 0;
 
+  // Data is fully ready when auth initialization completes AND if logged in, initial dashboard summary has finished fetching
+  const isDataReady = !isInitializing && (!isLoggedIn || !isDashboardLoading);
+
   if (isInitializing) {
+    return <View style={{ flex: 1, backgroundColor: "#FFFFFF" }} />;
+  }
+
+  if (isSplashActive) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6366f1" />
-      </View>
+      <SplashScreen
+        isDataReady={isDataReady}
+        onAnimationComplete={handleSplashComplete}
+        minimumDurationMs={1500}
+      />
     );
   }
 
@@ -250,6 +335,33 @@ function AppNavigatorContent() {
                 headerShown: false,
               }}
             />
+            <Stack.Screen
+              name={STACK_ROUTES.ROLEPLAY}
+              component={RoleplayScreen}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.ROLEPLAY_SESSION}
+              component={RoleplaySessionScreen}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.ROLEPLAY_REPORT}
+              component={RoleplayReportScreen}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
+                headerShown: false,
+              }}
+            />
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthNavigator} />
@@ -289,9 +401,11 @@ export default function AppNavigator() {
   return (
     <TenantProvider>
       <ActiveSprintProvider>
-        <DrawerProvider>
-          <AppNavigatorContent />
-        </DrawerProvider>
+        <PodcastPlayerProvider>
+          <DrawerProvider>
+            <AppNavigatorContent />
+          </DrawerProvider>
+        </PodcastPlayerProvider>
       </ActiveSprintProvider>
     </TenantProvider>
   );

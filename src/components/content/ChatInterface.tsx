@@ -13,7 +13,12 @@ import {
   Text,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Audio } from "expo-av";
+import {
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  createAudioPlayer,
+  AudioPlayer,
+} from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
 import ChatMessage from "./ChatMessage";
 import { postModuleChat, ModuleChatMessage, getFirebaseToken } from "../../api/users/Request";
@@ -28,8 +33,11 @@ export interface Message {
 }
 
 interface ChatInterfaceProps {
+  chatMode?: "module" | "sprint";
   processedModuleId: string;
+  sprintModuleId?: string;
   moduleTitle: string;
+  sprintTitle?: string;
   userId: string;
   companyId: string;
   messages: Message[];
@@ -86,13 +94,23 @@ const ti = StyleSheet.create({
 });
 
 // --- Greeting placeholder -----------------------------------------------------
-function EmptyGreeting({ moduleTitle }: { moduleTitle: string }) {
+function EmptyGreeting({
+  chatMode,
+  moduleTitle,
+  sprintTitle,
+}: {
+  chatMode?: "module" | "sprint";
+  moduleTitle: string;
+  sprintTitle?: string;
+}) {
+  const greetingText =
+    chatMode === "sprint"
+      ? `Hello! I can answer questions across the entire ${sprintTitle || "Sprint"} sprint. Ask me anything covered in all modules.`
+      : `Hello! I'm ready to help you understand the ${moduleTitle} module. Ask me anything covered in this module.`;
+
   return (
     <View style={eg.wrapper}>
-      <ChatMessage
-        message={`Hello! I'm ready to help you understand the ${moduleTitle} module. Ask me anything covered in this module.`}
-        isUserMessage={false}
-      />
+      <ChatMessage message={greetingText} isUserMessage={false} />
     </View>
   );
 }
@@ -212,8 +230,11 @@ const vm = StyleSheet.create({
 const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
 
 export default function ChatInterface({
+  chatMode = "module",
   processedModuleId,
+  sprintModuleId,
   moduleTitle,
+  sprintTitle,
   userId,
   companyId,
   messages,
@@ -231,7 +252,7 @@ export default function ChatInterface({
   const [speechMode, setSpeechMode] = React.useState(false);
   const [voiceState, setVoiceState] = React.useState<VoiceState>("idle");
   const [currentlyPlayingId, setCurrentlyPlayingId] = React.useState<string | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
 
   // Pulse animation for voice mode mic circle
   const pulseAnim = useRef(new Animated.Value(0)).current;
@@ -241,7 +262,7 @@ export default function ChatInterface({
   const [isRecording, setIsRecording] = React.useState(false);
   const [recordingDuration, setRecordingDuration] = React.useState(0);
   const recordingStartRef = useRef<number>(0);
-  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // -- Speech Recognition Events --
   useSpeechRecognitionEvent("start", () => console.log("[Speech] recognition started"));
@@ -281,7 +302,10 @@ export default function ChatInterface({
   // -- Cleanup on unmount --
   useEffect(() => {
     return () => {
-      soundRef.current?.unloadAsync().catch(() => {});
+      try {
+        soundRef.current?.pause();
+        soundRef.current?.remove();
+      } catch {}
       if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
     };
   }, []);
@@ -347,8 +371,10 @@ export default function ChatInterface({
         setIsRecording(false);
       }
       if (soundRef.current) {
-        await soundRef.current.stopAsync().catch(() => {});
-        await soundRef.current.unloadAsync().catch(() => {});
+        try {
+          soundRef.current.pause();
+          soundRef.current.remove();
+        } catch {}
         soundRef.current = null;
       }
       setCurrentlyPlayingId(null);
@@ -363,12 +389,12 @@ export default function ChatInterface({
   // -- Start Recording --
   const startRecording = async () => {
     try {
-      const permission = await Audio.requestPermissionsAsync();
+      const permission = await requestRecordingPermissionsAsync();
       if (permission.status !== "granted") {
         Alert.alert("Permission Denied", "Microphone access is required to speak.");
         return;
       }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       setInputText("");
       setIsRecording(true);
       setRecordingDuration(0);
@@ -378,19 +404,16 @@ export default function ChatInterface({
       await ExpoSpeechRecognitionModule.start({
         lang: locale,
         interimResults: true,
-        androidIntentOptions: {
-          EXTRA_ENABLE_LANGUAGE_DETECTION: true,
-          EXTRA_ENABLE_LANGUAGE_SWITCH: "balanced",
-          EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES: ["en-IN", "hi-IN", "en-US"],
-          EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES: ["en-IN", "hi-IN", "en-US"],
-        },
+        maxAlternatives: 1,
+        continuous: true,
+        requiresOnDeviceRecognition: false,
+        addsPunctuation: true,
       });
-      recordingStartRef.current = Date.now();
-    } catch (err) {
-      console.error("[Speech] Failed to start recognition:", err);
-      Alert.alert("Error", "Could not start voice recognition.");
+    } catch (err: any) {
+      console.error("[Speech] Start failed:", err);
       setIsRecording(false);
       setVoiceState("idle");
+      Alert.alert("Speech Recognition Error", err?.message || "Failed to start microphone.");
     }
   };
 
@@ -399,7 +422,7 @@ export default function ChatInterface({
     try {
       await ExpoSpeechRecognitionModule.stop();
     } catch (err) {
-      console.error("[Speech] Stop error:", err);
+      console.error("[Speech] Stop failed:", err);
     } finally {
       setIsRecording(false);
       setVoiceState("processing");
@@ -412,8 +435,10 @@ export default function ChatInterface({
     try {
       if (currentlyPlayingId === messageId) {
         if (soundRef.current) {
-          await soundRef.current.stopAsync().catch(() => {});
-          await soundRef.current.unloadAsync().catch(() => {});
+          try {
+            soundRef.current.pause();
+            soundRef.current.remove();
+          } catch {}
           soundRef.current = null;
         }
         setCurrentlyPlayingId(null);
@@ -421,8 +446,10 @@ export default function ChatInterface({
         return;
       }
       if (soundRef.current) {
-        await soundRef.current.stopAsync().catch(() => {});
-        await soundRef.current.unloadAsync().catch(() => {});
+        try {
+          soundRef.current.pause();
+          soundRef.current.remove();
+        } catch {}
         soundRef.current = null;
       }
 
@@ -454,13 +481,13 @@ export default function ChatInterface({
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
 
-      const { sound } = await Audio.Sound.createAsync({ uri: tempFileUri }, { shouldPlay: true });
-      soundRef.current = sound;
+      const player = createAudioPlayer({ uri: tempFileUri });
+      soundRef.current = player;
 
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
+      player.addListener("playbackStatusUpdate", (status: any) => {
+        if (status.playing === false && status.currentTime >= status.duration && status.duration > 0) {
           setCurrentlyPlayingId(null);
           soundRef.current = null;
           if (speechMode) {
@@ -469,6 +496,7 @@ export default function ChatInterface({
           }
         }
       });
+      player.play();
     } catch (err) {
       console.error("[TTS] Failed:", err);
       setCurrentlyPlayingId(null);
@@ -498,21 +526,27 @@ export default function ChatInterface({
         isVoice: m.isVoice || false,
       }));
 
-      console.log("[ChatInterface] Sending:", {
-        processed_module_id: processedModuleId,
-        user_message: text,
-        user_id: userId,
-        company_id: companyId,
-        chat_history_length: chat_history.length,
-      });
+      const isSprintMode = chatMode === "sprint" && Boolean(sprintModuleId);
 
-      const res = await postModuleChat({
-        processed_module_id: processedModuleId,
+      const chatPayload: any = {
         user_message: text,
         chat_history,
         user_id: userId,
         company_id: companyId,
+      };
+
+      if (isSprintMode) {
+        chatPayload.module_id = sprintModuleId;
+      } else {
+        chatPayload.processed_module_id = processedModuleId;
+      }
+
+      console.log("[ChatInterface] Sending:", {
+        chatMode: isSprintMode ? "sprint" : "module",
+        ...chatPayload,
       });
+
+      const res = await postModuleChat(chatPayload);
 
       if (!res.success) throw new Error(res.message || "API returned failure");
 
@@ -530,7 +564,7 @@ export default function ChatInterface({
       console.error("[ChatInterface] error:", err);
       onMessagesChange((prev) => [
         ...prev,
-        { id: `e-${Date.now()}`, text: `?? ${errText}`, isUser: false },
+        { id: `e-${Date.now()}`, text: `⚠️ ${errText}`, isUser: false },
       ]);
       if (speechMode) {
         setVoiceState("idle");
@@ -560,7 +594,11 @@ export default function ChatInterface({
         nestedScrollEnabled={true}
       >
         {!hasConversation ? (
-          <EmptyGreeting moduleTitle={moduleTitle} />
+          <EmptyGreeting
+            chatMode={chatMode}
+            moduleTitle={moduleTitle}
+            sprintTitle={sprintTitle}
+          />
         ) : (
           messages.map((msg) => (
             <View key={msg.id} style={msg.isUser ? null : styles.aiMessageRow}>
