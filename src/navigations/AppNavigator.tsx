@@ -40,6 +40,9 @@ import ContentLibraryScreen from "../screens/home/ContentLibraryScreen";
 import ContentViewerScreen from "../screens/home/ContentViewerScreen";
 import SprintverseScreen from "../screens/home/SprintverseScreen";
 import ReportsScreen from "../screens/home/ReportsScreen";
+import RoleplayScreen from "../screens/home/roleplay/RoleplayScreen";
+import RoleplaySessionScreen from "../screens/home/roleplay/RoleplaySessionScreen";
+import RoleplayReportScreen from "../screens/home/roleplay/RoleplayReportScreen";
 
 // Components
 import AppHeader from "../components/navigation/AppHeader";
@@ -78,14 +81,17 @@ function BottomTabNavigator() {
           borderTopWidth: 1,
           borderTopColor: "#e5e7eb",
           backgroundColor: "#ffffff",
-          paddingBottom: insets.bottom + 8,
-          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom > 0 ? insets.bottom : 4,
+          paddingVertical: 8,
+          height: 52 + (insets.bottom > 0 ? insets.bottom : 0),
         },
         tabBarLabelStyle: {
-          fontSize: 12,
-          marginTop: 4,
+          fontSize: 11,
+          fontWeight: "600",
+          marginTop: 0,
+          marginBottom: 2,
         },
-        tabBarIcon: ({ color, size }: any) => {
+        tabBarIcon: ({ color }: any) => {
           let iconName: React.ComponentProps<
             typeof MaterialCommunityIcons
           >["name"];
@@ -111,7 +117,7 @@ function BottomTabNavigator() {
           }
 
           return (
-            <MaterialCommunityIcons name={iconName} size={size} color={color} />
+            <MaterialCommunityIcons name={iconName} size={22} color={color} />
           );
         },
       })}
@@ -323,6 +329,33 @@ function AppNavigatorContent() {
             <Stack.Screen
               name={APP_ROUTES.REPORTS}
               component={ReportsScreen}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.ROLEPLAY}
+              component={RoleplayScreen}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.ROLEPLAY_SESSION}
+              component={RoleplaySessionScreen}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.ROLEPLAY_REPORT}
+              component={RoleplayReportScreen}
               options={{
                 presentation: "card",
                 animation: "slide_from_right",

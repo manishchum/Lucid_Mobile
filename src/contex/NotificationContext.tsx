@@ -154,6 +154,9 @@ export const NotificationProvider = ({
         } else if (type === "task_assigned" || type === "task_updated") {
           // Navigate to Home screen -> Tasks tab
           navigate(APP_ROUTES.HOME as any, { initialTab: "tasks" });
+        } else if (type === "roleplay_assigned" || type === "roleplay_updated" || type === "roleplay") {
+          // Navigate to Roleplay screen
+          navigate(STACK_ROUTES.ROLEPLAY as any);
         } else {
           navigate("Notifications");
         }
@@ -477,6 +480,13 @@ export const NotificationProvider = ({
                 notifType === "new_sprint" ||
                 notifType === "sprint_assigned"
               ) {
+                eventBus.emit("refresh_dashboard");
+              } else if (
+                notifType === "roleplay_assigned" ||
+                notifType === "roleplay_updated" ||
+                notifType === "roleplay"
+              ) {
+                eventBus.emit("refresh_roleplay");
                 eventBus.emit("refresh_dashboard");
               } else if (
                 notifType === "new_content" ||

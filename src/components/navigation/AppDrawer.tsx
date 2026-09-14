@@ -18,7 +18,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useDrawer } from "../../contex/DrawerContext";
 import { useAuth } from "../../contex/AuthContext";
 import { getUserByPhone } from "../../api/users/Request";
-import { APP_ROUTES } from "../../navigations/Routes";
+import { APP_ROUTES, STACK_ROUTES } from "../../navigations/Routes";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 
 import SignOutModal from "../modals/SignOutModal";
@@ -138,6 +138,11 @@ export default function AppDrawer() {
     navigation.navigate(APP_ROUTES.REPORTS);
   };
 
+  const handleRoleplayPress = () => {
+    closeDrawer();
+    navigation.navigate(STACK_ROUTES.ROLEPLAY as never);
+  };
+
   const getInitials = (name: string) => {
     return name
       ? name
@@ -226,6 +231,20 @@ export default function AppDrawer() {
                   <MaterialCommunityIcons name="clipboard-text-outline" size={24} color="#6366F1" />
                 </View>
                 <Text style={styles.navItemText}>Reports</Text>
+                <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+
+            {hasFeature(FEATURES.ROLE_PLAY) && (
+              <TouchableOpacity
+                onPress={handleRoleplayPress}
+                activeOpacity={0.7}
+                style={[styles.navItem, { marginTop: 12 }]}
+              >
+                <View style={styles.navIconWrapper}>
+                  <MaterialCommunityIcons name="account-voice" size={24} color="#6366F1" />
+                </View>
+                <Text style={styles.navItemText}>Roleplay</Text>
                 <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
               </TouchableOpacity>
             )}
