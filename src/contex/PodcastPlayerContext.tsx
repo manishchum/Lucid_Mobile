@@ -146,6 +146,7 @@ export const PodcastPlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         if (isPlaying) {
           playerRef.current.pause();
         } else {
+          setIsMiniPlayerDismissed(false);
           playerRef.current.play();
         }
       } catch {}

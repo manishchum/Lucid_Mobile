@@ -159,8 +159,9 @@ const getGreeting = (): string => {
 const styles = createStyles();
 
 // ── Main screen ────────────────────────────────────────────────────────────────
-export default function HomeScreen({ navigation }: { navigation: any }) {
+export default function HomeScreen({ navigation, route }: { navigation: any; route?: any }) {
   const { cachedUser, phoneNumber } = useAuth();
+  const initialTab = route?.params?.initialTab;
 
   // ── Screen capture protection (blocks screenshots + recording) ──────────────
   const { isRecording } = useScreenProtection({ tag: "HomeScreen" });
@@ -248,6 +249,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     setRefreshing(true);
     try {
       await refetch(true);
+      eventBus.emit("refresh_dashboard");
     } catch (err) {
       console.error("[HomeScreen] Refresh error:", err);
     } finally {
@@ -565,6 +567,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             companyId={companyId ?? null}
             userName={user?.name ?? null}
             refreshKey={refreshKey}
+            initialTab={initialTab}
           />
         </ScrollView>
       </Animated.View>

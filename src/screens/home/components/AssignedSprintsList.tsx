@@ -443,7 +443,7 @@ export default function AssignedSprintsList({
                     processedModuleIds: plan.processedModuleIds ?? [],
                   });
                   setActiveModule(null);
-                  navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT });
+                  navigation.navigate("AppTabs", { screen: STACK_ROUTES.SPRINT }); 
                 };
 
                 const handleTakeBaseline = () => {

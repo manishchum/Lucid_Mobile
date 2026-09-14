@@ -528,6 +528,7 @@ export const recordUserLogin = async (userId: string): Promise<any> => {
 
 export const getModuleProgress = async (
   userId: string,
+  options?: { timeoutMs?: number; retries?: number },
 ): Promise<ModuleProgress> => {
   try {
     const url = `${API_BASE_URL}/module-progress/user/${userId}`;
@@ -535,7 +536,8 @@ export const getModuleProgress = async (
     const json = await apiFetch<any>(url, {
       method: "GET",
       userId,
-      noCache: true,
+      timeoutMs: options?.timeoutMs ?? 25000,
+      retries: options?.retries ?? 1,
     });
     logger.debug(
       "[Request] getModuleProgress ✅ count:",
@@ -545,7 +547,7 @@ export const getModuleProgress = async (
     );
     return json;
   } catch (error) {
-    logger.error("[Request] Error fetching module progress:", error);
+    logger.warn("[Request] Error fetching module progress:", error);
     throw error;
   }
 };
@@ -1062,6 +1064,14 @@ export const getDashboardSummary = async (
   }
 };
 
+const isUuidFormat = (val?: string | null): boolean =>
+  Boolean(
+    val &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        val,
+      ),
+  );
+
 // 14. Get tasks (Task Manager) — GET /task-manager/tasks/user/{userId}
 
 export const getTasks = async (
@@ -1069,13 +1079,22 @@ export const getTasks = async (
   companyId: string,
 ): Promise<TasksResponse> => {
   try {
-    const url = `${API_BASE_URL}/task-manager/tasks/user/${userId}`;
+    let resolvedUserId = userId;
+    if (resolvedUserId && !isUuidFormat(resolvedUserId)) {
+      try {
+        const res = await getUserByEmail(resolvedUserId);
+        if (res?.user?.user_id) resolvedUserId = res.user.user_id;
+      } catch (e) {
+        logger.warn("[Request] getTasks — Failed to resolve userId to UUID:", e);
+      }
+    }
+    const url = `${API_BASE_URL}/task-manager/tasks/user/${resolvedUserId}`;
     logger.debug("[Request] getTasks →", url);
     const json = await apiFetch<any>(url, {
       method: "GET",
-      userId,
+      userId: resolvedUserId,
+      companyId,
       noCache: true,
-      headers: { "X-Company-ID": companyId },
     });
     logger.debug(
       "[Request] getTasks ✅ total:",
@@ -1322,6 +1341,16 @@ export const submitFormatAnswer = async (
     formatAnswer,
   } = input;
 
+  let resolvedUserId = userId;
+  if (resolvedUserId && !isUuidFormat(resolvedUserId)) {
+    try {
+      const res = await getUserByEmail(resolvedUserId);
+      if (res?.user?.user_id) resolvedUserId = res.user.user_id;
+    } catch (e) {
+      logger.warn("[Request] submitFormatAnswer — Failed to resolve userId to UUID:", e);
+    }
+  }
+
   const usesTextAnalysis = TEXT_ANALYSIS_FORMATS.includes(format);
   const url = usesTextAnalysis
     ? `${API_BASE_URL}/text-analysis/submit`
@@ -1330,7 +1359,7 @@ export const submitFormatAnswer = async (
   const body: Record<string, any> = {
     task_id: taskId,
     assignment_id: assignmentId,
-    user_id: userId,
+    user_id: resolvedUserId,
     max_score: maxScore,
     score: score,
     submission_type: format,
@@ -1347,25 +1376,25 @@ export const submitFormatAnswer = async (
   } else if (format === "image") {
     let imgUrl = formatAnswer.image_url ?? "";
     if (imgUrl && (imgUrl.startsWith("file://") || imgUrl.startsWith("file:/"))) {
-      imgUrl = await uploadMediaToStorage(imgUrl, "image/jpeg", { userId });
+      imgUrl = await uploadMediaToStorage(imgUrl, "image/jpeg", { userId: resolvedUserId ?? undefined });
     }
     body.image_url = imgUrl;
   } else if (format === "video") {
     let vidUrl = formatAnswer.video_url ?? "";
     if (vidUrl && (vidUrl.startsWith("file://") || vidUrl.startsWith("file:/"))) {
-      vidUrl = await uploadMediaToStorage(vidUrl, "video/mp4", { userId });
+      vidUrl = await uploadMediaToStorage(vidUrl, "video/mp4", { userId: resolvedUserId ?? undefined });
     }
     body.video_url = vidUrl;
   } else if (format === "audio") {
     let audUrl = formatAnswer.audio_url ?? "";
     if (audUrl && (audUrl.startsWith("file://") || audUrl.startsWith("file:/"))) {
-      audUrl = await uploadMediaToStorage(audUrl, "audio/m4a", { userId });
+      audUrl = await uploadMediaToStorage(audUrl, "audio/m4a", { userId: resolvedUserId ?? undefined });
     }
     body.audio_url = audUrl;
   }
 
   try {
-    const headers = await getHeaders(userId);
+    const headers = await getHeaders(resolvedUserId ?? undefined);
     logger.debug("[Request] submitFormatAnswer →", url, {
       task_id: taskId,
       format,
@@ -1411,7 +1440,16 @@ export const submitTaskAnswer = async (
   payload: TaskSubmissionPayload,
 ): Promise<TaskSubmissionResponse> => {
   try {
-    const headers = await getHeaders(userId);
+    let resolvedUserId = payload.user_id || userId;
+    if (resolvedUserId && !isUuidFormat(resolvedUserId)) {
+      try {
+        const res = await getUserByEmail(resolvedUserId);
+        if (res?.user?.user_id) resolvedUserId = res.user.user_id;
+      } catch (e) {
+        logger.warn("[Request] submitTaskAnswer — Failed to resolve userId to UUID:", e);
+      }
+    }
+    const headers = await getHeaders(resolvedUserId ?? undefined);
     const url = `${API_BASE_URL}/task-manager/tasks/submit`;
 
     // Map internal submission_type → the wire value the API actually expects.
@@ -1424,7 +1462,7 @@ export const submitTaskAnswer = async (
     const body: Record<string, any> = {
       task_id: payload.task_id,
       assignment_id: payload.assignment_id,
-      user_id: payload.user_id,
+      user_id: resolvedUserId,
       submission_type: wireSubmissionType,
       max_score: payload.max_score,
       score: payload.score,
@@ -1505,6 +1543,7 @@ export const getLeaderboardHighlight = async (
     const json = await apiFetch<any>(url, {
       method: "GET",
       userId,
+      companyId,
       noCache: true,
     });
     return json;

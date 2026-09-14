@@ -18,7 +18,7 @@ interface NotificationsModalProps {
 }
 
 export default function NotificationsModal({ isOpen, onClose }: NotificationsModalProps) {
-  const { notifications, isLoading, fetchNotifications, markAsRead, markAllAsRead } = useNotifications();
+  const { notifications, isLoading, fetchNotifications, markAsRead, markAllAsRead, handleSprintNotificationClick } = useNotifications();
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -37,6 +37,15 @@ export default function NotificationsModal({ isOpen, onClose }: NotificationsMod
     if (!item.read) {
       await markAsRead(item.id);
     }
+    onClose();
+    const notifType = item.type || "";
+    const val = item.metadata?.sprint_id || item.metadata?.task_id || item.metadata?.id;
+    const titleVal = item.metadata?.title || item.metadata?.assignment_title;
+    handleSprintNotificationClick(
+      val ? String(val) : undefined,
+      titleVal ? String(titleVal) : undefined,
+      notifType
+    );
   };
 
   const formatTime = (isoString: string) => {
@@ -64,10 +73,11 @@ export default function NotificationsModal({ isOpen, onClose }: NotificationsMod
   };
 
   const renderItem = ({ item }: { item: Notification }) => {
-    const isSprint = item.type === "sprint_assigned";
-    const iconName = isSprint ? "lightning-bolt" : "brush";
-    const iconColor = isSprint ? "#6366F1" : "#EC4899";
-    const iconBg = isSprint ? "#EEF2FF" : "#FDF2F8";
+    const isSprint = item.type === "sprint_assigned" || item.type === "sprint_updated";
+    const isTask = item.type === "task_assigned" || item.type === "task_updated";
+    const iconName = isSprint ? "lightning-bolt" : isTask ? "clipboard-text-outline" : "bell-outline";
+    const iconColor = isSprint ? "#6366F1" : isTask ? "#10B981" : "#EC4899";
+    const iconBg = isSprint ? "#EEF2FF" : isTask ? "#D1FAE5" : "#FDF2F8";
 
     return (
       <TouchableOpacity

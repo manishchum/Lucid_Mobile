@@ -21,15 +21,13 @@ import { STACK_ROUTES, APP_ROUTES } from "../../navigations/Routes";
 import { useAuth } from "../../contex/AuthContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
-import { useModuleProgress, useGetTrainingPlan } from "../../api/users/Hooks";
+import { useModuleProgress, useGetTrainingPlan, useGetUserByPhone, useGetDashboardSummary } from "../../api/users/Hooks";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 import { useActiveSprint } from "../../contex/ActiveSprintContext";
 import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 import { eventBus } from "../../utils/EventBus";
 import { useRealtimeSubscription } from "../../hooks/useRealtimeSubscription";
 import { logger } from "../../utils/UnifiedLogger";
-
-
 
 if (
 	Platform.OS === "android" &&
@@ -41,14 +39,64 @@ if (
 
 export default function SprintScreen({
 	navigation,
+	route,
 }: {
 	navigation: any;
+	route?: any;
 }) {
 	const insets = useSafeAreaInsets();
-	const { cachedUser } = useAuth();
+	const { cachedUser, phoneNumber } = useAuth();
 	const { hasFeature } = useFeatureGating();
 	const showStudio = hasFeature(FEATURES.LUCID_STUDIO);
-	const { activeSprint, setActiveModule } = useActiveSprint();
+	const { activeSprint, setActiveSprint, setActiveModule } = useActiveSprint();
+
+	const paramSprintId = route?.params?.sprintId || route?.params?.moduleId || route?.params?.id;
+	const paramAssignmentTitle = route?.params?.assignmentTitle;
+
+	const { user: fetchedUser } = useGetUserByPhone(
+		cachedUser?.userId ? null : cachedUser?.phone ?? phoneNumber ?? null,
+	);
+	const userId = cachedUser?.userId ?? fetchedUser?.user_id ?? null;
+	const companyId = cachedUser?.companyId ?? fetchedUser?.company_id ?? null;
+
+	const { resolvedPlanCards } = useGetDashboardSummary(
+		userId,
+		companyId,
+	);
+
+	// Auto-mount active sprint if null or if specific sprintId passed via navigation
+	React.useEffect(() => {
+		if (!resolvedPlanCards || resolvedPlanCards.length === 0) return;
+
+		let targetCard = null;
+		if (paramSprintId || paramAssignmentTitle) {
+			targetCard = resolvedPlanCards.find(
+				(c) =>
+					c.planKey === paramSprintId ||
+					c.moduleId === paramSprintId ||
+					(paramAssignmentTitle && c.title.toLowerCase().includes(paramAssignmentTitle.toLowerCase())) ||
+					(paramAssignmentTitle && paramAssignmentTitle.toLowerCase().includes(c.title.toLowerCase()))
+			);
+		}
+
+		if (!targetCard && !activeSprint) {
+			targetCard = resolvedPlanCards[0];
+		}
+
+		if (targetCard) {
+			if (!activeSprint || activeSprint.planId !== targetCard.planKey || activeSprint.moduleId !== targetCard.moduleId) {
+				setActiveSprint({
+					moduleId: targetCard.moduleId,
+					planId: targetCard.planKey,
+					planTitle: targetCard.title,
+					modules: targetCard.modules,
+					tips: targetCard.tips,
+					processedModuleIds: targetCard.processedModuleIds ?? [],
+				});
+				setActiveModule(null);
+			}
+		}
+	}, [resolvedPlanCards, paramSprintId, paramAssignmentTitle, activeSprint, setActiveSprint, setActiveModule]);
 
 	// ── Active Sprint Context params ──────────────────────────────────
 	const moduleId: string = activeSprint?.moduleId ?? "";

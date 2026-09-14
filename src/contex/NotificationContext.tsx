@@ -34,7 +34,7 @@ import { useAuth } from "./AuthContext";
 import { eventBus } from "../utils/EventBus";
 import { navigate } from "../navigations/NavigationService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { STACK_ROUTES } from "../navigations/Routes";
+import { APP_ROUTES, STACK_ROUTES } from "../navigations/Routes";
 import { logger } from "../utils/UnifiedLogger";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 
@@ -69,8 +69,9 @@ interface NotificationContextType {
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   handleSprintNotificationClick: (
-    sprintId: string,
+    sprintId?: string,
     assignmentTitle?: string,
+    notifType?: string,
   ) => Promise<void>;
 }
 
@@ -118,13 +119,20 @@ export const NotificationProvider = ({
       if (newNotif && newNotif.id && newNotif.title) {
         setNotifications((prev) => [newNotif, ...prev]);
         setUnreadCount((count) => count + 1);
-        showToast(newNotif.title, newNotif.message || "");
+        showToast(newNotif.title, newNotif.message || "", () => {
+          const val = newNotif.metadata?.sprint_id || newNotif.metadata?.task_id || newNotif.metadata?.id;
+          const titleVal = newNotif.metadata?.title || newNotif.metadata?.assignment_title;
+          handleSprintNotificationClick(
+            val ? String(val) : undefined,
+            titleVal ? String(titleVal) : undefined,
+            newNotif.type
+          );
+        });
         eventBus.emit("refresh_dashboard");
+        eventBus.emit("refresh_tasks");
       }
     },
   });
-
-
 
   /**
    * Navigates to the correct screen based on the notification payload.
@@ -132,6 +140,7 @@ export const NotificationProvider = ({
    *
    * Dispatch table:
    *   sprint_assigned | sprint_updated → Sprint tab
+   *   task_assigned   | task_updated   → Home screen Tasks tab
    *   (default)                        → Notifications screen
    */
   const handleSprintNotificationClick = useCallback(
@@ -139,9 +148,12 @@ export const NotificationProvider = ({
       try {
         const type = notifType ?? "";
 
-        if (type === "sprint_assigned" || type === "sprint_updated" || sprintId) {
+        if (type === "sprint_assigned" || type === "sprint_updated" || (sprintId && !type)) {
           // Navigate to the Sprint tab so the user sees their assigned sprint
-          navigate(STACK_ROUTES.SPRINT as any);
+          navigate(STACK_ROUTES.SPRINT as any, { sprintId, assignmentTitle });
+        } else if (type === "task_assigned" || type === "task_updated") {
+          // Navigate to Home screen -> Tasks tab
+          navigate(APP_ROUTES.HOME as any, { initialTab: "tasks" });
         } else {
           navigate("Notifications");
         }

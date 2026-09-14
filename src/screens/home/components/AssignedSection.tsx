@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import AssignedSprintsList, {
 import AssignedTasksList from "./AssignedTasksList";
 import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
 import { useRealtimeSubscription } from "../../../hooks/useRealtimeSubscription";
+import { eventBus } from "../../../utils/EventBus";
 
 type TabId = "sprints" | "tasks";
 type SprintSortOption = "title" | "dueDate" | "progress";
@@ -50,6 +51,7 @@ interface AssignedSectionProps {
   companyId: string | null;
   userName?: string | null;
   refreshKey?: number;
+  initialTab?: TabId;
 }
 
 export default function AssignedSection({
@@ -59,8 +61,15 @@ export default function AssignedSection({
   companyId,
   userName,
   refreshKey = 0,
+  initialTab,
 }: AssignedSectionProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("sprints");
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab || "sprints");
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const [optimisticCompletedIds, setOptimisticCompletedIds] = useState<
     Set<string>
@@ -84,6 +93,35 @@ export default function AssignedSection({
     companyId,
     showTaskManagement,
   );
+
+  // ── EventBus & RefreshKey Listeners ─────────────────────────────────
+  useEffect(() => {
+    if (refreshKey > 0) {
+      refetch();
+    }
+  }, [refreshKey, refetch]);
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      refetch();
+    };
+    eventBus.on("refresh_dashboard", handleRefresh);
+    eventBus.on("refresh_tasks", handleRefresh);
+
+    return () => {
+      eventBus.off("refresh_dashboard", handleRefresh);
+      eventBus.off("refresh_tasks", handleRefresh);
+    };
+  }, [refetch]);
+
+  // ── 15-Second Polling Fallback ──────────────────────────────────────
+  useEffect(() => {
+    if (!showTaskManagement) return;
+    const interval = setInterval(() => {
+      refetch();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [showTaskManagement, refetch]);
 
   // ── Real-time task change listeners ─────────────────────────────────
   useRealtimeSubscription({

@@ -1593,7 +1593,7 @@ export const useModuleProgress = (
   const [error, setError] = useState<Error | null>(null);
 
   const fetchProgressData = useCallback(
-    async (showSpinner: boolean) => {
+    async (showSpinner: boolean, silent: boolean = false) => {
       if (!userId) return;
       if (showSpinner) setIsLoading(true);
       setError(null);
@@ -1653,7 +1653,10 @@ export const useModuleProgress = (
           err instanceof Error
             ? err
             : new Error("Failed to fetch module progress");
-        logger.error("[Hook] fetchProgressData error:", error.message);
+        logger.warn("[Hook] fetchProgressData error:", error.message);
+        if (silent) {
+          return;
+        }
         throw error;
       } finally {
         if (showSpinner) setIsLoading(false);
@@ -1689,9 +1692,9 @@ export const useModuleProgress = (
         logger.warn("[Hook] Failed to load cached module progress:", err);
       }
 
-      // 2. Fetch fresh data from network
+      // 2. Fetch fresh data from network (silent if cache exists)
       try {
-        await fetchProgressData(!hasCache);
+        await fetchProgressData(!hasCache, hasCache);
       } catch (err) {
         if (!hasCache) {
           setError(
@@ -1711,7 +1714,7 @@ export const useModuleProgress = (
       logger.debug(
         "[Hook] EventBus triggered refresh_dashboard in useModuleProgress. Refreshing silently...",
       );
-      fetchProgressData(false).catch(() => {});
+      fetchProgressData(false, true).catch(() => {});
     };
     return eventBus.on("refresh_dashboard", handleRefresh);
   }, [fetchProgressData]);
