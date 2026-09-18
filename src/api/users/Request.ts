@@ -147,7 +147,6 @@ export const postModuleChat = async (
     method: "POST",
     userId: data.user_id,
     body: JSON.stringify(payload),
-    timeoutMs: 60_000,
   });
 
   logger.info("[Request] postModuleChat success");
@@ -1097,8 +1096,7 @@ export const getTasks = async (
       method: "GET",
       userId: targetId === "me" ? undefined : targetId,
       companyId,
-      noCache: true,
-      timeoutMs: 10_000,
+      timeoutMs: 30_000,
     });
     logger.debug(
       "[Request] getTasks ✅ total:",

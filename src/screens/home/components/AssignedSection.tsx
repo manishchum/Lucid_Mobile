@@ -114,14 +114,7 @@ export default function AssignedSection({
     };
   }, [refetch]);
 
-  // ── 15-Second Polling Fallback ──────────────────────────────────────
-  useEffect(() => {
-    if (!showTaskManagement) return;
-    const interval = setInterval(() => {
-      refetch();
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [showTaskManagement, refetch]);
+
 
   // ── Real-time task change listeners ─────────────────────────────────
   useRealtimeSubscription({

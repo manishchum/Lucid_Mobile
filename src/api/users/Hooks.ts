@@ -1834,12 +1834,17 @@ export const useGetTasks = (
   const [isRefetching, setIsRefetching] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  const tasksRef = useRef(tasks);
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+
   const fetchTasks = useCallback(
     async (isSilent = false) => {
       if (!userId || !companyId || !enabled) return;
       if (isOnline === false) return;
 
-      if (!isSilent && tasks.length === 0) {
+      if (!isSilent && tasksRef.current.length === 0) {
         setIsLoading(true);
       } else {
         setIsRefetching(true);
@@ -1855,7 +1860,7 @@ export const useGetTasks = (
           appStorage.setObject(cacheKey, fetchedTasks);
         } catch {}
       } catch (err) {
-        if (tasks.length === 0 && !isSilent) {
+        if (tasksRef.current.length === 0 && !isSilent) {
           setError(err instanceof Error ? err : new Error("Failed to fetch tasks"));
         } else {
           logger.warn("[useGetTasks] Background refetch failed, keeping pre-fetched/cached tasks:", err);
@@ -1865,7 +1870,7 @@ export const useGetTasks = (
         setIsRefetching(false);
       }
     },
-    [userId, companyId, enabled, isOnline, cacheKey, tasks.length],
+    [userId, companyId, enabled, isOnline, cacheKey],
   );
 
   useEffect(() => {
@@ -1873,12 +1878,17 @@ export const useGetTasks = (
 
     const mem = memoryDashboardCache.get(userId);
     const hasPrefetchedTasks = Array.isArray(mem?.data?.assigned_tasks);
-    const hasTasksInMemory = tasks.length > 0;
+    const hasTasksInMemory = tasksRef.current.length > 0;
 
     // Silent background refetch if we already have pre-fetched/cached tasks
     const isSilent = hasPrefetchedTasks || hasTasksInMemory;
     fetchTasks(isSilent);
   }, [userId, companyId, enabled, fetchTasks]);
+
+  const refetch = useCallback(
+    (isSilent = true) => fetchTasks(isSilent),
+    [fetchTasks],
+  );
 
   return {
     tasks,
@@ -1887,7 +1897,7 @@ export const useGetTasks = (
     isRefetching,
     isOffline: isOnline === false,
     error,
-    refetch: (isSilent = true) => fetchTasks(isSilent),
+    refetch,
   };
 };
 

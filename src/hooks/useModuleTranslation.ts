@@ -302,6 +302,8 @@ function parseHtmlContent(html: string): ParsedSection[] {
 
 // ─── Batch Translation Utilities ─────────────────────────────────────────────
 
+const translationMemoryCache = new Map<string, string>();
+
 async function translateTextBatch(
   texts: string[],
   targetLang: string = "hi",
@@ -310,45 +312,74 @@ async function translateTextBatch(
   if (uniqueTexts.length === 0) return [];
 
   const translationMap: Record<string, string> = {};
-  const chunkSize = 5; // Safe URL limit
+  const textsToFetch: string[] = [];
 
-  for (let i = 0; i < uniqueTexts.length; i += chunkSize) {
-    const chunk = uniqueTexts.slice(i, i + chunkSize);
-    try {
-      const joinedTexts = chunk.join("\n");
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(joinedTexts)}`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+  // Check in-memory cache first
+  uniqueTexts.forEach((text) => {
+    const cacheKey = `${targetLang}:${text}`;
+    if (translationMemoryCache.has(cacheKey)) {
+      translationMap[text] = translationMemoryCache.get(cacheKey)!;
+    } else {
+      textsToFetch.push(text);
+    }
+  });
+
+  if (textsToFetch.length > 0) {
+    const chunkSize = 12; // Larger chunk size to reduce network call count
+
+    for (let i = 0; i < textsToFetch.length; i += chunkSize) {
+      const chunk = textsToFetch.slice(i, i + chunkSize);
+      try {
+        const joinedTexts = chunk.join("\n");
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(joinedTexts)}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          if (response.status === 429) {
+            // Silently fallback to original text on rate limit
+            chunk.forEach((text) => {
+              translationMap[text] = text;
+            });
+            continue;
+          }
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        const segments = data[0] || [];
+
+        segments.forEach((seg: any) => {
+          if (seg && seg[0] !== undefined && seg[1] !== undefined) {
+            const translatedText = String(seg[0]).replace(/\n$/, "");
+            const originalText = String(seg[1]).replace(/\n$/, "");
+            if (originalText.trim()) {
+              const orig = originalText.trim();
+              const trans = translatedText.trim();
+              translationMap[orig] = trans;
+              translationMemoryCache.set(`${targetLang}:${orig}`, trans);
+            }
+          }
+        });
+
+        // Positional fallback
+        chunk.forEach((originalText, index) => {
+          const trimmed = originalText.trim();
+          if (!translationMap[trimmed] && segments[index]) {
+            const trans = String(segments[index][0] || "").replace(/\n$/, "").trim();
+            if (trans) {
+              translationMap[trimmed] = trans;
+              translationMemoryCache.set(`${targetLang}:${trimmed}`, trans);
+            }
+          }
+        });
+
+        // Small delay between batch calls to prevent hitting 429 rate limit
+        if (i + chunkSize < textsToFetch.length) {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+        }
+      } catch (err) {
+        chunk.forEach((text) => {
+          translationMap[text.trim()] = text;
+        });
       }
-      const data = await response.json();
-      const segments = data[0] || [];
-
-      segments.forEach((seg: any) => {
-        if (seg && seg[0] !== undefined && seg[1] !== undefined) {
-          const translatedText = String(seg[0]).replace(/\n$/, "");
-          const originalText = String(seg[1]).replace(/\n$/, "");
-          if (originalText.trim()) {
-            translationMap[originalText.trim()] = translatedText.trim();
-          }
-        }
-      });
-
-      // Positional fallback to prevent missing mappings
-      chunk.forEach((originalText, index) => {
-        const trimmed = originalText.trim();
-        if (!translationMap[trimmed] && segments[index]) {
-          const trans = String(segments[index][0] || "").replace(/\n$/, "").trim();
-          if (trans) {
-            translationMap[trimmed] = trans;
-          }
-        }
-      });
-    } catch (err) {
-      console.error("[Translation Batch] Error translating chunk:", err, chunk);
-      chunk.forEach((text) => {
-        translationMap[text.trim()] = text;
-      });
     }
   }
 

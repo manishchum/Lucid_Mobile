@@ -11,6 +11,7 @@ import {
   Modal,
   FlatList,
 } from "react-native";
+import Slider from "@react-native-community/slider";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ScreenOrientation from "expo-screen-orientation";
@@ -74,6 +75,10 @@ export default function VideoSection({
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubPosition, setScrubPosition] = useState(0);
+  const isScrubbingRef = useRef(false);
+
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [screenDims, setScreenDims] = useState(Dimensions.get("window"));
   const [showControls, setShowControls] = useState(true);
@@ -107,37 +112,89 @@ export default function VideoSection({
 
   const player = useVideoPlayer(activeVideoUrl ?? "", (p) => {
     p.loop = false;
+    p.timeUpdateEventInterval = 0.25;
   });
+
+  const isInitialMount = useRef(true);
+  const pendingSeekPosRef = useRef<number | null>(null);
+  const pendingWasPlayingRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (!player) return;
 
+    player.timeUpdateEventInterval = 0.25;
+
     const timeSub = player.addListener("timeUpdate", (evt: any) => {
-      setPositionMs(Math.floor(evt.currentTime * 1000));
+      if (!isScrubbingRef.current) {
+        const curSec = evt?.currentTime ?? player.currentTime ?? 0;
+        setPositionMs(Math.floor(curSec * 1000));
+      }
       if (player.duration > 0) {
+        setDurationMs(Math.floor(player.duration * 1000));
+      }
+    });
+
+    const sourceLoadSub = player.addListener("sourceLoad", (evt: any) => {
+      if (evt?.duration > 0) {
+        setDurationMs(Math.floor(evt.duration * 1000));
+      } else if (player.duration > 0) {
         setDurationMs(Math.floor(player.duration * 1000));
       }
     });
 
     const statusSub = player.addListener("statusChange", (evt: any) => {
       const status = evt?.status ?? evt;
-      setIsLoaded(status === "readyToPlay");
+      const ready = status === "readyToPlay";
+      setIsLoaded(ready);
       setIsBuffering(status === "loading");
-      if (status === "readyToPlay") setIsTransitioning(false);
+
+      if (ready) {
+        setIsTransitioning(false);
+        if (player.duration > 0) {
+          setDurationMs(Math.floor(player.duration * 1000));
+        }
+
+        if (pendingSeekPosRef.current !== null) {
+          const targetSec = pendingSeekPosRef.current;
+          pendingSeekPosRef.current = null;
+          if (targetSec > 0) {
+            try {
+              player.currentTime = targetSec;
+            } catch (err) {
+              console.warn("[VideoSection] Error seeking after replace:", err);
+            }
+          }
+        }
+
+        if (pendingWasPlayingRef.current) {
+          pendingWasPlayingRef.current = false;
+          try {
+            player.play();
+          } catch (err) {
+            console.warn("[VideoSection] Error playing after replace:", err);
+          }
+        }
+      }
     });
 
     const playingSub = player.addListener("playingChange", (evt: any) => {
       setIsPlaying(evt?.isPlaying ?? evt);
     });
 
+    const endSub = player.addListener("playToEnd", () => {
+      setIsPlaying(false);
+    });
+
     return () => {
       timeSub.remove();
+      sourceLoadSub.remove();
       statusSub.remove();
       playingSub.remove();
+      endSub.remove();
     };
   }, [player]);
 
-  const progress = durationMs > 0 ? positionMs / durationMs : 0;
+  const displayPosition = isScrubbing ? scrubPosition : positionMs;
 
   // Keep screen awake while video is playing
   useEffect(() => {
@@ -151,11 +208,41 @@ export default function VideoSection({
     };
   }, [isPlaying]);
 
-  // Reset on language switch — show transition overlay while new source loads
+  // Handle active video URL / language switch
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    if (!player || !activeVideoUrl) {
+      setIsTransitioning(false);
+      setIsBuffering(false);
+      return;
+    }
+
+    const wasPlaying = isPlaying;
+    const currentPosSec = positionMs > 0 ? positionMs / 1000 : 0;
+
+    pendingWasPlayingRef.current = wasPlaying;
+    pendingSeekPosRef.current = currentPosSec;
+
     setIsTransitioning(true);
-    setIsBuffering(false);
-  }, [activeVideoUrl]);
+    setIsBuffering(true);
+
+    try {
+      if (wasPlaying) {
+        try {
+          player.pause();
+        } catch {}
+      }
+      player.replace(activeVideoUrl);
+    } catch (err) {
+      console.warn("[VideoSection] Failed to replace video source:", err);
+      setIsTransitioning(false);
+      setIsBuffering(false);
+    }
+  }, [activeVideoUrl, player]);
 
   // Track screen size changes (orientation flips)
   useEffect(() => {
@@ -194,6 +281,7 @@ export default function VideoSection({
   }, [isFullscreen]);
 
   const formatTime = (ms: number) => {
+    if (!ms || isNaN(ms) || ms < 0) return "0:00";
     const totalSec = Math.floor(ms / 1000);
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
@@ -212,7 +300,15 @@ export default function VideoSection({
 
   const seekBy = async (seconds: number) => {
     if (!player) return;
-    player.seekBy(seconds);
+    try {
+      const current = player.currentTime ?? 0;
+      const dur = player.duration ?? 0;
+      const target = Math.max(0, Math.min(dur > 0 ? dur : 999999, current + seconds));
+      player.currentTime = target;
+      setPositionMs(Math.floor(target * 1000));
+    } catch (err) {
+      console.warn("[VideoSection] seekBy error:", err);
+    }
     resetControlsTimer();
   };
 
@@ -364,24 +460,44 @@ export default function VideoSection({
                   { paddingBottom: Math.max(insets.bottom, 12) },
                 ]}
               >
-                <View style={fsStyles.progressTrack}>
-                  <View
-                    style={[
-                      fsStyles.progressFill,
-                      { width: `${progress * 100}%` as any },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      fsStyles.progressThumb,
-                      { left: `${progress * 100}%` as any },
-                    ]}
+                <View style={fsStyles.sliderContainer}>
+                  <Slider
+                    style={fsStyles.slider}
+                    minimumValue={0}
+                    maximumValue={durationMs > 0 ? durationMs : 1}
+                    value={displayPosition}
+                    minimumTrackTintColor="#DB2777"
+                    maximumTrackTintColor="rgba(255,255,255,0.3)"
+                    thumbTintColor="#DB2777"
+                    disabled={!isLoaded || durationMs === 0}
+                    onSlidingStart={() => {
+                      isScrubbingRef.current = true;
+                      setIsScrubbing(true);
+                      setScrubPosition(positionMs);
+                      if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+                    }}
+                    onValueChange={(val) => {
+                      setScrubPosition(val);
+                    }}
+                    onSlidingComplete={(val) => {
+                      isScrubbingRef.current = false;
+                      setIsScrubbing(false);
+                      setPositionMs(val);
+                      if (player) {
+                        try {
+                          player.currentTime = val / 1000;
+                        } catch (err) {
+                          console.warn("[VideoSection] Seek error:", err);
+                        }
+                      }
+                      resetControlsTimer();
+                    }}
                   />
                 </View>
 
                 <View style={fsStyles.timeRow}>
                   <Text style={fsStyles.timeText}>
-                    {formatTime(positionMs)}
+                    {formatTime(displayPosition)}
                   </Text>
                   <Text style={fsStyles.timeSep}> / </Text>
                   <Text style={fsStyles.timeText}>
@@ -417,9 +533,9 @@ export default function VideoSection({
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Explainer Video</Text>
-            {durationMs > 0 && (
+            {/* {durationMs > 0 && (
               <Text style={styles.duration}>{formatTime(durationMs)}</Text>
-            )}
+            )} */}
           </View>
           <MaterialCommunityIcons
             name={isExpanded ? "chevron-up" : "chevron-down"}
@@ -490,19 +606,43 @@ export default function VideoSection({
                   </TouchableOpacity>
                 </View>
 
-                {/* Progress bar */}
-                <View style={styles.progressTrack}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      { width: `${progress * 100}%` },
-                    ]}
+                {/* Progress bar slider */}
+                <View style={styles.sliderContainer}>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={0}
+                    maximumValue={durationMs > 0 ? durationMs : 1}
+                    value={displayPosition}
+                    minimumTrackTintColor="#DB2777"
+                    maximumTrackTintColor="#E2E8F0"
+                    thumbTintColor="#DB2777"
+                    disabled={!isLoaded || durationMs === 0}
+                    onSlidingStart={() => {
+                      isScrubbingRef.current = true;
+                      setIsScrubbing(true);
+                      setScrubPosition(positionMs);
+                    }}
+                    onValueChange={(val) => {
+                      setScrubPosition(val);
+                    }}
+                    onSlidingComplete={(val) => {
+                      isScrubbingRef.current = false;
+                      setIsScrubbing(false);
+                      setPositionMs(val);
+                      if (player) {
+                        try {
+                          player.currentTime = val / 1000;
+                        } catch (err) {
+                          console.warn("[VideoSection] Seek error:", err);
+                        }
+                      }
+                    }}
                   />
                 </View>
 
                 {/* Controls row */}
                 <View style={styles.controlsRow}>
-                  <Text style={styles.timeText}>{formatTime(positionMs)}</Text>
+                  <Text style={styles.timeText}>{formatTime(displayPosition)}</Text>
 
                   <View style={styles.centerControls}>
                     <TouchableOpacity
@@ -612,22 +752,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  progressTrack: {
-    height: 3,
-    backgroundColor: "#E2E8F0",
-    borderRadius: 2,
-    marginTop: 10,
-    overflow: "hidden",
+  sliderContainer: {
+    marginTop: 6,
+    marginHorizontal: -4,
   },
-  progressFill: { height: "100%", backgroundColor: "#DB2777", borderRadius: 2 },
+  slider: {
+    width: "100%",
+    height: 30,
+  },
 
   controlsRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 10,
+    marginTop: 6,
   },
-  timeText: { fontSize: 12, fontWeight: "600", color: "#64748B", width: 40 },
+  timeText: { fontSize: 12, fontWeight: "600", color: "#64748B", minWidth: 45, textAlign: "center" },
   centerControls: { flexDirection: "row", alignItems: "center", gap: 16 },
   ctrlBtn: {
     width: 40,
@@ -697,23 +837,13 @@ const fsStyles = StyleSheet.create({
     paddingTop: 8,
     backgroundColor: "rgba(0,0,0,0.5)",
   },
-  progressTrack: {
-    height: 4,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    borderRadius: 2,
-    marginBottom: 10,
-    overflow: "visible",
-    position: "relative",
+  sliderContainer: {
+    marginHorizontal: -4,
+    marginBottom: 4,
   },
-  progressFill: { height: "100%", backgroundColor: "#DB2777", borderRadius: 2 },
-  progressThumb: {
-    position: "absolute",
-    top: -4,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: "#DB2777",
-    marginLeft: -6,
+  slider: {
+    width: "100%",
+    height: 34,
   },
   timeRow: { flexDirection: "row", alignItems: "center", paddingBottom: 2 },
   timeText: { fontSize: 13, fontWeight: "600", color: "rgba(255,255,255,0.9)" },
@@ -723,3 +853,4 @@ const fsStyles = StyleSheet.create({
     marginHorizontal: 2,
   },
 });
+
