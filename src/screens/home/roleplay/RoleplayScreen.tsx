@@ -144,7 +144,7 @@ export default function RoleplayScreen({ navigation }: { navigation: any }) {
       </View>
 
       {/* Quota Banner */}
-      <View style={styles.quotaBanner}>
+      {/* <View style={styles.quotaBanner}>
         <View style={styles.quotaIconWrapper}>
           <MaterialCommunityIcons name="lightning-bolt" size={20} color="#6366F1" />
         </View>
@@ -154,7 +154,7 @@ export default function RoleplayScreen({ navigation }: { navigation: any }) {
             Max {limits.roleplayLimit} Scenarios assigned • Up to {limits.retryLimit} Retries per scenario
           </Text>
         </View>
-      </View>
+      </View> */}
 
       {/* Tab Selector Segmented Controls */}
       <View style={styles.tabBar}>
@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: "#E2E8F0",
     marginHorizontal: 16,
-    marginBottom: 12,
+    marginVertical: 12,
     borderRadius: 12,
     padding: 3,
   },

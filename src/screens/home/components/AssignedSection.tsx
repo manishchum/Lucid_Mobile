@@ -88,7 +88,7 @@ export default function AssignedSection({
 
   // ── Fetch tasks from API ─────────────────────────────────────────────
   // Only fires when this user's plan actually has task management enabled
-  const { tasks, total, isLoading, error, refetch } = useGetTasks(
+  const { tasks, total, isLoading, isOffline, error, refetch } = useGetTasks(
     userId,
     companyId,
     showTaskManagement,
@@ -509,8 +509,9 @@ export default function AssignedSection({
           <AssignedTasksList
             tasks={filteredTasks}
             isLoading={isLoading}
+            isOffline={isOffline}
             error={error}
-            onRetry={refetch}
+            onRetry={() => refetch(false)}
             userId={userId}
             refreshKey={refreshKey}
             isFiltered={taskQuery.trim().length > 0}
@@ -520,7 +521,7 @@ export default function AssignedSection({
                 next.add(task.task_id);
                 return next;
               });
-              refetch();
+              refetch(true);
             }}
           />
         )}

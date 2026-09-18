@@ -4,7 +4,7 @@ import { appStorage } from "./appStorage";
 import { logger } from "./UnifiedLogger";
 import { offlineQueue } from "./offlineQueue";
 import { clearInFlightRequests, JWT_TOKEN_KEY } from "../api/users/Request";
-import { clearHooksMemoryCaches } from "../api/users/Hooks";
+import { clearHooksMemoryCaches } from "../api/users/hooksCache";
 
 /**
  * Purges and invalidates ALL mobile local caches when a user signs out:

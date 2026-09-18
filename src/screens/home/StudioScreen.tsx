@@ -60,7 +60,7 @@ import ModuleLanguageSelector from "../../components/content/ModuleLanguageSelec
  *   Mind Map     → data.mindmap_data   (Phase 2: { nodes, edges })
  * ─────────────────────────────────────────────────────────────────────────────
  */
-export default function StudioScreen({ navigation }: any) {
+export default function StudioScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const mainScrollRef = useRef<ScrollView>(null);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -91,11 +91,15 @@ export default function StudioScreen({ navigation }: any) {
 
   const { activeSprint, activeModule } = useActiveSprint();
 
-  // Params from ActiveSprintContext — each module tap passes its own processedModuleId
-  const processedModuleId: string = activeModule?.processedModuleId ?? "";
+  // Params from route or ActiveSprintContext — each module tap passes its own processedModuleId
+  const paramProcessedModuleId = route?.params?.processedModuleId || route?.params?.id;
+  const paramModuleTitle = route?.params?.moduleTitle;
+  const paramSprintTitle = route?.params?.sprintTitle;
+
+  const processedModuleId: string = paramProcessedModuleId ?? activeModule?.processedModuleId ?? "";
   const sprintModuleId: string = activeSprint?.moduleId ?? activeSprint?.planId ?? "";
-  const moduleTitle: string = activeModule?.moduleTitle ?? "";
-  const sprintTitle: string = activeSprint?.planTitle ?? activeModule?.sprintTitle ?? "";
+  const moduleTitle: string = paramModuleTitle ?? activeModule?.moduleTitle ?? "";
+  const sprintTitle: string = paramSprintTitle ?? activeSprint?.planTitle ?? activeModule?.sprintTitle ?? "";
 
   const [lang, setLang] = useState<string>('en');
 
@@ -122,23 +126,12 @@ export default function StudioScreen({ navigation }: any) {
 
   // ─── Debug logging: Validate incoming params ──────────────────────────────
   useEffect(() => {
-    console.log("[v0] [StudioScreen] Mounted with params:", {
-      processedModuleId: processedModuleId || "⚠️ MISSING",
+    console.log("[StudioScreen] Mounted with params:", {
+      processedModuleId: processedModuleId || "NONE (Empty Studio)",
       moduleTitle,
       sprintTitle,
-      userId: userId ? "✓" : "⚠️ MISSING",
+      userId: userId ? "✓" : "MISSING",
     });
-
-    if (!processedModuleId) {
-      console.warn(
-        "[v0] [StudioScreen] ⚠️ No processedModuleId received. This screen should only be opened from SprintScreen.",
-      );
-    }
-    if (!userId) {
-      console.warn(
-        "[v0] [StudioScreen] ⚠️ No userId available. Auth may not be initialized.",
-      );
-    }
   }, [processedModuleId, moduleTitle, sprintTitle, userId]);
 
   const [refreshing, setRefreshing] = useState(false);

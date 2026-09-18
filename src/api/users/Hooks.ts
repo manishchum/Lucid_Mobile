@@ -4,6 +4,7 @@ import { appStorage } from "../../utils/appStorage";
 import { eventBus } from "../../utils/EventBus";
 import { logger } from "../../utils/UnifiedLogger";
 import { useTenant } from "../../contex/TenantContext";
+import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import {
   getUserByEmail,
   getUserByPhone,
@@ -43,19 +44,13 @@ import {
   LeaderboardHighlightResponse,
 } from "./Dto";
 
-// Cache to store resolved processed module metadata (such as titles) for fallback rendering
-const processedModuleMetadata = new Map<
-  string,
-  { title: string; recommended_time: number }
->();
+import {
+  processedModuleMetadata,
+  memoryDashboardCache,
+  clearHooksMemoryCaches,
+} from "./hooksCache";
 
-export const clearHooksMemoryCaches = (): void => {
-  logger.debug(
-    `[Hooks] Clearing in-memory module metadata (${processedModuleMetadata.size}) and authModules (${authModulesCache.size}) caches on sign out`,
-  );
-  processedModuleMetadata.clear();
-  authModulesCache.clear();
-};
+export { processedModuleMetadata, memoryDashboardCache, clearHooksMemoryCaches };
 
 export const USER_QUERY_KEY = ["user"];
 
@@ -826,7 +821,7 @@ async function resolveProcessedModuleIdsForPlan(
     .map((m: any) => m?.processed_module_id ?? "")
     .filter(Boolean);
 
-  if (embedded.length === planModules.length) {
+  if (embedded.length > 0) {
     logger.debug(
       `[resolveIds] ✅ Plan "${plan.learning_plan_id}" — Strategy 1: embedded IDs (${embedded.length})`,
     );
@@ -836,7 +831,7 @@ async function resolveProcessedModuleIdsForPlan(
   // ── Strategy 1.5: Pre-resolved root-level processed_module_ids (already fetched) ─
   if (
     Array.isArray(plan?.processed_module_ids) &&
-    plan.processed_module_ids.length === planModules.length
+    plan.processed_module_ids.length > 0
   ) {
     logger.debug(
       `[resolveIds] ✅ Plan "${plan.learning_plan_id}" — Strategy 1.5: root-level IDs (${plan.processed_module_ids.length})`,
@@ -966,6 +961,17 @@ async function processDashboardResponse(
   data: DashboardSummaryResponse,
   userId: string,
 ): Promise<ResolvedPlanCard[]> {
+  
+  const rawProcessedModules: any[] = (data as any)?.processed_modules ?? [];
+  rawProcessedModules.forEach((pm: any) => {
+    if (pm?.processed_module_id) {
+      processedModuleMetadata.set(pm.processed_module_id, {
+        title: pm.title ?? "Module",
+        recommended_time: pm.recommended_time ?? 0,
+      });
+    }
+  });
+
   const moduleMap = new Map<string, any>();
   (data.modules ?? []).forEach((m: any) => {
     if (m?.module_id) moduleMap.set(m.module_id, m);
@@ -1154,6 +1160,8 @@ export const useGetDashboardSummary = (
   const [dashboardData, setDashboardData] =
     useState<DashboardSummaryResponse | null>(() => {
       if (!userId) return null;
+      const mem = memoryDashboardCache.get(userId);
+      if (mem?.data) return mem.data;
       return appStorage.getObject<DashboardSummaryResponse>(
         `@dashboard_data_${userId}`,
       );
@@ -1162,20 +1170,20 @@ export const useGetDashboardSummary = (
     ResolvedPlanCard[]
   >(() => {
     if (!userId) return [];
+    const mem = memoryDashboardCache.get(userId);
+    if (mem?.cards) return mem.cards;
     return (
-      appStorage.getObject<ResolvedPlanCard[]>(`@resolved_cards_${userId}`) ||
-      []
+      appStorage.getObject<ResolvedPlanCard[]>(`@resolved_cards_${userId}`) ?? []
     );
   });
   const [isLoading, setIsLoading] = useState<boolean>(() => {
-    if (!userId || !companyId) return false;
-    const initialCache = appStorage.getObject<DashboardSummaryResponse>(
-      `@dashboard_data_${userId}`,
-    );
-    const initialCards = appStorage.getObject<ResolvedPlanCard[]>(
+    if (!userId || !companyId) return true;
+    const mem = memoryDashboardCache.get(userId);
+    if (mem?.cards) return false;
+    const cachedCards = appStorage.getObject<ResolvedPlanCard[]>(
       `@resolved_cards_${userId}`,
     );
-    return !initialCache || !initialCards;
+    return !cachedCards;
   });
   const [error, setError] = useState<Error | null>(null);
   const fetchPromiseRef = useRef<Promise<any> | null>(null);
@@ -1362,6 +1370,11 @@ export const useGetDashboardSummary = (
           // Atomic state update: Set dashboard data & resolved cards together
           setDashboardData(data);
           setResolvedPlanCards(cards);
+          memoryDashboardCache.set(userId, {
+            data,
+            cards,
+            timestamp: Date.now(),
+          });
           logger.debug(
             "[Hook] ✅ Fresh dashboard summary & cards resolved:",
             cards.length,
@@ -1378,6 +1391,14 @@ export const useGetDashboardSummary = (
               .then(({ cards: reconciled, changed }) => {
                 if (changed) {
                   setResolvedPlanCards(reconciled);
+                  const currentMem = memoryDashboardCache.get(userId);
+                  if (currentMem) {
+                    memoryDashboardCache.set(userId, {
+                      ...currentMem,
+                      cards: reconciled,
+                    });
+                  }
+                  appStorage.setObject(cardsCacheKey, reconciled);
                   logger.debug(
                     "Reconciled placeholder module titles in background",
                   );
@@ -1422,76 +1443,30 @@ export const useGetDashboardSummary = (
     const loadAndFetch = async () => {
       if (!userId || !companyId) return;
 
-      const cacheKey = `@dashboard_data_${userId}`;
-      let cachedData =
-        dashboardData ||
-        appStorage.getObject<DashboardSummaryResponse>(cacheKey);
+      const mem = memoryDashboardCache.get(userId);
+      const isFresh = mem && Date.now() - mem.timestamp < 60000;
+      const hasDataAlready = !!(
+        mem?.data || appStorage.getObject(`@dashboard_data_${userId}`)
+      );
 
-      // Fallback check from AsyncStorage if not loaded yet into MMKV/memory
-      if (!cachedData) {
-        try {
-          const cachedJson = await AsyncStorage.getItem(cacheKey);
-          if (cachedJson) {
-            cachedData = JSON.parse(cachedJson) as DashboardSummaryResponse;
-            appStorage.setObject(cacheKey, cachedData);
-          }
-        } catch (err) {
-          logger.warn("[Hook] Failed to load cached dashboard data:", err);
-        }
-      }
+      const showSpinner = !isFresh && !hasDataAlready;
 
-      let hasCache = false;
-      if (cachedData) {
-        setDashboardData(cachedData);
-        try {
-          const cards = await processDashboardResponse(cachedData, userId);
-          setResolvedPlanCards(cards);
-          console.log(
-            `[PerfMeter] ⚡ Loaded Dashboard summary from PERSISTENT CACHE: Cards=${cards.length} | UserID=${userId}`
-          );
-          logger.debug(
-            "[Hook] ✅ Loaded dashboard data from cache:",
-            cards.length,
-          );
-
-          if (hasPlaceholderTitles(cards)) {
-            reconcilePlaceholderTitles(cards, userId)
-              .then(({ cards: reconciled, changed }) => {
-                if (changed) setResolvedPlanCards(reconciled);
-              })
-              .catch((err) =>
-                logger.warn(
-                  "[Hook] Cached-card title reconciliation failed:",
-                  err,
-                ),
-              );
-          }
-        } catch (cardErr) {
-          logger.warn("[Hook] Failed to process cached cards:", cardErr);
-        }
-        hasCache = true;
-        // Cache loaded! Dismiss spinner immediately so user sees cached screen instantly
-        setIsLoading(false);
-      } else {
-        setIsLoading(true);
-      }
-
+      if (showSpinner) setIsLoading(true);
       setError(null);
 
-      // 2. Fetch fresh data from network in background (SWR pattern)
       try {
-        await fetchDashboardData(!hasCache);
+        await fetchDashboardData(showSpinner);
       } catch (err) {
-        if (!hasCache) {
-          setError(
-            err instanceof Error ? err : new Error("Failed to fetch dashboard"),
-          );
-        }
+        setError(
+          err instanceof Error ? err : new Error("Failed to fetch dashboard"),
+        );
+      } finally {
+        if (showSpinner) setIsLoading(false);
       }
     };
 
     loadAndFetch();
-  }, [userId, companyId]);
+  }, [userId, companyId, fetchDashboardData]);
 
   useEffect(() => {
     const handleRefresh = () => {
@@ -1802,8 +1777,10 @@ interface UseGetTasksReturn {
   tasks: Task[];
   total: number;
   isLoading: boolean;
+  isRefetching: boolean;
+  isOffline: boolean;
   error: Error | null;
-  refetch: () => Promise<void>;
+  refetch: (isSilent?: boolean) => Promise<void>;
 }
 
 export const useGetTasks = (
@@ -1811,33 +1788,107 @@ export const useGetTasks = (
   companyId: string | null,
   enabled: boolean = true,
 ): UseGetTasksReturn => {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [total, setTotal] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
+  const isOnline = useNetworkStatus();
+  const cacheKey = `@cached_user_tasks_${userId || "unknown"}`;
+
+  // Lazy initializer for tasks directly from memory cache or appStorage (instant 0ms)
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    if (!userId) return [];
+    // 1. In-memory dashboard cache pre-fetched during splash screen
+    const mem = memoryDashboardCache.get(userId);
+    if (mem?.data?.assigned_tasks && Array.isArray(mem.data.assigned_tasks)) {
+      return mem.data.assigned_tasks;
+    }
+    // 2. Persistent storage dashboard cache
+    const dashboardCache = appStorage.getObject<any>(`@dashboard_data_${userId}`);
+    if (dashboardCache && Array.isArray(dashboardCache.assigned_tasks)) {
+      return dashboardCache.assigned_tasks;
+    }
+    // 3. Standalone task cache
+    const standaloneCache = appStorage.getObject<Task[]>(cacheKey);
+    if (Array.isArray(standaloneCache)) {
+      return standaloneCache;
+    }
+    return [];
+  });
+
+  const [total, setTotal] = useState<number>(() => tasks.length);
+
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    if (!userId || !companyId || !enabled) return false;
+    const mem = memoryDashboardCache.get(userId);
+    if (mem?.data?.assigned_tasks && Array.isArray(mem.data.assigned_tasks)) {
+      return false; // Pre-fetched during splash!
+    }
+    const dashboardCache = appStorage.getObject<any>(`@dashboard_data_${userId}`);
+    if (dashboardCache && Array.isArray(dashboardCache.assigned_tasks)) {
+      return false; // Persistent disk cache available!
+    }
+    const standaloneCache = appStorage.getObject<Task[]>(cacheKey);
+    if (Array.isArray(standaloneCache)) {
+      return false;
+    }
+    return true; // Only show loader if we have zero cached or pre-fetched data
+  });
+
+  const [isRefetching, setIsRefetching] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchTasks = async () => {
-    if (!userId || !companyId) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response: TasksResponse = await getTasks(userId, companyId);
-      setTasks(Array.isArray(response.tasks) ? response.tasks : []);
-      setTotal(response.total ?? 0);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error("Failed to fetch tasks"));
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const fetchTasks = useCallback(
+    async (isSilent = false) => {
+      if (!userId || !companyId || !enabled) return;
+      if (isOnline === false) return;
+
+      if (!isSilent && tasks.length === 0) {
+        setIsLoading(true);
+      } else {
+        setIsRefetching(true);
+      }
+      setError(null);
+
+      try {
+        const response: TasksResponse = await getTasks(userId, companyId);
+        const fetchedTasks = Array.isArray(response.tasks) ? response.tasks : [];
+        setTasks(fetchedTasks);
+        setTotal(response.total ?? fetchedTasks.length);
+        try {
+          appStorage.setObject(cacheKey, fetchedTasks);
+        } catch {}
+      } catch (err) {
+        if (tasks.length === 0 && !isSilent) {
+          setError(err instanceof Error ? err : new Error("Failed to fetch tasks"));
+        } else {
+          logger.warn("[useGetTasks] Background refetch failed, keeping pre-fetched/cached tasks:", err);
+        }
+      } finally {
+        setIsLoading(false);
+        setIsRefetching(false);
+      }
+    },
+    [userId, companyId, enabled, isOnline, cacheKey, tasks.length],
+  );
 
   useEffect(() => {
-    // Skip firing this request at all when the caller has no use for it yet
-    if (!enabled) return;
-    if (userId && companyId) fetchTasks();
-  }, [userId, companyId, enabled]);
+    if (!enabled || !userId || !companyId) return;
 
-  return { tasks, total, isLoading, error, refetch: fetchTasks };
+    const mem = memoryDashboardCache.get(userId);
+    const hasPrefetchedTasks = Array.isArray(mem?.data?.assigned_tasks);
+    const hasTasksInMemory = tasks.length > 0;
+
+    // Silent background refetch if we already have pre-fetched/cached tasks
+    const isSilent = hasPrefetchedTasks || hasTasksInMemory;
+    fetchTasks(isSilent);
+  }, [userId, companyId, enabled, fetchTasks]);
+
+  return {
+    tasks,
+    total,
+    isLoading,
+    isRefetching,
+    isOffline: isOnline === false,
+    error,
+    refetch: (isSilent = true) => fetchTasks(isSilent),
+  };
 };
 
 interface UseGetLeaderboardHighlightReturn {
