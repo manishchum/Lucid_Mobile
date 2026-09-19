@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,9 +11,19 @@ import {
   SafeAreaView,
   StatusBar,
   Animated,
+  BackHandler,
+  ToastAndroid,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
+
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
+import * as FileSystem from "expo-file-system/legacy";
 
 import {
   Scenario,
@@ -42,6 +52,7 @@ export default function RoleplaySessionScreen({
   const [permission, requestPermission] = useCameraPermissions();
   const [isCameraOn, setIsCameraOn] = useState(false);
 
+  const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(true);
   const [isMicOn, setIsMicOn] = useState(true);
@@ -61,6 +72,199 @@ export default function RoleplaySessionScreen({
   const scrollViewRef = useRef<ScrollView>(null);
   const timerRef = useRef<any>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const userPulseAnim = useRef(new Animated.Value(1)).current;
+  const lastBackPressTimeRef = useRef<number>(0);
+  const isEndingSessionRef = useRef<boolean>(false);
+
+  const soundRef = useRef<AudioPlayer | null>(null);
+
+  // Play agent audio response via TTS / Audio Player
+  const playAgentAudio = useCallback(
+    async (text: string) => {
+      if (!text || !text.trim()) return;
+      try {
+        setIsBotSpeaking(true);
+
+        // Pause speech recognition while agent speaks to prevent audio self-feedback & Code 5 crashes
+        try {
+          ExpoSpeechRecognitionModule.stop();
+        } catch {}
+
+        const ttsUrl = `${EXPO_API_URL}/api/tts/chat`;
+        const token = await getFirebaseToken().catch(() => null);
+
+        const response = await fetch(ttsUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            text,
+            voiceGender: "female",
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const audioBase64 = data.audio;
+          if (audioBase64) {
+            const tempFileUri = `${FileSystem.cacheDirectory}roleplay_agent_${Date.now()}.mp3`;
+            await FileSystem.writeAsStringAsync(tempFileUri, audioBase64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+
+            await setAudioModeAsync({ playsInSilentMode: true });
+            const player = createAudioPlayer({ uri: tempFileUri });
+            soundRef.current = player;
+
+            player.addListener("playbackStatusUpdate", (status: any) => {
+              if (status.playing === false && status.currentTime >= status.duration && status.duration > 0) {
+                setIsBotSpeaking(false);
+                try {
+                  player.remove();
+                } catch {}
+                soundRef.current = null;
+              }
+            });
+            player.play();
+            return;
+          }
+        }
+        setIsBotSpeaking(false);
+      } catch (err) {
+        logger.error("[RoleplaySession] Audio playback error:", err);
+        setIsBotSpeaking(false);
+      }
+    },
+    [scenario]
+  );
+
+  // --- Speech Recognition Events ---
+  useSpeechRecognitionEvent("start", () => {
+    if (isMicOn && !isBotSpeaking) {
+      setIsUserSpeaking(true);
+    }
+  });
+
+  useSpeechRecognitionEvent("end", () => {
+    setIsUserSpeaking(false);
+  });
+
+  useSpeechRecognitionEvent("error", (e: any) => {
+    if (e.code === 5 || e.error === "client") {
+      // Android Code 5: client side error / recognizer busy. Ignore safely.
+      setIsUserSpeaking(false);
+      return;
+    }
+    logger.error("[RoleplaySession] Speech recognition error:", e);
+    setIsUserSpeaking(false);
+  });
+
+  useSpeechRecognitionEvent("result", (ev) => {
+    if (ev.results && ev.results[0]?.transcript && isMicOn && !isBotSpeaking) {
+      const text = ev.results[0].transcript.trim();
+      if (text) {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: "user_message", text }));
+        }
+        setTranscript((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === "user" && last.text === text) return prev;
+          return [...prev, { role: "user", text }];
+        });
+      }
+    }
+  });
+
+  // --- Speech Recognition Control Effect ---
+  useEffect(() => {
+    let active = true;
+
+    async function startRecording() {
+      try {
+        if (isBotSpeaking) return;
+
+        const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+        if (!perm.granted) return;
+
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+        });
+
+        // Ensure previous instance is stopped before starting new session to avoid Code 5
+        try {
+          ExpoSpeechRecognitionModule.stop();
+        } catch {}
+
+        if (isMicOn && !isConnecting && active && !isBotSpeaking) {
+          ExpoSpeechRecognitionModule.start({
+            lang: "en-US",
+            interimResults: true,
+            continuous: true,
+          });
+        }
+      } catch (err) {
+        logger.warn("[RoleplaySession] Speech recognition start error:", err);
+      }
+    }
+
+    if (isMicOn && !isConnecting && !isBotSpeaking) {
+      startRecording();
+    } else {
+      try {
+        ExpoSpeechRecognitionModule.stop();
+      } catch {}
+      setIsUserSpeaking(false);
+    }
+
+    return () => {
+      active = false;
+      try {
+        ExpoSpeechRecognitionModule.stop();
+      } catch {}
+    };
+  }, [isMicOn, isConnecting, isBotSpeaking]);
+
+  // Trigger double press exit logic
+  const triggerDoublePressExit = useCallback(() => {
+    if (isGeneratingAssessment || isEndingSessionRef.current) return;
+
+    const now = Date.now();
+    if (now - lastBackPressTimeRef.current < 2000) {
+      handleEndSession();
+    } else {
+      lastBackPressTimeRef.current = now;
+      if (Platform.OS === "android") {
+        ToastAndroid.show("Press back again to exit session", ToastAndroid.SHORT);
+      } else {
+        Alert.alert("Exit Session?", "Press back again within 2 seconds to exit this session.");
+      }
+    }
+  }, [isGeneratingAssessment]);
+
+  // BackHandler & React Navigation beforeRemove listeners
+  useEffect(() => {
+    const onHardwareBack = () => {
+      triggerDoublePressExit();
+      return true;
+    };
+
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", onHardwareBack);
+
+    const unsubscribeBeforeRemove = navigation.addListener("beforeRemove", (e: any) => {
+      if (isEndingSessionRef.current) {
+        return;
+      }
+      e.preventDefault();
+      triggerDoublePressExit();
+    });
+
+    return () => {
+      backHandler.remove();
+      unsubscribeBeforeRemove();
+    };
+  }, [navigation, triggerDoublePressExit]);
 
   // Initialize Roleplay session and WebSocket
   useEffect(() => {
@@ -75,8 +279,14 @@ export default function RoleplaySessionScreen({
         }
 
         // 1. Create backend session record
-        const sessionRes = await createRoleplaySession(employeeId, scenario.scenario_id);
-        const createdSessionId = sessionRes?.id || `sess_${Date.now()}`;
+        const sessionRes = await createRoleplaySession(employeeId, scenario);
+        const createdSessionId = sessionRes?.id;
+        if (!createdSessionId) {
+          Alert.alert("Session Error", "Could not create roleplay session. Please try again.");
+          isEndingSessionRef.current = true;
+          navigation.goBack();
+          return;
+        }
         if (isMounted) setSessionId(createdSessionId);
 
         // 2. Obtain token and connect WebSocket
@@ -107,25 +317,103 @@ export default function RoleplaySessionScreen({
               sessionId: createdSessionId,
             })
           );
+
+          if (scenario?.initialPrompt) {
+            playAgentAudio(scenario.initialPrompt);
+          }
         };
 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            if (data.type === "transcript" || data.text) {
-              const botText = data.transcript || data.text;
-              if (botText && isMounted) {
-                setTranscript((prev) => [...prev, { role: "assistant", text: botText }]);
-              }
-            }
-            if (data.type === "audio_start") {
-              if (isMounted) setIsBotSpeaking(true);
-            }
-            if (data.type === "audio_end") {
-              if (isMounted) setIsBotSpeaking(false);
+
+            switch (data.type) {
+              case "speech_started":
+                if (isMounted) {
+                  setIsUserSpeaking(true);
+                  setIsBotSpeaking(false);
+                }
+                break;
+
+              case "audio":
+                if (isMounted) {
+                  setIsBotSpeaking(true);
+                  setIsUserSpeaking(false);
+                }
+                break;
+
+              case "transcript_chunk":
+                if (isMounted) {
+                  setIsBotSpeaking(true);
+                  setIsUserSpeaking(false);
+                  if (data.text) {
+                    setTranscript((prev) => {
+                      const last = prev[prev.length - 1];
+                      if (last && last.role === "assistant_chunk") {
+                        return [...prev.slice(0, -1), { role: "assistant_chunk", text: last.text + data.text }];
+                      }
+                      return [...prev, { role: "assistant_chunk", text: data.text }];
+                    });
+                  }
+                }
+                break;
+
+              case "bot_transcription":
+                if (isMounted) {
+                  if (data.text) {
+                    setTranscript((prev) => {
+                      const filtered = prev.filter((m) => m.role !== "assistant_chunk");
+                      return [...filtered, { role: "assistant", text: data.text }];
+                    });
+                    playAgentAudio(data.text);
+                  } else {
+                    setIsBotSpeaking(false);
+                  }
+                }
+                break;
+
+              case "user_transcription":
+                if (isMounted && data.text) {
+                  setTranscript((prev) => {
+                    const last = prev[prev.length - 1];
+                    if (last && last.role === "user" && last.text === data.text) return prev;
+                    return [...prev, { role: "user", text: data.text }];
+                  });
+                }
+                break;
+
+              case "transcript":
+                if (isMounted && (data.text || data.transcript)) {
+                  const botText = data.transcript || data.text;
+                  setTranscript((prev) => [...prev, { role: "assistant", text: botText }]);
+                  playAgentAudio(botText);
+                }
+                break;
+
+              case "audio_start":
+                if (isMounted) {
+                  setIsBotSpeaking(true);
+                  setIsUserSpeaking(false);
+                }
+                break;
+
+              case "audio_end":
+                if (isMounted) setIsBotSpeaking(false);
+                break;
+
+              case "session_ended":
+                if (isMounted && data.transcript && Array.isArray(data.transcript)) {
+                  setTranscript(data.transcript);
+                }
+                break;
+
+              default:
+                if (data.text && isMounted) {
+                  setTranscript((prev) => [...prev, { role: "assistant", text: data.text }]);
+                }
+                break;
             }
           } catch (e) {
-            // Raw text fallback
             if (event.data && isMounted) {
               setTranscript((prev) => [...prev, { role: "assistant", text: String(event.data) }]);
             }
@@ -179,6 +467,19 @@ export default function RoleplaySessionScreen({
     }
   }, [isBotSpeaking]);
 
+  useEffect(() => {
+    if (isUserSpeaking) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(userPulseAnim, { toValue: 1.3, duration: 350, useNativeDriver: true }),
+          Animated.timing(userPulseAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      userPulseAnim.setValue(1);
+    }
+  }, [isUserSpeaking]);
+
   // Toggle Camera View
   const handleToggleCamera = async () => {
     if (!isCameraOn) {
@@ -226,6 +527,7 @@ export default function RoleplaySessionScreen({
           text: "End & Evaluate",
           style: "destructive",
           onPress: async () => {
+            isEndingSessionRef.current = true;
             setIsGeneratingAssessment(true);
             try {
               if (wsRef.current) {
@@ -255,11 +557,13 @@ export default function RoleplaySessionScreen({
                   assessment: result?.assessment,
                 });
               } else {
+                isEndingSessionRef.current = true;
                 navigation.goBack();
               }
             } catch (err) {
               logger.error("[RoleplaySession] End session error:", err);
               setIsGeneratingAssessment(false);
+              isEndingSessionRef.current = true;
               navigation.goBack();
             }
           },
@@ -280,7 +584,7 @@ export default function RoleplaySessionScreen({
 
       {/* Top Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
+        <TouchableOpacity onPress={triggerDoublePressExit} style={styles.iconBtn}>
           <MaterialCommunityIcons name="close" size={24} color="#0F172A" />
         </TouchableOpacity>
 
@@ -304,23 +608,34 @@ export default function RoleplaySessionScreen({
         <Animated.View
           style={[
             styles.avatarCircle,
-            { transform: [{ scale: pulseAnim }] },
+            { transform: [{ scale: isUserSpeaking ? userPulseAnim : pulseAnim }] },
             isBotSpeaking && styles.avatarSpeakingBorder,
+            isUserSpeaking && styles.avatarUserSpeakingBorder,
           ]}
         >
           <MaterialCommunityIcons
-            name="account-voice"
+            name={isUserSpeaking ? "microphone" : isBotSpeaking ? "account-voice" : "account"}
             size={44}
-            color={isBotSpeaking ? "#6366F1" : "#475569"}
+            color={isUserSpeaking ? "#EF4444" : isBotSpeaking ? "#6366F1" : "#475569"}
           />
         </Animated.View>
 
-        <Text style={styles.botStatusText}>
+        <Text
+          style={[
+            styles.botStatusText,
+            isUserSpeaking && { color: "#EF4444" },
+            isBotSpeaking && { color: "#4F46E5" },
+          ]}
+        >
           {isConnecting
             ? "Connecting to AI..."
             : isBotSpeaking
             ? "AI Persona Speaking..."
-            : "Listening for your response..."}
+            : isUserSpeaking
+            ? "User Speaking..."
+            : isMicOn
+            ? "Listening for your response..."
+            : "Microphone Muted"}
         </Text>
 
         {/* Self-Camera Preview Window */}
@@ -433,6 +748,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   header: {
+    paddingTop: 40,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -495,6 +811,10 @@ const styles = StyleSheet.create({
   avatarSpeakingBorder: {
     borderColor: "#6366F1",
     backgroundColor: "#EEF2FF",
+  },
+  avatarUserSpeakingBorder: {
+    borderColor: "#EF4444",
+    backgroundColor: "#FEF2F2",
   },
   botStatusText: {
     fontSize: 13,

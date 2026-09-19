@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDrawer } from "../../contex/DrawerContext";
 import { useNotifications } from "../../contex/NotificationContext";
 import { useAuth } from "../../contex/AuthContext";
-import { useGetCompany } from "../../api/users";
+import { useTenant } from "../../contex/TenantContext";
 
 export default function AppHeader() {
   const insets = useSafeAreaInsets();
@@ -13,9 +13,7 @@ export default function AppHeader() {
   const { unreadCount } = useNotifications();
   const { cachedUser } = useAuth();
 
-  const userId = cachedUser?.userId ?? null;
-  const companyId = cachedUser?.companyId ?? null;
-  const { company } = useGetCompany(companyId, userId);
+  const { company } = useTenant();
 
   return (
     <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top, 12) }]}>

@@ -234,7 +234,9 @@ export default function ContentDetailScreen({ route, navigation }: any) {
               isExpanded={expanded === 'ai'}
               onToggle={() => toggle('ai')}
               processedModuleId={primaryModule?.processed_module_id ?? ""}
+              sprintModuleId={primaryModule?.original_module_id ?? originalModuleId ?? ""}
               moduleTitle={primaryModule?.title ?? moduleTitle}
+              sprintTitle={moduleTitle}
               userId={userId ?? ""}
               companyId={cachedUser?.companyId ?? ""}
               lang={lang}

@@ -71,6 +71,7 @@ const AnimatedTaskCard = ({
 interface AssignedTasksListProps {
   tasks: Task[];
   isLoading: boolean;
+  isOffline?: boolean;
   error: Error | null;
   onRetry?: () => void;
   userId?: string | null;
@@ -98,6 +99,7 @@ const STATUS_TABS: { id: StatusFilter; label: string }[] = [
 export default function AssignedTasksList({
   tasks,
   isLoading,
+  isOffline = false,
   error,
   onRetry,
   userId,
@@ -106,6 +108,26 @@ export default function AssignedTasksList({
   refreshKey = 0,
 }: AssignedTasksListProps) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const prevOffline = useRef(isOffline);
+
+  useEffect(() => {
+    if (prevOffline.current && !isOffline) {
+      setToastMessage("Back online");
+      const timer = setTimeout(() => setToastMessage(null), 2500);
+      return () => clearTimeout(timer);
+    }
+    prevOffline.current = isOffline;
+  }, [isOffline]);
+
+  const handleRetryPress = () => {
+    if (isOffline) {
+      setToastMessage("No connection");
+      const timer = setTimeout(() => setToastMessage(null), 2500);
+      return;
+    }
+    onRetry?.();
+  };
 
   const statusFilteredTasks = useMemo(() => {
     const safe = Array.isArray(tasks) ? tasks : [];
@@ -114,6 +136,33 @@ export default function AssignedTasksList({
       statusFilter === "completed" ? isTaskCompleted(t) : !isTaskCompleted(t),
     );
   }, [tasks, statusFilter]);
+
+  // ── YouTube-Style Offline View (When no tasks in cache) ─────────────
+  if (isOffline && (Array.isArray(tasks) ? tasks : []).length === 0) {
+    return (
+      <View style={styles.youtubeOfflineContainer}>
+        <View style={styles.youtubeIconCircle}>
+          <MaterialCommunityIcons name="wifi-off" size={44} color="#64748B" />
+        </View>
+        <Text style={styles.youtubeOfflineTitle}>You're offline</Text>
+        <Text style={styles.youtubeOfflineSubtitle}>
+          Check your connection and try again
+        </Text>
+        <TouchableOpacity
+          style={styles.youtubeRetryBtn}
+          onPress={handleRetryPress}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.youtubeRetryBtnText}>Retry</Text>
+        </TouchableOpacity>
+        {toastMessage && (
+          <View style={styles.youtubeToast}>
+            <Text style={styles.youtubeToastText}>{toastMessage}</Text>
+          </View>
+        )}
+      </View>
+    );
+  }
 
   // ── Loading ─────────────────────────────────────────────────────────
   if (isLoading) {
@@ -139,7 +188,7 @@ export default function AssignedTasksList({
         {onRetry && (
           <TouchableOpacity
             style={styles.retryBtn}
-            onPress={onRetry}
+            onPress={handleRetryPress}
             activeOpacity={0.8}
           >
             <MaterialCommunityIcons name="refresh" size={14} color="#2563EB" />
@@ -258,11 +307,78 @@ export default function AssignedTasksList({
           />
         </AnimatedTaskCard>
       ))}
+
+      {toastMessage && (
+        <View style={styles.youtubeToast}>
+          <Text style={styles.youtubeToastText}>{toastMessage}</Text>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  youtubeOfflineContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 56,
+    paddingHorizontal: 24,
+  },
+  youtubeIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  youtubeOfflineTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  youtubeOfflineSubtitle: {
+    fontSize: 14,
+    color: "#64748B",
+    textAlign: "center",
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  youtubeRetryBtn: {
+    backgroundColor: "#2563EB",
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
+  youtubeRetryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  youtubeToast: {
+    position: "absolute",
+    bottom: 12,
+    left: 16,
+    right: 16,
+    backgroundColor: "#0F172A",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  youtubeToastText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
+  },
   centerState: {
     alignItems: "center",
     paddingVertical: 48,

@@ -175,7 +175,7 @@ const getHeaders = async (
   // ─── DEBUG ───────────────────────────────────────────────────────────────
   logger.debug("[DEBUG] getHeaders called with userId:", userId, "companyId:", options?.companyId);
   logger.debug("[DEBUG] Authorization present:", !!token);
-  logger.debug("[DEBUG] X-User-ID value:", userId ?? "NOT SET ⚠️");
+  logger.debug("[DEBUG] X-User-ID value:", userId ?? "(Not passed)");
   if (options?.companyId) {
     logger.debug("[DEBUG] X-Company-ID value:", options.companyId);
   }
@@ -457,7 +457,7 @@ export const getUserByPhone = async (phone: string): Promise<UserResponse> => {
   try {
     const url = `${API_BASE_URL}/users/by-phone/${encodeURIComponent(phone)}`;
     logger.debug("[Request] getUserByPhone →", url);
-    const json = await apiFetch<any>(url, { method: "GET" });
+    const json = await apiFetch<UserResponse>(url, { method: "GET" });
     if (json.user) {
       logger.debug("[Request] getUserByPhone ✅ user_id:", json.user.user_id);
     } else {
@@ -1085,16 +1085,18 @@ export const getTasks = async (
         const res = await getUserByEmail(resolvedUserId);
         if (res?.user?.user_id) resolvedUserId = res.user.user_id;
       } catch (e) {
-        logger.warn("[Request] getTasks — Failed to resolve userId to UUID:", e);
+        logger.warn("[Request] getTasks — Failed client resolution, fallback to /me:", e);
+        resolvedUserId = "me";
       }
     }
-    const url = `${API_BASE_URL}/task-manager/tasks/user/${resolvedUserId}`;
+    const targetId = resolvedUserId && resolvedUserId.trim() ? resolvedUserId : "me";
+    const url = `${API_BASE_URL}/task-manager/tasks/user/${encodeURIComponent(targetId)}`;
     logger.debug("[Request] getTasks →", url);
     const json = await apiFetch<any>(url, {
       method: "GET",
-      userId: resolvedUserId,
+      userId: targetId === "me" ? undefined : targetId,
       companyId,
-      noCache: true,
+      timeoutMs: 30_000,
     });
     logger.debug(
       "[Request] getTasks ✅ total:",

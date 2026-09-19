@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { useAuth } from "./AuthContext";
 import { getDashboardSummary } from "../api/users/Request";
+import { appStorage } from "../utils/appStorage";
 
 export type Addon =
   | "lucid_studio"
@@ -27,6 +28,7 @@ export type Addon =
 type CompanyInfo = {
   company_id?: string;
   name?: string;
+  company_logo?: string | null;
   subscription_tier?: string | null;
   subscription_addons?: string[] | null;
   enabled_languages?: string[] | null;
@@ -63,10 +65,16 @@ const KNOWN_ADDONS: Addon[] = [
 ];
 
 const normalizeAddonKey = (value: string): Addon | null => {
-  const normalized = String(value || "")
+  const raw = String(value || "")
     .trim()
     .toLowerCase()
-    .replace(/[-\s]+/g, "_") as Addon;
+    .replace(/[-\s]+/g, "_");
+
+  if (["tasks", "task_manager", "task_management"].includes(raw)) {
+    return "task_management";
+  }
+
+  const normalized = raw as Addon;
   return KNOWN_ADDONS.includes(normalized) ? normalized : null;
 };
 
@@ -102,14 +110,6 @@ export const TenantProvider = ({
   const [loadingAddons, setLoadingAddons] = useState(true);
   const [addonsKnown, setAddonsKnown] = useState(false);
 
-  useEffect(() => {
-    if (!cachedUser) {
-      setCompany(null);
-      setAddonsKnown(false);
-      setLoadingAddons(true);
-    }
-  }, [cachedUser]);
-
   const setCompanyFromDashboard = useCallback((companyLike: any) => {
     if (!companyLike) {
       setAddonsKnown(true);
@@ -121,6 +121,7 @@ export const TenantProvider = ({
       ...companyLike,
       company_id: companyLike.company_id,
       name: companyLike.name,
+      company_logo: companyLike.company_logo ?? null,
       subscription_tier: companyLike.subscription_tier ?? null,
       subscription_addons: Array.isArray(companyLike.subscription_addons)
         ? companyLike.subscription_addons
@@ -140,6 +141,14 @@ export const TenantProvider = ({
     setAddonsKnown(Array.isArray(companyLike.subscription_addons));
     setLoadingAddons(false);
   }, []);
+
+  useEffect(() => {
+    if (!cachedUser) {
+      setCompany(null);
+      setAddonsKnown(false);
+      setLoadingAddons(true);
+    }
+  }, [cachedUser]);
 
   const refreshAddons = useCallback(async () => {
     if (!cachedUser?.userId || !cachedUser?.companyId) return;

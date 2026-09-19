@@ -16,13 +16,15 @@ const { width } = Dimensions.get("window");
 interface SplashScreenProps {
   isDataReady?: boolean;
   onAnimationComplete?: () => void;
-  minimumDurationMs?: number; // Minimum branding display time (default 1500ms)
+  minimumDurationMs?: number; // Minimum branding display time (default 300ms)
+  maxTimeoutMs?: number; // Maximum safety timeout before force-launching (default 6000ms)
 }
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({
   isDataReady = true,
   onAnimationComplete,
-  minimumDurationMs = 1500,
+  minimumDurationMs = 300,
+  maxTimeoutMs = 6000,
 }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.88)).current;
@@ -32,17 +34,81 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   const screenFadeOut = useRef(new Animated.Value(1)).current;
   const screenScaleOut = useRef(new Animated.Value(1)).current;
 
+  const badgeScale = useRef(new Animated.Value(1)).current;
+  const textFade = useRef(new Animated.Value(1)).current;
+  const textTranslateY = useRef(new Animated.Value(0)).current;
+
   const [loadingStageText, setLoadingStageText] = useState("Initializing workspace...");
+  const [displayPercent, setDisplayPercent] = useState(0);
+
   const isCompletedRef = useRef(false);
   const minDurationPassedRef = useRef(false);
+  const isForceTimedOutRef = useRef(false);
   const startTimeRef = useRef(Date.now());
 
+  const targetPercentRef = useRef(0);
+  const displayPercentRef = useRef(0);
+  const currentStageTextRef = useRef("Initializing workspace...");
+
+  // Smooth Staggered Text Transition Helper
+  const animateTextChange = (newText: string) => {
+    if (currentStageTextRef.current === newText) return;
+    currentStageTextRef.current = newText;
+
+    Animated.parallel([
+      Animated.timing(textFade, {
+        toValue: 0,
+        duration: 90,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(textTranslateY, {
+        toValue: 5,
+        duration: 90,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setLoadingStageText(newText);
+      textTranslateY.setValue(-5);
+      Animated.parallel([
+        Animated.timing(textFade, {
+          toValue: 1,
+          duration: 130,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(textTranslateY, {
+          toValue: 0,
+          duration: 130,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  };
+
+  // 1. Silky Smooth 1% Step-by-Step Counter Loop (Every 14ms = ~70fps)
   useEffect(() => {
-    // 1. Entrance animation (fade in & spring scale)
+    const counterInterval = setInterval(() => {
+      if (displayPercentRef.current < targetPercentRef.current) {
+        displayPercentRef.current += 1;
+        setDisplayPercent(displayPercentRef.current);
+      } else if (displayPercentRef.current > targetPercentRef.current) {
+        displayPercentRef.current -= 1;
+        setDisplayPercent(displayPercentRef.current);
+      }
+    }, 14);
+
+    return () => clearInterval(counterInterval);
+  }, []);
+
+  useEffect(() => {
+    // 2. Entrance animation (fade in & spring scale)
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 400,
+        duration: 350,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
@@ -54,7 +120,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       }),
     ]).start();
 
-    // 2. Continuous pulse animation for logo glow
+    // 3. Continuous pulse animation for logo glow
     const pulseLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(logoPulse, {
@@ -73,7 +139,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
     );
     pulseLoop.start();
 
-    // 3. Shimmer highlight loop across progress bar
+    // 4. Shimmer highlight loop across progress bar
     const shimmerLoop = Animated.loop(
       Animated.timing(shimmerAnim, {
         toValue: 1,
@@ -84,35 +150,68 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
     );
     shimmerLoop.start();
 
-    // 4. Initial progress animation up to 85% over minimumDurationMs
-    Animated.timing(progressAnim, {
-      toValue: 0.85,
-      duration: minimumDurationMs,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: false,
-    }).start();
+    // 5. Organic Multi-Stage Dynamic Progress (0% -> 35% -> 72% -> 94% -> 98% crawl)
+    progressAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(progressAnim, {
+        toValue: 0.35,
+        duration: 450,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: false,
+      }),
+      Animated.timing(progressAnim, {
+        toValue: 0.72,
+        duration: 550,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: false,
+      }),
+      Animated.timing(progressAnim, {
+        toValue: 0.94,
+        duration: 600,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }),
+      Animated.timing(progressAnim, {
+        toValue: 0.98,
+        duration: 3000,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      }),
+    ]).start();
 
-    // 5. Track progress changes to update dynamic stage text
+    // 6. Track progress changes to set target percent & trigger staggered stage text
     const listenerId = progressAnim.addListener(({ value }) => {
+      const target = Math.min(100, Math.max(0, Math.round(value * 100)));
+      targetPercentRef.current = target;
+
       if (value < 0.35) {
-        setLoadingStageText("Initializing workspace...");
-      } else if (value < 0.7) {
-        setLoadingStageText("Syncing learning sprints...");
+        animateTextChange("Initializing workspace...");
+      } else if (value < 0.72) {
+        animateTextChange("Syncing learning sprints...");
       } else if (value < 0.95) {
-        setLoadingStageText("Preparing your dashboard...");
+        animateTextChange("Preparing your dashboard...");
       } else {
-        setLoadingStageText("Ready to launch!");
+        animateTextChange("Ready to launch!");
       }
     });
 
-    // 6. Minimum timer flag
+    // 7. Minimum timer flag
     const minTimer = setTimeout(() => {
       minDurationPassedRef.current = true;
     }, minimumDurationMs);
 
+    // 8. Safety timeout guard (6s limit) to prevent locking user if network stalls
+    const maxSafetyTimer = setTimeout(() => {
+      if (!isCompletedRef.current) {
+        console.warn("[SplashScreen] ⚠️ 6s safety timeout reached — force completing splash transition");
+        isForceTimedOutRef.current = true;
+      }
+    }, maxTimeoutMs);
+
     return () => {
       progressAnim.removeListener(listenerId);
       clearTimeout(minTimer);
+      clearTimeout(maxSafetyTimer);
       pulseLoop.stop();
       shimmerLoop.stop();
     };
@@ -133,48 +232,70 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
         console.log(`[SplashScreen] 🚀 Data ready & minimum duration met in ${Date.now() - startTimeRef.current}ms`);
 
-        // Spring progress to 100%
-        Animated.spring(progressAnim, {
+        // Set target percent to 100% and accelerate bar
+        targetPercentRef.current = 100;
+        animateTextChange("Ready to launch!");
+
+        Animated.timing(progressAnim, {
           toValue: 1,
-          friction: 7,
-          tension: 60,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: false,
         }).start(() => {
-          setLoadingStageText("Ready to launch!");
+          // Wait briefly for step-by-step counter to hit 100
+          const check100Timer = setInterval(() => {
+            if (displayPercentRef.current >= 100) {
+              clearInterval(check100Timer);
 
-          // Rebound celebration bounce on logo
-          Animated.sequence([
-            Animated.timing(logoPulse, {
-              toValue: 1.08,
-              duration: 120,
-              useNativeDriver: true,
-            }),
-            Animated.timing(logoPulse, {
-              toValue: 1,
-              duration: 120,
-              useNativeDriver: true,
-            }),
-          ]).start(() => {
-            // Smooth exit transition (fade + slight scale expand)
-            Animated.parallel([
-              Animated.timing(screenFadeOut, {
-                toValue: 0,
-                duration: 280,
-                easing: Easing.out(Easing.cubic),
-                useNativeDriver: true,
-              }),
-              Animated.timing(screenScaleOut, {
-                toValue: 1.04,
-                duration: 280,
-                easing: Easing.out(Easing.cubic),
-                useNativeDriver: true,
-              }),
-            ]).start(() => {
-              if (onAnimationComplete) {
-                onAnimationComplete();
-              }
-            });
-          });
+              // Pop badge scale on 100% completion
+              Animated.sequence([
+                Animated.timing(badgeScale, {
+                  toValue: 1.18,
+                  duration: 100,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(badgeScale, {
+                  toValue: 1,
+                  duration: 100,
+                  useNativeDriver: true,
+                }),
+              ]).start();
+
+              // Rebound celebration bounce on logo
+              Animated.sequence([
+                Animated.timing(logoPulse, {
+                  toValue: 1.08,
+                  duration: 120,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(logoPulse, {
+                  toValue: 1,
+                  duration: 120,
+                  useNativeDriver: true,
+                }),
+              ]).start(() => {
+                // Smooth exit transition (fade + slight scale expand)
+                Animated.parallel([
+                  Animated.timing(screenFadeOut, {
+                    toValue: 0,
+                    duration: 280,
+                    easing: Easing.out(Easing.cubic),
+                    useNativeDriver: true,
+                  }),
+                  Animated.timing(screenScaleOut, {
+                    toValue: 1.04,
+                    duration: 280,
+                    easing: Easing.out(Easing.cubic),
+                    useNativeDriver: true,
+                  }),
+                ]).start(() => {
+                  if (onAnimationComplete) {
+                    onAnimationComplete();
+                  }
+                });
+              });
+            }
+          }, 16);
         });
       }, remainingMs);
     };
@@ -220,12 +341,12 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       >
         {/* Logo Wrapper Card with Glowing Pulse */}
         <Animated.View
-          // style={[
-          //   styles.logoCard,
-          //   {
-          //     transform: [{ scale: logoPulse }],
-          //   },
-          // ]}
+          style={[
+            styles.logoCard,
+            {
+              transform: [{ scale: logoPulse }],
+            },
+          ]}
         >
           <Image
             source={require("../../../assets/logo.png")}
@@ -243,6 +364,27 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
       {/* Bottom Sleek Dynamic Progress Loader */}
       <View style={styles.progressContainer}>
+        <View style={styles.statusRow}>
+          <Animated.View
+            style={{
+              opacity: textFade,
+              transform: [{ translateY: textTranslateY }],
+            }}
+          >
+            <Text style={styles.loadingText}>{loadingStageText}</Text>
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.percentBadge,
+              {
+                transform: [{ scale: badgeScale }],
+              },
+            ]}
+          >
+            <Text style={styles.percentText}>{displayPercent}%</Text>
+          </Animated.View>
+        </View>
+
         <View style={styles.track}>
           <Animated.View style={[styles.bar, { width: progressWidth }]}>
             {/* Shimmer Highlight */}
@@ -254,11 +396,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                 },
               ]}
             />
+            {/* Glowing Leading Head Dot */}
+            <View style={styles.barHeadGlow} />
           </Animated.View>
-        </View>
-
-        <View style={styles.statusRow}>
-          <Text style={styles.loadingText}>{loadingStageText}</Text>
         </View>
       </View>
     </Animated.View>
@@ -348,7 +488,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F1F5F9",
     borderRadius: 3,
     overflow: "hidden",
-    marginBottom: 12,
   },
   bar: {
     height: "100%",
@@ -364,16 +503,44 @@ const styles = StyleSheet.create({
     width: 60,
     backgroundColor: "rgba(255, 255, 255, 0.45)",
   },
+  barHeadGlow: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 6,
+    borderRadius: 3,
+    backgroundColor: "#A5B4FC",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 2, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 4,
+  },
   statusRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    marginBottom: 8,
   },
   loadingText: {
     fontSize: 12,
     fontWeight: "600",
     color: "#64748B",
     letterSpacing: 0.2,
+  },
+  percentBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: "rgba(99, 102, 241, 0.08)",
+  },
+  percentText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#6366F1",
+    letterSpacing: -0.2,
   },
 });
 

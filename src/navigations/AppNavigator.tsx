@@ -282,7 +282,8 @@ function AppNavigatorContent() {
       <SplashScreen
         isDataReady={isDataReady}
         onAnimationComplete={handleSplashComplete}
-        minimumDurationMs={1500}
+        minimumDurationMs={1200}
+        maxTimeoutMs={6000}
       />
     );
   }

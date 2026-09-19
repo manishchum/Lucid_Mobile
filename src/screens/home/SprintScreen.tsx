@@ -59,14 +59,21 @@ export default function SprintScreen({
 	const userId = cachedUser?.userId ?? fetchedUser?.user_id ?? null;
 	const companyId = cachedUser?.companyId ?? fetchedUser?.company_id ?? null;
 
-	const { resolvedPlanCards } = useGetDashboardSummary(
+	const { resolvedPlanCards, isLoading: isDashboardLoading } = useGetDashboardSummary(
 		userId,
 		companyId,
 	);
 
 	// Auto-mount active sprint if null or if specific sprintId passed via navigation
 	React.useEffect(() => {
-		if (!resolvedPlanCards || resolvedPlanCards.length === 0) return;
+		if (!resolvedPlanCards) return;
+		if (resolvedPlanCards.length === 0) {
+			if (activeSprint) {
+				setActiveSprint(null);
+				setActiveModule(null);
+			}
+			return;
+		}
 
 		let targetCard = null;
 		if (paramSprintId || paramAssignmentTitle) {
@@ -77,10 +84,6 @@ export default function SprintScreen({
 					(paramAssignmentTitle && c.title.toLowerCase().includes(paramAssignmentTitle.toLowerCase())) ||
 					(paramAssignmentTitle && paramAssignmentTitle.toLowerCase().includes(c.title.toLowerCase()))
 			);
-		}
-
-		if (!targetCard && !activeSprint) {
-			targetCard = resolvedPlanCards[0];
 		}
 
 		if (targetCard) {
@@ -420,7 +423,14 @@ export default function SprintScreen({
 			moduleTitle: modTitle,
 			sprintTitle: planTitle,
 		});
-		navigation.navigate("AppTabs", { screen: STACK_ROUTES.STUDIO });
+		navigation.navigate("AppTabs", {
+			screen: STACK_ROUTES.STUDIO,
+			params: {
+				processedModuleId,
+				moduleTitle: modTitle,
+				sprintTitle: planTitle,
+			},
+		});
 	};
 
 	/**
@@ -494,7 +504,36 @@ export default function SprintScreen({
 		};
 	}, [isPlanLoading, isProgressLoading, skeletonOpacity]);
 
-	if (!!moduleId && (isPlanLoading || isProgressLoading) && !trainingPlan) {
+	// ── 1. Empty state: Tab opened directly without selecting a sprint ──────────
+	const hasRequestedSprint = !!(activeSprint || paramSprintId || paramAssignmentTitle);
+
+	if (!hasRequestedSprint || (resolvedPlanCards && resolvedPlanCards.length === 0)) {
+		return (
+			<View style={[styles.centered, { paddingTop: 20 }]}>
+				<View style={styles.emptyIconWrap}>
+					<MaterialCommunityIcons
+						name="lightning-bolt-outline"
+						size={44}
+						color="#A5B4FC"
+					/>
+				</View>
+				<Text style={styles.emptyTitle}>Sprint Empty</Text>
+				<Text style={styles.emptySubtitle}>
+					Go to the Home tab and tap <Text style={styles.emptyHighlight}>Start Sprint</Text> on a learning plan to begin.
+				</Text>
+				<TouchableOpacity
+					style={styles.emptyBtn}
+					onPress={() => navigation.navigate(APP_ROUTES.HOME)}
+					activeOpacity={0.8}
+				>
+					<Text style={styles.emptyBtnText}>Go to Home</Text>
+				</TouchableOpacity>
+			</View>
+		);
+	}
+
+	// ── 2. Loading state: A sprint was requested, show skeleton loader while fetching ──
+	if (isDashboardLoading || (!!moduleId && (isPlanLoading || isProgressLoading) && !trainingPlan)) {
 		return (
 			<View style={styles.container}>
 				<StatusBar barStyle="dark-content" />
@@ -534,31 +573,6 @@ export default function SprintScreen({
 						))}
 					</View>
 				</ScrollView>
-			</View>
-		);
-	}
-
-	if (!moduleId) {
-		return (
-			<View style={styles.centered}>
-				<View style={styles.emptyIconWrap}>
-				<MaterialCommunityIcons
-					name="lightning-bolt-outline"
-					size={56}
-					color="#A5B4FC"
-					/>
-				</View>
-				<Text style={styles.emptyTitle}>No Sprint Started</Text>
-				<Text style={styles.emptySubtitle}>
-					Go to the Home tab and tap <Text style={styles.emptyHighlight}>Start Sprint</Text> on a learning plan to begin.
-				</Text>
-				<TouchableOpacity
-					style={styles.emptyBtn}
-					onPress={() => navigation.navigate(APP_ROUTES.HOME)}
-					activeOpacity={0.8}
-				>
-					<Text style={styles.emptyBtnText}>Go to Home</Text>
-				</TouchableOpacity>
 			</View>
 		);
 	}
@@ -873,8 +887,8 @@ const styles = StyleSheet.create({
 		marginBottom: 12,
 	},
 	emptySubtitle: {
-		fontSize: 14,
-		color: "#6B7280",
+		fontSize: 15,
+		color: "#64748B",
 		textAlign: "center",
 		lineHeight: 24,
 	},
