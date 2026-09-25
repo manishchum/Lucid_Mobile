@@ -22,6 +22,7 @@ import {
   FormatAnswer,
 } from "./Dto";
 import { uploadMediaToStorage } from "../../services/storageUpload";
+import { supabase } from "../../services/supabase";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -1512,6 +1513,25 @@ export const submitTaskAnswer = async (
 
     const json = (await response.json()) as TaskSubmissionResponse;
     logger.debug("[Request] submitTaskAnswer", json?.submission_id);
+
+    // Broadcast instant realtime completion event across Web & Mobile
+    try {
+      const channel = supabase.channel(`realtime_tasks_${resolvedUserId}_broadcast`);
+      await channel.subscribe();
+      await channel.send({
+        type: "broadcast",
+        event: "task_completed",
+        payload: { userId: resolvedUserId, taskId: payload.task_id, submissionId: json?.submission_id },
+      });
+      setTimeout(() => {
+        try {
+          supabase.removeChannel(channel);
+        } catch {}
+      }, 1000);
+    } catch (broadcastErr) {
+      logger.warn("[Request] Broadcast task_completed failed:", broadcastErr);
+    }
+
     return json;
   } catch (error) {
     logger.error("[Request] Error submitting task answer:", error);

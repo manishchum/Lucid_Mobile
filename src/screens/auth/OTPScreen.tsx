@@ -56,8 +56,9 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
     };
   }, []);
 
-  const handleVerify = async () => {
-    if (otp.length !== 6 || isInvalidated) return;
+  const handleVerify = async (otpValue?: string) => {
+    const code = otpValue ?? otp;
+    if (code.length !== 6 || isInvalidated || isLoading) return;
 
     if (isOnline === false) {
       setShowNoInternet(true);
@@ -67,7 +68,7 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
     setIsLoading(true);
     setError("");
 
-    const result = await verifyOTP(otp);
+    const result = await verifyOTP(code);
 
     if (!result.success) {
       safeHaptics.errorNotification();
@@ -95,6 +96,15 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
     }
     // Note: If success, the AuthContext handles navigation via state change
     setIsLoading(false);
+  };
+
+  const handleOtpChange = (txt: string) => {
+    if (isInvalidated || isLoading) return;
+    const cleanTxt = txt.replace(/[^0-9]/g, "");
+    setOtp(cleanTxt);
+    if (cleanTxt.length === 6) {
+      handleVerify(cleanTxt);
+    }
   };
 
   const handleResend = async () => {
@@ -150,7 +160,7 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
           </Text>
 
           <TouchableOpacity
-            onPress={() => !isInvalidated && inputRef.current?.focus()}
+            onPress={() => !isInvalidated && !isLoading && inputRef.current?.focus()}
             style={styles.otpRow}
             activeOpacity={1}
           >
@@ -160,13 +170,11 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
           <TextInput
             ref={inputRef}
             value={otp}
-            onChangeText={(txt) =>
-              !isInvalidated && setOtp(txt.replace(/[^0-9]/g, ""))
-            }
+            onChangeText={handleOtpChange}
             maxLength={6}
             keyboardType="number-pad"
             style={styles.hiddenInput}
-            editable={!isInvalidated}
+            editable={!isInvalidated && !isLoading}
           />
 
           {error ? (
@@ -186,7 +194,7 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
               (otp.length !== 6 || isLoading || isInvalidated) &&
                 styles.buttonDisabled,
             ]}
-            onPress={handleVerify}
+            onPress={() => handleVerify()}
             disabled={otp.length !== 6 || isLoading || isInvalidated}
           >
             {isLoading ? (

@@ -27,7 +27,7 @@ export default function RoleplayCard({
   return (
     <View style={styles.cardContainer}>
       {/* Header Badges */}
-      <View style={styles.headerRow}>
+      {/* <View style={styles.headerRow}>
         <View style={styles.roleTag}>
           <MaterialCommunityIcons name="account-tie" size={14} color="#6366F1" />
           <Text style={styles.roleTagText} numberOfLines={1}>
@@ -40,27 +40,31 @@ export default function RoleplayCard({
             {scenario.difficulty || "Medium"}
           </Text>
         </View>
-      </View>
+      </View> */}
 
       {/* Scenario Title */}
       <Text style={styles.titleText}>{scenario.title}</Text>
 
       {/* Learner Brief Preview */}
-      <Text style={styles.briefText} numberOfLines={2}>
+      {/* <Text style={styles.briefText} numberOfLines={2}>
         {scenario.learnerBrief || scenario.description || "Interactive sales & communication scenario."}
-      </Text>
+      </Text> */}
 
       {/* Meta Specs (Duration, Cutoff Score, Attempts) */}
       <View style={styles.metaRow}>
         <View style={styles.metaItem}>
           <MaterialCommunityIcons name="clock-outline" size={14} color="#64748B" />
-          <Text style={styles.metaText}>{scenario.maxDuration || 15} mins</Text>
+          <Text style={styles.metaText}>{scenario.maxDuration || 15} mins   |</Text>
         </View>
 
-        <View style={styles.metaItem}>
+        {/* <View style={styles.metaItem}>
           <MaterialCommunityIcons name="target" size={14} color="#64748B" />
           <Text style={styles.metaText}>Cutoff: {scenario.cutoffScore || scenario.passingScore || 60}%</Text>
-        </View>
+        </View> */}
+
+          <Text style={[styles.diffBadgeText, { color: diffStyle.text }]}>
+            {scenario.difficulty}
+          </Text>
 
         {remainingAttempts !== undefined && (
           <View style={styles.metaItem}>
@@ -98,11 +102,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
   },
   headerRow: {
     flexDirection: "row",
@@ -132,7 +131,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   diffBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
   },
   titleText: {

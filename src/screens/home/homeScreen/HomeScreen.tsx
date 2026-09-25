@@ -25,6 +25,7 @@ import { useScreenProtection } from "../../../hooks/security/useScreenProtection
 import ScreenRecordingGuard from "../../../components/security/ScreenRecordingGuard";
 import AssignedSection from "../components/AssignedSection";
 import RefreshSpinner from "../../../components/pullToRefresh/RefreshSpinner";
+import { homePerfMeter } from "../../../utils/homePerformanceMeter";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -166,6 +167,10 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
   // ── Screen capture protection (blocks screenshots + recording) ──────────────
   const { isRecording } = useScreenProtection({ tag: "HomeScreen" });
 
+  React.useEffect(() => {
+    homePerfMeter.markHomeScreenMount();
+  }, []);
+
   const resolvedUserId = cachedUser?.userId ?? null;
   const resolvedPhone = cachedUser?.phone ?? phoneNumber ?? null;
 
@@ -246,6 +251,7 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
   }, [mountFade, mountTranslateY]);
 
   const onRefresh = React.useCallback(async () => {
+    homePerfMeter.markRefreshStart();
     setRefreshing(true);
     try {
       await refetch(true);
@@ -256,8 +262,43 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
       setRefreshing(false);
       setRefreshKey((prev) => prev + 1);
       triggerMountAnimation();
+
+      const totalModules = resolvedPlanCards.reduce(
+        (acc, c) => acc + (c.modules?.length ?? 0),
+        0
+      );
+      homePerfMeter.markRefreshComplete({
+        user: {
+          userId,
+          name: user?.name,
+          email: user?.email,
+          phone: user?.phone,
+          companyId,
+        },
+        content: {
+          plansCount: (dashboardData as any)?.plans?.length ?? resolvedPlanCards.length,
+          resolvedCardsCount: resolvedPlanCards.length,
+          totalModulesCount: totalModules,
+          completedModulesCount: stats.completedCount,
+          progressPercentage: stats.progressPercentage,
+          nudgeMessage: stats.nudgeMessage,
+        },
+      });
     }
-  }, [refetch, triggerMountAnimation]);
+  }, [
+    refetch,
+    triggerMountAnimation,
+    resolvedPlanCards,
+    stats.completedCount,
+    stats.progressPercentage,
+    stats.nudgeMessage,
+    userId,
+    user?.name,
+    user?.email,
+    user?.phone,
+    companyId,
+    dashboardData,
+  ]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -311,6 +352,14 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
     },
   });
 
+  // Real-time Supabase WebSocket subscription for child/bundle task submissions
+  useRealtimeSubscription({
+    table: "child_task_submissions",
+    onPayload: () => {
+      refetch(false);
+    },
+  });
+
 
   // Initial loading is true if:
   // 1. User fetching is active without cached user
@@ -353,11 +402,41 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
   React.useEffect(() => {
     if (!isLoading && !hasLoggedMountRef.current) {
       hasLoggedMountRef.current = true;
-      console.log(
-        `[PerfMeter] 🎯 HomeScreen SUCCESSFULLY MOUNTED: Total Resolved Cards=${resolvedPlanCards.length} | Completed=${stats.completedCount} | Progress=${stats.progressPercentage}% | UserID=${userId ?? "guest"} | MetaTimestamp=${new Date().toISOString()}`
+      const totalModules = resolvedPlanCards.reduce(
+        (acc, c) => acc + (c.modules?.length ?? 0),
+        0
       );
+      homePerfMeter.markHomeScreenFullyLoaded({
+        user: {
+          userId,
+          name: user?.name,
+          email: user?.email,
+          phone: user?.phone,
+          companyId,
+        },
+        content: {
+          plansCount: (dashboardData as any)?.plans?.length ?? resolvedPlanCards.length,
+          resolvedCardsCount: resolvedPlanCards.length,
+          totalModulesCount: totalModules,
+          completedModulesCount: stats.completedCount,
+          progressPercentage: stats.progressPercentage,
+          nudgeMessage: stats.nudgeMessage,
+        },
+      });
     }
-  }, [isLoading, resolvedPlanCards.length, stats.completedCount, stats.progressPercentage, userId]);
+  }, [
+    isLoading,
+    resolvedPlanCards,
+    stats.completedCount,
+    stats.progressPercentage,
+    stats.nudgeMessage,
+    userId,
+    user?.name,
+    user?.email,
+    user?.phone,
+    companyId,
+    dashboardData,
+  ]);
 
   // Skeleton Breathing Animation State
   const [skeletonOpacity] = React.useState(new Animated.Value(0.3));

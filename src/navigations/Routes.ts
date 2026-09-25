@@ -21,6 +21,7 @@ export const STACK_ROUTES = {
   NOTIFICATIONS: "Notifications",
   CONTENT_VIEWER: "ContentViewer",
   ROLEPLAY: "Roleplay",
+  ROLEPLAY_CONFIG: "RoleplayConfig",
   ROLEPLAY_SESSION: "RoleplaySession",
   ROLEPLAY_REPORT: "RoleplayReport",
 } as const;

@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { appStorage } from "../../utils/appStorage";
 import { eventBus } from "../../utils/EventBus";
 import { logger } from "../../utils/UnifiedLogger";
+import { homePerfMeter } from "../../utils/homePerformanceMeter";
 import { useTenant } from "../../contex/TenantContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import {
@@ -1179,10 +1180,25 @@ export const useGetDashboardSummary = (
   const [isLoading, setIsLoading] = useState<boolean>(() => {
     if (!userId || !companyId) return true;
     const mem = memoryDashboardCache.get(userId);
-    if (mem?.cards) return false;
+    if (mem?.cards && mem.cards.length > 0) {
+      homePerfMeter.markDashboardFetchEnd({
+        apiDurationMs: 0,
+        processingDurationMs: 0,
+        source: "MEMORY_CACHE",
+      });
+      return false;
+    }
     const cachedCards = appStorage.getObject<ResolvedPlanCard[]>(
       `@resolved_cards_${userId}`,
     );
+    if (cachedCards && cachedCards.length > 0) {
+      homePerfMeter.markDashboardFetchEnd({
+        apiDurationMs: 0,
+        processingDurationMs: 0,
+        source: "STORAGE_CACHE",
+      });
+      return false;
+    }
     return !cachedCards;
   });
   const [error, setError] = useState<Error | null>(null);
@@ -1212,6 +1228,7 @@ export const useGetDashboardSummary = (
       const fetchTask = (async () => {
         try {
           const startTime = Date.now();
+          homePerfMeter.markDashboardFetchStart();
           logger.debug(
             "[Hook] GET /employee/dashboard_summary/ →",
             userId,
@@ -1410,8 +1427,15 @@ export const useGetDashboardSummary = (
           }
 
           const totalDuration = Date.now() - startTime;
+          const apiDuration = apiEnd - apiStart;
+          const processingDuration = Math.max(0, totalDuration - apiDuration);
+          homePerfMeter.markDashboardFetchEnd({
+            apiDurationMs: apiDuration,
+            processingDurationMs: processingDuration,
+            source: "NETWORK_API",
+          });
           console.log(
-            `[PerfMeter] 📊 getDashboardSummary NETWORK FETCH COMPLETED: API Call=${apiEnd - apiStart}ms | Total Processing=${totalDuration}ms | Resolved Cards=${cards.length} | UserID=${userId}`
+            `[PerfMeter] 📊 getDashboardSummary NETWORK FETCH COMPLETED: API Call=${apiDuration}ms | Total Processing=${totalDuration}ms | Resolved Cards=${cards.length} | UserID=${userId}`
           );
           logger.debug(
             `[Timing] Total fetchDashboardData took ${totalDuration}ms`,

@@ -21,6 +21,7 @@ import { logger } from "../utils/UnifiedLogger";
 import { offlineQueue } from "../utils/offlineQueue";
 import { appStorage } from "../utils/appStorage";
 import { purgeAllMobileLocalCache } from "../utils/cacheManager";
+import { homePerfMeter } from "../utils/homePerformanceMeter";
 import {
   getAuth,
   onAuthStateChanged,
@@ -142,6 +143,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const forcedLogoutReasonRef = useRef<typeof forcedLogoutReason>(null);
 
   useEffect(() => {
+    homePerfMeter.markAuthStart();
+
     // 1. Restore cached data from AsyncStorage
     const restoreCachedData = async () => {
       try {
@@ -180,6 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log("[Auth] Native Firebase session is inactive");
       }
       setIsInitializing(false);
+      homePerfMeter.markAuthReady();
     });
 
     return unsubscribe;

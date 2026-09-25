@@ -30,9 +30,11 @@ import {
   getLearningStyle,
   getDashboardSummary,
 } from "../../api/users/Request";
+import { getUserRoleplayReports, RoleplaySession } from "../../api/roleplay";
 import { eventBus } from "../../utils/EventBus";
 import { useRealtimeSubscription } from "../../hooks/useRealtimeSubscription";
 import { ModuleCardItem } from "../../components/reports/ModuleCardItem";
+import { STACK_ROUTES } from "../../navigations/Routes";
 
 // Global in-memory cache for reports to prevent skeleton on revisit
 let reportsCache: {
@@ -54,6 +56,9 @@ if (
 ) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+
+// Coordinate offset (in pixels) for pull-to-refresh spinner so it emerges from behind the header
+const REFRESH_PROGRESS_OFFSET = 0;
 
 // Interface types
 interface AssessmentAttempt {
@@ -494,7 +499,14 @@ export default function ReportsScreen() {
   const companyUsesLearningStyle = Boolean(company?.learning_style);
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<"history" | "style">("history");
+  const [activeTab, setActiveTab] = useState<"history" | "style" | "roleplay">("history");
+
+  // Roleplay tab state
+  const [roleplaySessions, setRoleplaySessions] = useState<RoleplaySession[]>([]);
+  const [roleplayLoading, setRoleplayLoading] = useState(false);
+  const [roleplayRefreshing, setRoleplayRefreshing] = useState(false);
+  const [expandedRoleplaySessions, setExpandedRoleplaySessions] = useState<Record<string, boolean>>({});
+  const hasRolePlayAddon = Boolean(company?.subscription_addons?.includes("role_play"));
 
   // Expanded card state
   const [expandedModules, setExpandedModules] = useState<
@@ -801,6 +813,50 @@ export default function ReportsScreen() {
     setRefreshing(false);
   }, [loadData]);
 
+  // Roleplay tab data loader
+  const loadRoleplaySessions = useCallback(async () => {
+    if (!userId) return;
+    setRoleplayLoading(true);
+    try {
+      const sessions = await getUserRoleplayReports(userId);
+      setRoleplaySessions(sessions || []);
+    } catch (e) {
+      console.error("[ReportsScreen] Error fetching roleplay sessions:", e);
+    } finally {
+      setRoleplayLoading(false);
+      setRoleplayRefreshing(false);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (activeTab === "roleplay" && roleplaySessions.length === 0) {
+      loadRoleplaySessions();
+    }
+  }, [activeTab, loadRoleplaySessions]);
+
+  const onRoleplayRefresh = useCallback(async () => {
+    setRoleplayRefreshing(true);
+    await loadRoleplaySessions();
+  }, [loadRoleplaySessions]);
+
+  const toggleRoleplaySession = (id: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedRoleplaySessions((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const roleplayStats = useMemo(() => {
+    if (roleplaySessions.length === 0) return null;
+    const scores = roleplaySessions
+      .map((s) => s.roleplay_assessments?.[0]?.overall_score)
+      .filter((s): s is number => typeof s === "number");
+    if (scores.length === 0) return null;
+    return {
+      total: roleplaySessions.length,
+      avg: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+      best: Math.max(...scores),
+    };
+  }, [roleplaySessions]);
+
   // Collapsible toggle helpers
   const toggleModule = (id: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -917,7 +973,7 @@ export default function ReportsScreen() {
           >
             <MaterialCommunityIcons name="arrow-left" size={24} color="#1E293B" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Sprint Reports</Text>
+          <Text style={styles.headerTitle}>Reports</Text>
           <View style={{ width: 32 }} />
         </View>
 
@@ -949,7 +1005,11 @@ export default function ReportsScreen() {
     <ScrollView
       contentContainerStyle={styles.emptyContainer}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          progressViewOffset={REFRESH_PROGRESS_OFFSET}
+        />
       }
     >
       <View style={styles.emptyIconCircle}>
@@ -971,86 +1031,113 @@ export default function ReportsScreen() {
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
 
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
-        >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1E293B" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Sprint Reports</Text>
-        <View style={{ width: 32 }} />
-      </View>
+      {/* PINNED HEADER & TABS BAR (ELEVATED SO SPINNER COMES FROM BEHIND) */}
+      <View style={styles.topHeaderContainer}>
+        {/* HEADER */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#1E293B" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Reports</Text>
+          <View style={{ width: 32 }} />
+        </View>
 
-      {groupedHistory.length === 0 && !learningStyleData ? (
-        renderEmptyState()
-      ) : (
-        <View style={{ flex: 1 }}>
-          {/* TAB BAR */}
+        {/* TAB BAR */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[
+              styles.tabButton,
+              activeTab === "history" && styles.tabButtonActive,
+            ]}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setActiveTab("history");
+            }}
+          >
+            <MaterialCommunityIcons
+              name="trending-up"
+              size={16}
+              color={activeTab === "history" ? "#FFFFFF" : "#64748B"}
+              style={{ marginRight: 5 }}
+            />
+            <Text
+              style={[
+                styles.tabButtonText,
+                activeTab === "history" && styles.tabButtonTextActive,
+              ]}
+            >
+              Assessments
+            </Text>
+          </TouchableOpacity>
+
           {companyUsesLearningStyle && learningStyleData && (
-            <View style={styles.tabContainer}>
-              <TouchableOpacity
+            <TouchableOpacity
+              style={[
+                styles.tabButton,
+                activeTab === "style" && styles.tabButtonActive,
+              ]}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setActiveTab("style");
+              }}
+            >
+              <MaterialCommunityIcons
+                name="brain"
+                size={16}
+                color={activeTab === "style" ? "#FFFFFF" : "#64748B"}
+                style={{ marginRight: 5 }}
+              />
+              <Text
                 style={[
-                  styles.tabButton,
-                  activeTab === "history" && styles.tabButtonActive,
+                  styles.tabButtonText,
+                  activeTab === "style" && styles.tabButtonTextActive,
                 ]}
-                onPress={() => {
-                  LayoutAnimation.configureNext(
-                    LayoutAnimation.Presets.easeInEaseOut,
-                  );
-                  setActiveTab("history");
-                }}
               >
-                <MaterialCommunityIcons
-                  name="trending-up"
-                  size={18}
-                  color={activeTab === "history" ? "#FFFFFF" : "#64748B"}
-                  style={{ marginRight: 6 }}
-                />
-                <Text
-                  style={[
-                    styles.tabButtonText,
-                    activeTab === "history" && styles.tabButtonTextActive,
-                  ]}
-                >
-                  Growth History
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.tabButton,
-                  activeTab === "style" && styles.tabButtonActive,
-                ]}
-                onPress={() => {
-                  LayoutAnimation.configureNext(
-                    LayoutAnimation.Presets.easeInEaseOut,
-                  );
-                  setActiveTab("style");
-                }}
-              >
-                <MaterialCommunityIcons
-                  name="brain"
-                  size={18}
-                  color={activeTab === "style" ? "#FFFFFF" : "#64748B"}
-                  style={{ marginRight: 6 }}
-                />
-                <Text
-                  style={[
-                    styles.tabButtonText,
-                    activeTab === "style" && styles.tabButtonTextActive,
-                  ]}
-                >
-                  Learning Profile
-                </Text>
-              </TouchableOpacity>
-            </View>
+                Learning Profile
+              </Text>
+            </TouchableOpacity>
           )}
 
-          {/* CONTENT */}
-          {activeTab === "history" ? (
+          {hasRolePlayAddon && (
+            <TouchableOpacity
+              style={[
+                styles.tabButton,
+                activeTab === "roleplay" && styles.tabButtonActive,
+              ]}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setActiveTab("roleplay");
+              }}
+            >
+              <MaterialCommunityIcons
+                name="account-voice"
+                size={16}
+                color={activeTab === "roleplay" ? "#FFFFFF" : "#64748B"}
+                style={{ marginRight: 5 }}
+              />
+              <Text
+                style={[
+                  styles.tabButtonText,
+                  activeTab === "roleplay" && styles.tabButtonTextActive,
+                ]}
+              >
+                Role-Play Sessions
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      <View style={{ flex: 1 }}>
+        {/* CONTENT */}
+        {activeTab === "history" ? (
+          groupedHistory.length === 0 ? (
+            renderEmptyState()
+          ) : (
             <FlatList
               data={groupedHistory}
               keyExtractor={(item) => item.moduleId}
@@ -1060,7 +1147,11 @@ export default function ReportsScreen() {
               windowSize={5}
               removeClippedSubviews={Platform.OS === "android"}
               refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  progressViewOffset={REFRESH_PROGRESS_OFFSET}
+                />
               }
               renderItem={({ item }) => (
                 <ModuleCardItem
@@ -1071,11 +1162,210 @@ export default function ReportsScreen() {
                 />
               )}
             />
+          )
+        ) : activeTab === "roleplay" ? (
+            <ScrollView
+              contentContainerStyle={styles.listContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={roleplayRefreshing}
+                  onRefresh={onRoleplayRefresh}
+                  colors={["#4F46E5"]}
+                  progressViewOffset={REFRESH_PROGRESS_OFFSET}
+                />
+              }
+            >
+              {roleplayLoading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#6366F1" />
+                  <Text style={styles.loadingText}>Loading roleplay sessions...</Text>
+                </View>
+              ) : roleplaySessions.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <View style={styles.emptyIconCircle}>
+                    <MaterialCommunityIcons name="account-voice-off" size={48} color="#94A3B8" />
+                  </View>
+                  <Text style={styles.emptyTitle}>No Role-Play Sessions Yet</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Start practicing with AI-powered roleplay scenarios to see your reports here.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.rpCTABtn}
+                    onPress={() => navigation.navigate(STACK_ROUTES.ROLEPLAY as never)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.rpCTABtnText}>Start Your First Role-Play</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  {/* Clean Minimalist Stats Bar */}
+                  {roleplayStats && (
+                    <View style={styles.rpStatsContainer}>
+                      <View style={styles.rpStatCol}>
+                        <Text style={styles.rpStatValue}>{roleplayStats.total}</Text>
+                        <Text style={styles.rpStatLabel}>Total Sessions</Text>
+                      </View>
+                      <View style={styles.rpStatDivider} />
+                      <View style={styles.rpStatCol}>
+                        <Text style={styles.rpStatValue}>{roleplayStats.avg}%</Text>
+                        <Text style={styles.rpStatLabel}>Avg Score</Text>
+                      </View>
+                      <View style={styles.rpStatDivider} />
+                      <View style={styles.rpStatCol}>
+                        <Text style={[styles.rpStatValue, { color: "#4F46E5" }]}>
+                          {roleplayStats.best}%
+                        </Text>
+                        <Text style={styles.rpStatLabel}>Best Score</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Section Heading */}
+                  <View style={styles.rpSectionHeaderRow}>
+                    <Text style={styles.rpSectionHeading}>Practice Sessions</Text>
+                  </View>
+
+                  {/* Session Cards */}
+                  {roleplaySessions.map((session) => {
+                    const assessment = session.roleplay_assessments?.[0];
+                    const score = assessment?.overall_score ?? null;
+                    const isExpanded = !!expandedRoleplaySessions[session.id];
+
+                    // Parse params
+                    const rawParams = assessment?.parameters || {};
+                    const paramsList: Array<{ name: string; score: number; feedback: string }> = [];
+                    if (Array.isArray(rawParams)) {
+                      rawParams.forEach((p: any) =>
+                        paramsList.push({ name: p.name || "Parameter", score: p.score ?? 0, feedback: p.feedback || "" })
+                      );
+                    } else if (typeof rawParams === "object") {
+                      Object.keys(rawParams).forEach((key) => {
+                        const item = rawParams[key];
+                        paramsList.push({ name: item.name || key, score: item.score ?? 0, feedback: item.feedback || "" });
+                      });
+                    }
+
+                    const dateStr = session.started_at
+                      ? new Date(session.started_at).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })
+                      : "Recent";
+
+                    return (
+                      <TouchableOpacity
+                        key={session.id}
+                        style={styles.rpSessionCard}
+                        onPress={() => toggleRoleplaySession(session.id)}
+                        activeOpacity={0.7}
+                      >
+                        {/* Card Header: Title (Full, No Truncation) + Meta + Score Pill + Chevron */}
+                        <View style={styles.rpSessionCardHeader}>
+                          <View style={{ flex: 1, marginRight: 12 }}>
+                            <Text style={styles.rpSessionTitle}>
+                              {session.scenario_title || "Roleplay Session"}
+                            </Text>
+                            <View style={styles.rpSessionMeta}>
+                              <Text style={styles.rpSessionDate}>{dateStr}</Text>
+                              {session.scenario_difficulty ? (
+                                <>
+                                  <Text style={styles.rpMetaBullet}>•</Text>
+                                  <Text style={styles.rpDiffText}>
+                                    {session.scenario_difficulty}
+                                  </Text>
+                                </>
+                              ) : null}
+                              {session.duration_seconds && session.duration_seconds > 0 ? (
+                                <>
+                                  <Text style={styles.rpMetaBullet}>•</Text>
+                                  <Text style={styles.rpSessionDate}>
+                                    {Math.round(session.duration_seconds / 60)} min
+                                  </Text>
+                                </>
+                              ) : null}
+                            </View>
+                          </View>
+
+                          <View style={styles.rpCardRightAction}>
+                            {score !== null ? (
+                              <View style={styles.rpScorePill}>
+                                <Text style={styles.rpScorePillText}>{score}%</Text>
+                              </View>
+                            ) : null}
+                            <MaterialCommunityIcons
+                              name={isExpanded ? "chevron-up" : "chevron-down"}
+                              size={18}
+                              color="#94A3B8"
+                            />
+                          </View>
+                        </View>
+
+                        {/* Expanded Content */}
+                        {isExpanded && (
+                          <View style={styles.rpExpandedContent}>
+                            {assessment?.summary ? (
+                              <Text style={styles.rpSummaryText}>{assessment.summary}</Text>
+                            ) : null}
+
+                            {/* Parameter Breakdown */}
+                            {paramsList.length > 0 && (
+                              <View style={styles.rpParamsSection}>
+                                <Text style={styles.rpParamHeading}>Evaluation Breakdown</Text>
+                                {paramsList.map((param, idx) => (
+                                  <View key={idx} style={styles.rpParamRow}>
+                                    <View style={styles.rpParamHeader}>
+                                      <Text style={styles.rpParamName}>{param.name}</Text>
+                                      <Text style={styles.rpParamScore}>{param.score}%</Text>
+                                    </View>
+                                    <View style={styles.rpProgressTrack}>
+                                      <View
+                                        style={[
+                                          styles.rpProgressBar,
+                                          { width: `${Math.min(param.score, 100)}%` },
+                                        ]}
+                                      />
+                                    </View>
+                                    {param.feedback ? (
+                                      <Text style={styles.rpParamFeedback}>{param.feedback}</Text>
+                                    ) : null}
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+
+                            {/* View Full Report Button */}
+                            <TouchableOpacity
+                              style={styles.rpViewReportBtn}
+                              onPress={() =>
+                                navigation.navigate(
+                                  STACK_ROUTES.ROLEPLAY_REPORT as never,
+                                  { session } as never
+                                )
+                              }
+                              activeOpacity={0.8}
+                            >
+                              <Text style={styles.rpViewReportBtnText}>View Assessment Report</Text>
+                              <MaterialCommunityIcons name="arrow-right" size={16} color="#4F46E5" />
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              )}
+            </ScrollView>
           ) : (
             <ScrollView
               contentContainerStyle={styles.styleContent}
               refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  progressViewOffset={REFRESH_PROGRESS_OFFSET}
+                />
               }
             >
               {/* PRIMARY STYLE HEADER */}
@@ -1191,7 +1481,6 @@ export default function ReportsScreen() {
             </ScrollView>
           )}
         </View>
-      )}
 
       {/* ATTEMPT DETAILED REPORT MODAL */}
       {selectedAttempt && activeReportDetails && (() => {
@@ -1586,21 +1875,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FFF",
   },
+  topHeaderContainer: {
+    backgroundColor: "#FFFFFF",
+    zIndex: 10,
+    // elevation: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    paddingBottom: 10,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
     backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
-    // elevation: 2,
-    // shadowColor: "#0F172A",
-    // shadowOffset: { width: 0, height: 2 },
-    // shadowOpacity: 0.05,
-    // shadowRadius: 3,
   },
   backBtn: {
     width: 32,
@@ -1659,11 +1949,12 @@ const styles = StyleSheet.create({
   },
   tabContainer: {
     flexDirection: "row",
-    backgroundColor: "#E2E8F0",
-    padding: 4,
+    backgroundColor: "#F1F5F9",
+    padding: 3,
     borderRadius: 12,
     marginHorizontal: 16,
-    marginVertical: 16,
+    marginTop: 4,
+    marginBottom: 0,
   },
   tabButton: {
     flex: 1,
@@ -1675,11 +1966,11 @@ const styles = StyleSheet.create({
   },
   tabButtonActive: {
     backgroundColor: "#6366F1",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    // elevation: 2,
+    // shadowColor: "#000",
+    // shadowOffset: { width: 0, height: 1 },
+    // shadowOpacity: 0.1,
+    // shadowRadius: 2,
   },
   tabButtonText: {
     fontSize: 13,
@@ -1691,6 +1982,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 16,
+    paddingTop: 12,
     paddingBottom: 32,
   },
   moduleCard: {
@@ -1699,7 +1991,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
     marginTop: 12,
-    overflow: "hidden",
+    // overflow: "hidden",
     // elevation: 1,
     // shadowColor: "#0F172A",
     // shadowOffset: { width: 0, height: 1 },
@@ -1768,6 +2060,7 @@ const styles = StyleSheet.create({
   },
   styleContent: {
     paddingHorizontal: 16,
+    paddingTop: 12,
     paddingBottom: 32,
   },
   styleHeroCard: {
@@ -1778,11 +2071,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
     marginBottom: 20,
-    elevation: 2,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    // elevation: 2,
+    // shadowColor: "#0F172A",
+    // shadowOffset: { width: 0, height: 2 },
+    // shadowOpacity: 0.05,
+    // shadowRadius: 4,
   },
   styleBadgeCircle: {
     width: 64,
@@ -1971,11 +2264,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 20,
     padding: 16,
-    elevation: 1,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
+    // elevation: 1,
+    // shadowColor: "#0F172A",
+    // shadowOffset: { width: 0, height: 1 },
+    // shadowOpacity: 0.03,
+    // shadowRadius: 3,
   },
   cardSectionTitle: {
     fontSize: 15,
@@ -2179,4 +2472,215 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#E2E8F0",
   },
+
+  // ── Roleplay Sessions Tab Styles ─────────────────────────────────────────
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 60,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: "#64748B",
+  },
+  rpCTABtn: {
+    marginTop: 20,
+    backgroundColor: "#6366F1",
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  rpCTABtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  rpStatsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    marginBottom: 20,
+  },
+  rpStatCol: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rpStatValue: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.3,
+  },
+  rpStatLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+    marginTop: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  rpStatDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "#F1F5F9",
+  },
+  rpSectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  rpSectionHeading: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  rpSectionCount: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#94A3B8",
+  },
+  rpSessionCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 16,
+    marginBottom: 12,
+  },
+  rpSessionCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  rpSessionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#0F172A",
+    lineHeight: 21,
+    marginBottom: 6,
+  },
+  rpSessionMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  rpSessionDate: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#94A3B8",
+  },
+  rpMetaBullet: {
+    fontSize: 12,
+    color: "#CBD5E1",
+  },
+  rpDiffText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  rpCardRightAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  rpScorePill: {
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  rpScorePillText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.2,
+  },
+  rpExpandedContent: {
+    marginTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    paddingTop: 14,
+  },
+  rpSummaryText: {
+    fontSize: 13,
+    color: "#475569",
+    lineHeight: 20,
+  },
+  rpParamsSection: {
+    marginTop: 14,
+    gap: 12,
+  },
+  rpParamHeading: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: 2,
+  },
+  rpParamRow: {
+    gap: 5,
+  },
+  rpParamHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  rpParamName: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#334155",
+    flex: 1,
+    marginRight: 8,
+  },
+  rpParamScore: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  rpProgressTrack: {
+    height: 5,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  rpProgressBar: {
+    height: "100%",
+    backgroundColor: "#4F46E5",
+    borderRadius: 3,
+  },
+  rpParamFeedback: {
+    fontSize: 12,
+    color: "#64748B",
+    lineHeight: 17,
+  },
+  rpViewReportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 6,
+  },
+  rpViewReportBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1E1B4B",
+  },
 });
+

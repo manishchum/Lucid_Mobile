@@ -79,3 +79,7 @@ GoogleService-Info.plist
 
 # Android signing keys
 my-release-key.keystore
+
+ast_backend_endpoints.json
+generate_performance_matrix.py
+Performance_Matrix.xlsx

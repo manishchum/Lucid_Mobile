@@ -200,11 +200,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       minDurationPassedRef.current = true;
     }, minimumDurationMs);
 
-    // 8. Safety timeout guard (6s limit) to prevent locking user if network stalls
+    // 8. Safety timeout guard to prevent locking user if network stalls
     const maxSafetyTimer = setTimeout(() => {
       if (!isCompletedRef.current) {
-        console.warn("[SplashScreen] ⚠️ 6s safety timeout reached — force completing splash transition");
-        isForceTimedOutRef.current = true;
+        triggerExitSequence(true);
       }
     }, maxTimeoutMs);
 
@@ -217,90 +216,78 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
     };
   }, []);
 
+  const triggerExitSequence = (isForced: boolean = false) => {
+    if (isCompletedRef.current) return;
+    isCompletedRef.current = true;
+
+    const durationMs = Date.now() - startTimeRef.current;
+    if (isForced) {
+      console.warn(`[SplashScreen] ⚠️ Safety timeout triggered after ${durationMs}ms — completing transition`);
+    } else {
+      console.log(`[SplashScreen] 🚀 Data ready & minimum duration met in ${durationMs}ms`);
+    }
+
+    // Fast-forward progress target to 100%
+    targetPercentRef.current = 100;
+    displayPercentRef.current = 100;
+    setDisplayPercent(100);
+    animateTextChange("Ready to launch!");
+
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: isForced ? 100 : 200,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start(() => {
+      // Pop badge scale briefly
+      Animated.sequence([
+        Animated.timing(badgeScale, {
+          toValue: 1.12,
+          duration: 80,
+          useNativeDriver: true,
+        }),
+        Animated.timing(badgeScale, {
+          toValue: 1,
+          duration: 80,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // Smooth exit transition (fade + slight scale expand)
+      Animated.parallel([
+        Animated.timing(screenFadeOut, {
+          toValue: 0,
+          duration: 220,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(screenScaleOut, {
+          toValue: 1.03,
+          duration: 220,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        if (onAnimationComplete) {
+          onAnimationComplete();
+        }
+      });
+    });
+  };
+
   // Check whenever isDataReady or minimum duration changes
   useEffect(() => {
-    const checkAndComplete = () => {
-      if (isCompletedRef.current) return;
-      if (!isDataReady) return;
+    if (isCompletedRef.current) return;
+    if (!isDataReady) return;
 
-      const elapsed = Date.now() - startTimeRef.current;
-      const remainingMs = Math.max(0, minimumDurationMs - elapsed);
+    const elapsed = Date.now() - startTimeRef.current;
+    const remainingMs = Math.max(0, minimumDurationMs - elapsed);
 
-      setTimeout(() => {
-        if (isCompletedRef.current) return;
-        isCompletedRef.current = true;
+    const timer = setTimeout(() => {
+      triggerExitSequence(false);
+    }, remainingMs);
 
-        console.log(`[SplashScreen] 🚀 Data ready & minimum duration met in ${Date.now() - startTimeRef.current}ms`);
-
-        // Set target percent to 100% and accelerate bar
-        targetPercentRef.current = 100;
-        animateTextChange("Ready to launch!");
-
-        Animated.timing(progressAnim, {
-          toValue: 1,
-          duration: 300,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: false,
-        }).start(() => {
-          // Wait briefly for step-by-step counter to hit 100
-          const check100Timer = setInterval(() => {
-            if (displayPercentRef.current >= 100) {
-              clearInterval(check100Timer);
-
-              // Pop badge scale on 100% completion
-              Animated.sequence([
-                Animated.timing(badgeScale, {
-                  toValue: 1.18,
-                  duration: 100,
-                  useNativeDriver: true,
-                }),
-                Animated.timing(badgeScale, {
-                  toValue: 1,
-                  duration: 100,
-                  useNativeDriver: true,
-                }),
-              ]).start();
-
-              // Rebound celebration bounce on logo
-              Animated.sequence([
-                Animated.timing(logoPulse, {
-                  toValue: 1.08,
-                  duration: 120,
-                  useNativeDriver: true,
-                }),
-                Animated.timing(logoPulse, {
-                  toValue: 1,
-                  duration: 120,
-                  useNativeDriver: true,
-                }),
-              ]).start(() => {
-                // Smooth exit transition (fade + slight scale expand)
-                Animated.parallel([
-                  Animated.timing(screenFadeOut, {
-                    toValue: 0,
-                    duration: 280,
-                    easing: Easing.out(Easing.cubic),
-                    useNativeDriver: true,
-                  }),
-                  Animated.timing(screenScaleOut, {
-                    toValue: 1.04,
-                    duration: 280,
-                    easing: Easing.out(Easing.cubic),
-                    useNativeDriver: true,
-                  }),
-                ]).start(() => {
-                  if (onAnimationComplete) {
-                    onAnimationComplete();
-                  }
-                });
-              });
-            }
-          }, 16);
-        });
-      }, remainingMs);
-    };
-
-    checkAndComplete();
+    return () => clearTimeout(timer);
   }, [isDataReady, minimumDurationMs, onAnimationComplete]);
 
   const progressWidth = progressAnim.interpolate({

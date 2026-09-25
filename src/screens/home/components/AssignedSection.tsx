@@ -19,6 +19,7 @@ import AssignedTasksList from "./AssignedTasksList";
 import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
 import { useRealtimeSubscription } from "../../../hooks/useRealtimeSubscription";
 import { eventBus } from "../../../utils/EventBus";
+import { supabase } from "../../../services/supabase";
 
 type TabId = "sprints" | "tasks";
 type SprintSortOption = "title" | "dueDate" | "progress";
@@ -137,6 +138,35 @@ export default function AssignedSection({
       refetch();
     },
   });
+
+  useRealtimeSubscription({
+    table: "child_task_submissions",
+    onPayload: () => {
+      refetch();
+    },
+  });
+
+  // ── Instant Realtime Broadcast Channel (Cross-device Web <-> Mobile) ───
+  useEffect(() => {
+    if (!userId || !showTaskManagement) return;
+
+    const channel = supabase
+      .channel(`realtime_tasks_${userId}_broadcast_client`)
+      .on(
+        "broadcast",
+        { event: "task_completed" },
+        () => {
+          refetch();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  }, [userId, showTaskManagement, refetch]);
 
   const effectiveTasks = useMemo(() => {
     if (optimisticCompletedIds.size === 0) return tasks;
