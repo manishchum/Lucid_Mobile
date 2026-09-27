@@ -90,6 +90,21 @@ export default StyleSheet.create({
     borderTopColor: 'transparent',
     marginRight: 10,
   },
+  statusIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    marginTop: 10,
+  },
+  statusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2563EB',
+    marginLeft: 8,
+  },
   disclaimer: {
     marginTop: 25,
     textAlign: 'center',

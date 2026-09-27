@@ -107,15 +107,30 @@ export const TenantProvider = ({
   children: React.ReactNode;
 }) => {
   const { cachedUser } = useAuth();
-  const [company, setCompany] = useState<CompanyInfo | null>(null);
-  const [loadingAddons, setLoadingAddons] = useState(true);
-  const [addonsKnown, setAddonsKnown] = useState(false);
+  const [company, setCompany] = useState<CompanyInfo | null>(() => {
+    if (!cachedUser?.companyId) return null;
+    return appStorage.getObject<CompanyInfo>(`@company_${cachedUser.companyId}`);
+  });
+  const [loadingAddons, setLoadingAddons] = useState(() => {
+    if (!cachedUser?.companyId) return true;
+    const cached = appStorage.getObject<CompanyInfo>(`@company_${cachedUser.companyId}`);
+    return !cached;
+  });
+  const [addonsKnown, setAddonsKnown] = useState(() => {
+    if (!cachedUser?.companyId) return false;
+    const cached = appStorage.getObject<CompanyInfo>(`@company_${cachedUser.companyId}`);
+    return Array.isArray(cached?.subscription_addons);
+  });
 
   const setCompanyFromDashboard = useCallback((companyLike: any) => {
     if (!companyLike) {
       setAddonsKnown(true);
       setLoadingAddons(false);
       return;
+    }
+
+    if (companyLike.company_id) {
+      appStorage.setObject(`@company_${companyLike.company_id}`, companyLike);
     }
 
     setCompany({

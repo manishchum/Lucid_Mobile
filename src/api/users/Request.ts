@@ -77,7 +77,7 @@ export const sendOtpApi = async (
 export const verifyOtpApi = async (
   phone: string,
   otp: string
-): Promise<{ success: boolean; token: string; user: any }> => {
+): Promise<{ success: boolean; token: string; user: any; company?: any }> => {
   const url = `${API_BASE_URL}/auth/verify-otp`;
   try {
     const response = await fetch(url, {

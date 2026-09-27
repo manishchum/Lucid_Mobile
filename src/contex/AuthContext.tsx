@@ -77,8 +77,8 @@ interface AuthContextType {
   clearForcedLogoutReason: () => void;
   setPhoneNumber: (phone: string) => void;
   checkUserExists: (phone: string) => Promise<CheckUserResult>;
-  sendOTP: () => Promise<SendOtpResult>;
-  verifyOTP: (otp: string) => Promise<VerifyOtpResult>;
+  sendOTP: (phoneOverride?: string) => Promise<SendOtpResult>;
+  verifyOTP: (otp: string, phoneOverride?: string) => Promise<VerifyOtpResult>;
   logout: () => Promise<void>;
 }
 
@@ -90,7 +90,7 @@ function toE164(rawPhone: string): string {
   // Strip everything except digits and a leading +
   let digits = rawPhone.replace(/[^\d+]/g, "");
 
-  // Already correctly formatted
+  // Already correctly formatted (+91xxxxxxxxxx = 13 chars)
   if (digits.startsWith("+91") && digits.length === 13) {
     return digits;
   }
@@ -113,6 +113,14 @@ function toE164(rawPhone: string): string {
     return `+91${digits}`;
   }
 
+  // If longer than 10 digits (e.g. pasted with prefix or country code)
+  if (digits.length > 10) {
+    if (digits.startsWith("91")) {
+      return `+91${digits.slice(2, 12)}`;
+    }
+    return `+91${digits.slice(-10)}`;
+  }
+
   // Fallback — couldn't confidently normalize, return best-effort
   console.warn("[Auth] toE164 — unexpected phone format:", rawPhone);
   return digits.startsWith("91") ? `+${digits}` : `+91${digits}`;
@@ -124,9 +132,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<any>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [phoneNumber, setPhoneNumber] = useState<string>(
-    () => appStorage.getString(PHONE_NUMBER_KEY) || "",
-  );
+  const [phoneNumber, setPhoneNumber] = useState<string>(() => {
+    const val = appStorage.getString(PHONE_NUMBER_KEY) || "";
+    const clean = val.replace(/\D/g, "");
+    return clean.length === 10 ? clean : "";
+  });
   const [otpStep, setOtpStep] = useState(false);
   const [confirmation, setConfirmation] = useState<any>(null);
   const [cachedUser, setCachedUser] = useState<CachedUser | null>(
@@ -152,8 +162,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const storedPhone = await AsyncStorage.getItem(PHONE_NUMBER_KEY);
 
         if (storedPhone) {
-          setPhoneNumber(storedPhone);
-          appStorage.setString(PHONE_NUMBER_KEY, storedPhone);
+          const cleanStored = storedPhone.replace(/\D/g, "");
+          if (cleanStored.length === 10) {
+            setPhoneNumber(cleanStored);
+            appStorage.setString(PHONE_NUMBER_KEY, cleanStored);
+          }
         }
 
         if (storedUserJson) {
@@ -254,9 +267,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const sendOTP = async (): Promise<SendOtpResult> => {
+  const sendOTP = async (phoneOverride?: string): Promise<SendOtpResult> => {
     try {
-      const phone = toE164(phoneNumber);
+      const raw =
+        phoneOverride && typeof phoneOverride === "string" && phoneOverride.trim()
+          ? phoneOverride.trim()
+          : phoneNumber;
+
+      const cleanDigits = raw.replace(/\D/g, "").slice(-10);
+      if (cleanDigits.length === 10) {
+        setPhoneNumber(cleanDigits);
+        appStorage.setString(PHONE_NUMBER_KEY, cleanDigits);
+        AsyncStorage.setItem(PHONE_NUMBER_KEY, cleanDigits).catch(() => {});
+      }
+
+      const phone = toE164(cleanDigits.length === 10 ? cleanDigits : raw);
       console.log("[Auth] Sending OTP via backend API to:", phone);
       const res = await sendOtpApi(phone);
       if (res.success) {
@@ -281,18 +306,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const verifyOTP = async (otp: string): Promise<VerifyOtpResult> => {
+  const verifyOTP = async (
+    otp: string,
+    phoneOverride?: string
+  ): Promise<VerifyOtpResult> => {
     try {
-      const phone = toE164(phoneNumber);
-      console.log("[Auth] Verifying OTP via backend API...");
+      const raw =
+        phoneOverride && typeof phoneOverride === "string" && phoneOverride.trim()
+          ? phoneOverride.trim()
+          : phoneNumber || appStorage.getString(PHONE_NUMBER_KEY) || "";
+
+      const cleanDigits = raw.replace(/\D/g, "").slice(-10);
+      const phone = toE164(cleanDigits.length === 10 ? cleanDigits : raw);
+      console.log("[Auth] Verifying OTP via backend API for:", phone);
       const res = await verifyOtpApi(phone, otp);
       if (res.success && res.token) {
         // Exchange custom token for a Firebase session on the device
         console.log("[Auth] Signing in with Firebase custom token...");
         await signInWithCustomToken(getAuth(), res.token);
 
-        if (phoneNumber) {
-          await AsyncStorage.setItem(PHONE_NUMBER_KEY, phoneNumber);
+        if (cleanDigits.length === 10) {
+          await AsyncStorage.setItem(PHONE_NUMBER_KEY, cleanDigits);
         }
 
         if (res.user) {
@@ -312,6 +346,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           appStorage.setObject(CACHED_USER_KEY, user);
           appStorage.setString(PHONE_NUMBER_KEY, phoneNumber);
           await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(user));
+        }
+
+        if (res.company && res.user?.company_id) {
+          appStorage.setObject(`@company_${res.user.company_id}`, res.company);
         }
 
         setOtpStep(false);
