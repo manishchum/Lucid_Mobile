@@ -509,6 +509,37 @@ export const getCompanyActiveStatus = async (
   }
 };
 
+// 1b-2. Fetch full company details (addons, tiers, logos) directly
+export const getCompanyDetails = async (
+  companyId: string,
+  userId?: string,
+): Promise<any | null> => {
+  if (!companyId) return null;
+  try {
+    const url = `${API_BASE_URL}/companies/${encodeURIComponent(companyId)}`;
+    logger.debug("[Request] getCompanyDetails →", url);
+    const json = await apiFetch<any>(url, {
+      method: "GET",
+      userId,
+      companyId,
+      noCache: true,
+    });
+
+    const company = json?.company ?? json?.data?.company ?? json?.data ?? json;
+    if (!company || typeof company !== "object") {
+      logger.warn(
+        "[Request] getCompanyDetails — company not found for ID:",
+        companyId,
+      );
+      return null;
+    }
+    return company;
+  } catch (error) {
+    logger.error("[Request] Error fetching company details:", error);
+    return null;
+  }
+};
+
 
 // 1c. Record user login metadata
 export const recordUserLogin = async (userId: string): Promise<any> => {

@@ -8,20 +8,35 @@ import {
   ActivityIndicator,
   RefreshControl,
   StatusBar,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { Scenario, getUserRoleplayData } from "../../../api/roleplay";
 import RoleplayCard from "./components/RoleplayCard";
-import { STACK_ROUTES } from "../../../navigations/Routes";
+import { STACK_ROUTES, APP_ROUTES } from "../../../navigations/Routes";
 import { useAuth } from "../../../contex/AuthContext";
+import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
 import { eventBus } from "../../../utils/EventBus";
 import { logger } from "../../../utils/UnifiedLogger";
 
 export default function RoleplayScreen({ navigation }: { navigation: any }) {
   const { cachedUser } = useAuth();
   const userEmail = cachedUser?.email || "";
+  const { hasFeature, addonsKnown } = useFeatureGating();
+  const showRoleplay = hasFeature(FEATURES.ROLE_PLAY);
+
+  // Screen-level gating: redirect if roleplay is toggled off
+  useEffect(() => {
+    if (addonsKnown && !showRoleplay) {
+      Alert.alert(
+        "Access Restricted",
+        "The Roleplay module is not enabled for your company plan.",
+        [{ text: "OK", onPress: () => navigation.navigate(APP_ROUTES.HOME) }]
+      );
+    }
+  }, [addonsKnown, showRoleplay, navigation]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -66,6 +81,56 @@ export default function RoleplayScreen({ navigation }: { navigation: any }) {
   const handleStartRoleplay = (scenario: Scenario) => {
     navigation.navigate(STACK_ROUTES.ROLEPLAY_CONFIG as never, { scenario });
   };
+
+  if (addonsKnown && !showRoleplay) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.safeArea,
+          { justifyContent: "center", alignItems: "center", padding: 24 },
+        ]}
+      >
+        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+        <MaterialCommunityIcons name="lock-outline" size={54} color="#94A3B8" />
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "700",
+            color: "#1E293B",
+            marginTop: 16,
+          }}
+        >
+          Feature Disabled
+        </Text>
+        <Text
+          style={{
+            fontSize: 14,
+            color: "#64748B",
+            textAlign: "center",
+            marginTop: 8,
+            maxWidth: 280,
+          }}
+        >
+          Roleplay is not enabled for your organization's subscription plan.
+        </Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate(APP_ROUTES.HOME)}
+          style={{
+            marginTop: 24,
+            backgroundColor: "#6366F1",
+            paddingHorizontal: 24,
+            paddingVertical: 12,
+            borderRadius: 10,
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={{ color: "#FFFFFF", fontWeight: "600", fontSize: 15 }}>
+            Back to Home
+          </Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>

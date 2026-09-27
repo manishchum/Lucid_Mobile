@@ -7,7 +7,8 @@ import React, {
   useEffect,
 } from "react";
 import { useAuth } from "./AuthContext";
-import { getDashboardSummary } from "../api/users/Request";
+import { getDashboardSummary, getCompanyDetails } from "../api/users/Request";
+import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 import { appStorage } from "../utils/appStorage";
 
 export type Addon =
@@ -142,29 +143,66 @@ export const TenantProvider = ({
     setLoadingAddons(false);
   }, []);
 
-  useEffect(() => {
-    if (!cachedUser) {
-      setCompany(null);
-      setAddonsKnown(false);
-      setLoadingAddons(true);
-    }
-  }, [cachedUser]);
-
   const refreshAddons = useCallback(async () => {
-    if (!cachedUser?.userId || !cachedUser?.companyId) return;
+    if (!cachedUser?.companyId) return;
     setLoadingAddons(true);
     try {
-      const data = await getDashboardSummary(
-        cachedUser.userId,
+      // 1. First attempt: Direct company fetch (no cache, instant permissions)
+      const directComp = await getCompanyDetails(
         cachedUser.companyId,
+        cachedUser.userId,
       );
-      setCompanyFromDashboard(data?.company ?? null);
+      if (directComp) {
+        setCompanyFromDashboard(directComp);
+        return;
+      }
+
+      // 2. Fallback attempt: Dashboard summary
+      if (cachedUser.userId) {
+        const data = await getDashboardSummary(
+          cachedUser.userId,
+          cachedUser.companyId,
+        );
+        setCompanyFromDashboard(data?.company ?? null);
+      }
     } catch (err) {
       console.warn("refreshAddons failed — failing open:", err);
       setAddonsKnown(false);
       setLoadingAddons(false);
     }
   }, [cachedUser?.userId, cachedUser?.companyId, setCompanyFromDashboard]);
+
+  // Proactive fetch on mount and whenever user/company changes
+  useEffect(() => {
+    if (!cachedUser?.companyId) {
+      setCompany(null);
+      setAddonsKnown(false);
+      setLoadingAddons(true);
+      return;
+    }
+
+    refreshAddons();
+  }, [cachedUser?.companyId, refreshAddons]);
+
+  // Instant Realtime sync: Listen for company updates in Supabase
+  const companyId = cachedUser?.companyId ?? null;
+  useRealtimeSubscription({
+    table: "companies",
+    event: "UPDATE",
+    filter: companyId ? `company_id=eq.${companyId}` : undefined,
+    channelName: companyId ? `realtime:companies:${companyId}` : undefined,
+    enabled: Boolean(companyId),
+    onPayload: (payload: any) => {
+      console.log(
+        "[TenantContext] Real-time company update received:",
+        payload?.new?.company_id,
+        payload?.new?.subscription_addons,
+      );
+      if (payload?.new) {
+        setCompanyFromDashboard(payload.new);
+      }
+    },
+  });
 
   const addons = useMemo(
     () => normalizeAddons(company?.subscription_addons),

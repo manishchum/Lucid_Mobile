@@ -13,7 +13,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Svg, { Circle } from "react-native-svg";
 import { RoleplayAssessment, RoleplaySession } from "../../../api/roleplay";
-import { STACK_ROUTES } from "../../../navigations/Routes";
+import { STACK_ROUTES, APP_ROUTES } from "../../../navigations/Routes";
+import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
 
 // ── Clean SVG Circular Score Progress Ring ──────────────────────────────────────
 const ScoreRing = ({
@@ -76,6 +77,13 @@ export default function RoleplayReportScreen({
   const session: RoleplaySession = route.params?.session;
   const assessment: RoleplayAssessment =
     route.params?.assessment || session?.roleplay_assessments?.[0];
+
+  const { hasFeature, addonsKnown } = useFeatureGating();
+  useEffect(() => {
+    if (addonsKnown && !hasFeature(FEATURES.ROLE_PLAY)) {
+      navigation.navigate(APP_ROUTES.HOME);
+    }
+  }, [addonsKnown, hasFeature, navigation]);
 
   const [showTranscript, setShowTranscript] = useState(false);
 

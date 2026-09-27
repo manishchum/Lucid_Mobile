@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,7 +11,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Scenario } from "../../../api/roleplay";
-import { STACK_ROUTES } from "../../../navigations/Routes";
+import { STACK_ROUTES, APP_ROUTES } from "../../../navigations/Routes";
+import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
 
 export interface RoleplayConfig {
   difficulty: string;
@@ -37,6 +38,13 @@ export default function RoleplayConfigScreen({
   const scenario: Scenario = route.params?.scenario;
   const difficulty = scenario?.difficulty || "Medium";
   const diffStyle = DIFFICULTY_STYLE[difficulty] ?? DIFFICULTY_STYLE.Medium;
+
+  const { hasFeature, addonsKnown } = useFeatureGating();
+  useEffect(() => {
+    if (addonsKnown && !hasFeature(FEATURES.ROLE_PLAY)) {
+      navigation.navigate(APP_ROUTES.HOME);
+    }
+  }, [addonsKnown, hasFeature, navigation]);
 
   const [config, setConfig] = useState<RoleplayConfig>({
     difficulty,

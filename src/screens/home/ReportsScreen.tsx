@@ -16,6 +16,7 @@ import {
   RefreshControl,
   useWindowDimensions,
   Animated,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -23,6 +24,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { useAuth } from "../../contex/AuthContext";
 import { useTenant } from "../../contex/TenantContext";
+import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 import {
   getEmployeeAssessments,
   getAssessmentsBatch,
@@ -34,7 +36,7 @@ import { getUserRoleplayReports, RoleplaySession } from "../../api/roleplay";
 import { eventBus } from "../../utils/EventBus";
 import { useRealtimeSubscription } from "../../hooks/useRealtimeSubscription";
 import { ModuleCardItem } from "../../components/reports/ModuleCardItem";
-import { STACK_ROUTES } from "../../navigations/Routes";
+import { STACK_ROUTES, APP_ROUTES } from "../../navigations/Routes";
 
 // Global in-memory cache for reports to prevent skeleton on revisit
 let reportsCache: {
@@ -494,9 +496,23 @@ export default function ReportsScreen() {
   const navigation = useNavigation<any>();
   const { cachedUser } = useAuth();
   const { company } = useTenant();
+  const { hasFeature, addonsKnown } = useFeatureGating();
+  const showReports = hasFeature(FEATURES.REPORTS);
+  const hasRolePlayAddon = hasFeature(FEATURES.ROLE_PLAY);
 
   const userId = cachedUser?.userId ?? null;
   const companyUsesLearningStyle = Boolean(company?.learning_style);
+
+  // Guard: if reports feature is disabled, prompt and navigate back to Home
+  useEffect(() => {
+    if (addonsKnown && !showReports) {
+      Alert.alert(
+        "Access Restricted",
+        "The Reports module is not enabled for your company plan.",
+        [{ text: "OK", onPress: () => navigation.navigate(APP_ROUTES.HOME) }]
+      );
+    }
+  }, [addonsKnown, showReports, navigation]);
 
   // Tab State
   const [activeTab, setActiveTab] = useState<"history" | "style" | "roleplay">("history");
@@ -506,7 +522,6 @@ export default function ReportsScreen() {
   const [roleplayLoading, setRoleplayLoading] = useState(false);
   const [roleplayRefreshing, setRoleplayRefreshing] = useState(false);
   const [expandedRoleplaySessions, setExpandedRoleplaySessions] = useState<Record<string, boolean>>({});
-  const hasRolePlayAddon = Boolean(company?.subscription_addons?.includes("role_play"));
 
   // Expanded card state
   const [expandedModules, setExpandedModules] = useState<
@@ -1026,6 +1041,62 @@ export default function ReportsScreen() {
       </Text>
     </ScrollView>
   );
+
+  if (addonsKnown && !showReports) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.safeArea,
+          {
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 24,
+            backgroundColor: "#F8FAFC",
+          },
+        ]}
+        edges={["top"]}
+      >
+        <StatusBar barStyle="dark-content" />
+        <MaterialCommunityIcons name="lock-outline" size={54} color="#94A3B8" />
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "700",
+            color: "#1E293B",
+            marginTop: 16,
+          }}
+        >
+          Feature Disabled
+        </Text>
+        <Text
+          style={{
+            fontSize: 14,
+            color: "#64748B",
+            textAlign: "center",
+            marginTop: 8,
+            maxWidth: 280,
+          }}
+        >
+          Reports are not enabled for your organization's subscription plan.
+        </Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate(APP_ROUTES.HOME)}
+          style={{
+            marginTop: 24,
+            backgroundColor: "#6366F1",
+            paddingHorizontal: 24,
+            paddingVertical: 12,
+            borderRadius: 10,
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={{ color: "#FFFFFF", fontWeight: "600", fontSize: 15 }}>
+            Back to Home
+          </Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>

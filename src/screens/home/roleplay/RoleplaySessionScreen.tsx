@@ -40,8 +40,9 @@ import {
   finishRoleplaySession,
 } from "../../../api/roleplay";
 import { getFirebaseToken } from "../../../api/users/Request";
-import { STACK_ROUTES } from "../../../navigations/Routes";
+import { STACK_ROUTES, APP_ROUTES } from "../../../navigations/Routes";
 import { useAuth } from "../../../contex/AuthContext";
+import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
 import { logger } from "../../../utils/UnifiedLogger";
 
 const EXPO_API_URL =
@@ -113,6 +114,13 @@ export default function RoleplaySessionScreen({
   const config = route.params?.config;
   const { cachedUser } = useAuth();
   const employeeId = cachedUser?.userId || "user";
+
+  const { hasFeature, addonsKnown } = useFeatureGating();
+  useEffect(() => {
+    if (addonsKnown && !hasFeature(FEATURES.ROLE_PLAY)) {
+      navigation.navigate(APP_ROUTES.HOME);
+    }
+  }, [addonsKnown, hasFeature, navigation]);
 
   const isFocused = useIsFocused();
   const [isSessionActive, setIsSessionActive] = useState(false);

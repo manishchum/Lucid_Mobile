@@ -16,6 +16,7 @@ export interface RealtimeSubscriptionOptions<T extends Record<string, any>> {
   event?: "INSERT" | "UPDATE" | "DELETE" | "*";
   filter?: string;
   channelName?: string;
+  enabled?: boolean;
   onPayload: (payload: RealtimePayload<T>) => void;
 }
 
@@ -25,9 +26,12 @@ export function useRealtimeSubscription<T extends Record<string, any>>({
   event = "*",
   filter,
   channelName,
+  enabled = true,
   onPayload,
 }: RealtimeSubscriptionOptions<T>) {
   useEffect(() => {
+    if (!enabled) return;
+
     const uniqueChannelName =
       channelName || `realtime:${table}:${event}:${filter || "all"}:${Date.now()}`;
 
@@ -62,5 +66,5 @@ export function useRealtimeSubscription<T extends Record<string, any>>({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [table, schema, event, filter, channelName]);
+  }, [table, schema, event, filter, channelName, enabled]);
 }
