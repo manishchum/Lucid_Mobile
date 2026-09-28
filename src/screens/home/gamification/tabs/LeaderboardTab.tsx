@@ -54,7 +54,7 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
       {/* Background Gradient matching Image 2 */}
       <LinearGradient
         colors={["#1A0B2E", "#35155D"]}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
       />

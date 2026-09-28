@@ -57,7 +57,7 @@ export default function ProfileTab({ profile, isLoading, activeDates }: Props) {
       <View style={styles.headerBanner}>
         <LinearGradient
           colors={["#35155D", "#1A0B2E"]}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         />
