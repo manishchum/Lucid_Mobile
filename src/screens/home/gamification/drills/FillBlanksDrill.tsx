@@ -1,11 +1,10 @@
-﻿import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Animated,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { GC } from "./GamificationColors";
@@ -25,109 +24,110 @@ export default function FillBlanksDrill({
 }: DrillProps) {
   const [startTime] = useState(Date.now());
   const [wrongAttempts, setWrongAttempts] = useState(0);
-  const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
-  const [checked, setChecked] = useState<Record<string, boolean | null>>({});
-  const [activeBlank, setActiveBlank] = useState<string | null>(null);
-  const shakeAnims: Record<string, Animated.Value> = {};
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
+  const [isError, setIsError] = useState(false);
+  const [activeBlankIndex, setActiveBlankIndex] = useState<number | null>(null);
 
-  const template: string = drillData?.sentence_template || "";
-  const blanks: any[] = drillData?.blanks || [];
-  const explanation: string = drillData?.explanation || "";
+  // Parse payload robustly to match web
+  const textWithBlanks = drillData?.text_with_blanks || drillData?.text || "";
+  const blanks = (textWithBlanks.match(/\[BLANK\]/g) || []).length;
+  const options: string[] = Array.isArray(drillData?.options) ? drillData.options : [];
+  const correctAnswers: string[] = Array.isArray(drillData?.correct_answers) ? drillData.correct_answers : [];
 
-  // Parse template into segments
-  const segments = template.split(/(\{\{blank_\d+\}\})/g);
+  // Split text by [BLANK]
+  const parts = textWithBlanks.split(/\[BLANK\]/g);
 
-  const allCorrect = blanks.every(
-    (b) => userAnswers[b.blank_id] === b.correct_word
-  );
+  useEffect(() => {
+    if (isCompleted) {
+      const correct: Record<number, string> = {};
+      correctAnswers.forEach((ans: string, i: number) => {
+        correct[i] = ans;
+      });
+      setSelectedAnswers(correct);
+    }
+  }, [isCompleted, correctAnswers]);
 
-  const handleOptionSelect = (blankId: string, option: string, correctWord: string) => {
-    if (isCompleted) return;
-    const newAnswers = { ...userAnswers, [blankId]: option };
-    setUserAnswers(newAnswers);
+  const handleSubmit = () => {
+    if (Object.keys(selectedAnswers).length < blanks) return;
 
-    if (option === correctWord) {
-      setChecked((p) => ({ ...p, [blankId]: true }));
-      setActiveBlank(null);
-
-      // Check if all blanks are correct
-      const allDone = blanks.every(
-        (b) => (newAnswers[b.blank_id] || "") === b.correct_word
-      );
-      if (allDone) {
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        setTimeout(() => onComplete(wrongAttempts, elapsed), 600);
+    let isCorrect = true;
+    for (let i = 0; i < blanks; i++) {
+      if (selectedAnswers[i] !== correctAnswers[i]) {
+        isCorrect = false;
+        break;
       }
+    }
+
+    if (isCorrect) {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      onComplete(wrongAttempts, elapsed);
     } else {
-      setWrongAttempts((p) => p + 1);
-      setChecked((p) => ({ ...p, [blankId]: false }));
-      setTimeout(() => {
-        setChecked((p) => ({ ...p, [blankId]: null }));
-        setUserAnswers((prev) => ({ ...prev, [blankId]: "" }));
-      }, 900);
+      setWrongAttempts((prev) => prev + 1);
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1000);
     }
   };
 
-  const currentBlank = blanks.find((b) => b.blank_id === activeBlank);
+  const handleOptionSelect = (opt: string) => {
+    if (activeBlankIndex === null) return;
+    setSelectedAnswers((prev) => ({ ...prev, [activeBlankIndex]: opt }));
+    setActiveBlankIndex(null);
+  };
+
+  if (!textWithBlanks) {
+    return (
+      <View style={styles.errorBox}>
+        <Text style={styles.errorText}>
+          Error: This drill was generated with invalid data. Please regenerate the sprint.
+        </Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.templateCard}>
-        <Text style={styles.templateLabel}>FILL IN THE BLANKS</Text>
-        <View style={styles.templateRow}>
-          {segments.map((seg, i) => {
-            const match = seg.match(/\{\{(blank_\d+)\}\}/);
-            if (match) {
-              const blankId = match[1];
-              const blank = blanks.find((b) => b.blank_id === blankId);
-              const answer = userAnswers[blankId] || "";
-              const status = checked[blankId];
-              const isActive = activeBlank === blankId;
+    <ScrollView contentContainerStyle={styles.container}>
+      <View
+        style={[
+          styles.textCard,
+          isError && styles.textCardError,
+        ]}
+      >
+        <Text style={styles.paragraphText}>
+          {parts.map((part: string, idx: number) => {
+            const isLast = idx === parts.length - 1;
+            const answer = selectedAnswers[idx];
+            const isActive = activeBlankIndex === idx;
 
-              return (
-                <TouchableOpacity
-                  key={i}
-                  onPress={() =>
-                    !isCompleted && setActiveBlank(isActive ? null : blankId)
-                  }
-                  style={[
-                    styles.blank,
-                    isActive && styles.blankActive,
-                    status === true && styles.blankCorrect,
-                    status === false && styles.blankWrong,
-                  ]}
-                >
+            return (
+              <React.Fragment key={idx}>
+                <Text style={styles.normalText}>{part}</Text>
+                {!isLast && (
                   <Text
                     style={[
-                      styles.blankText,
-                      answer ? styles.blankFilled : styles.blankEmpty,
+                      styles.blankPlaceholder,
+                      isActive && styles.blankPlaceholderActive,
+                      answer && styles.blankPlaceholderFilled,
                     ]}
+                    onPress={() => !isCompleted && setActiveBlankIndex(isActive ? null : idx)}
                   >
-                    {answer || (blank?.correct_word ? "_______" : "___")}
+                    {answer ? ` ${answer} ` : " [ SELECT ] "}
                   </Text>
-                </TouchableOpacity>
-              );
-            }
-            return (
-              <Text key={i} style={styles.segmentText}>
-                {seg}
-              </Text>
+                )}
+              </React.Fragment>
             );
           })}
-        </View>
+        </Text>
       </View>
 
-      {activeBlank && currentBlank && (
+      {activeBlankIndex !== null && !isCompleted && (
         <View style={styles.optionsSection}>
-          <Text style={styles.optionsLabel}>SELECT THE CORRECT WORD</Text>
+          <Text style={styles.optionsLabel}>SELECT OPTION FOR BLANK {activeBlankIndex + 1}</Text>
           <View style={styles.optionsGrid}>
-            {currentBlank.options.map((opt: string, i: number) => (
+            {options.map((opt: string, i: number) => (
               <TouchableOpacity
                 key={i}
                 style={styles.optionChip}
-                onPress={() =>
-                  handleOptionSelect(activeBlank, opt, currentBlank.correct_word)
-                }
+                onPress={() => handleOptionSelect(opt)}
                 activeOpacity={0.75}
               >
                 <Text style={styles.optionChipText}>{opt}</Text>
@@ -137,75 +137,79 @@ export default function FillBlanksDrill({
         </View>
       )}
 
-      {explanation !== "" && (
-        <View style={styles.explanationBox}>
-          <MaterialCommunityIcons
-            name="information-outline"
-            size={16}
-            color={GC.accent}
-          />
-          <Text style={styles.explanationText}>{explanation}</Text>
+      {isCompleted ? (
+        <View style={styles.successBanner}>
+          <MaterialCommunityIcons name="check-circle" size={20} color={GC.success} />
+          <Text style={styles.successText}>
+            Successfully Completed! (+{earnedXp || 0} XP)
+          </Text>
         </View>
+      ) : (
+        <TouchableOpacity
+          style={[
+            styles.submitBtn,
+            Object.keys(selectedAnswers).length < blanks && styles.submitBtnDisabled,
+            isError && styles.submitBtnError,
+          ]}
+          disabled={Object.keys(selectedAnswers).length < blanks || isError}
+          onPress={handleSubmit}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.submitBtnText}>
+            {isError ? "Incorrect Answers! Try Again." : "Submit Answer"}
+          </Text>
+        </TouchableOpacity>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 16 },
-  templateCard: {
+  container: { gap: 24, paddingBottom: 40 },
+  errorBox: {
+    padding: 16,
+    backgroundColor: "#FFF1F2",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FECDD3",
+  },
+  errorText: { color: "#E11D48", fontWeight: "500" },
+  textCard: {
     backgroundColor: GC.card,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: GC.border,
-    padding: 20,
-    gap: 14,
+    padding: 24,
   },
-  templateLabel: {
-    color: GC.textMuted,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 2,
+  textCardError: {
+    backgroundColor: "#FFF1F2",
+    borderColor: "#FDA4AF",
   },
-  templateRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    gap: 4,
+  paragraphText: {
+    lineHeight: 32,
   },
-  segmentText: {
+  normalText: {
     color: GC.textPrimary,
     fontSize: 16,
     fontWeight: "500",
-    lineHeight: 26,
   },
-  blank: {
-    borderBottomWidth: 2,
-    borderBottomColor: GC.primary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 80,
-    alignItems: "center",
-    borderRadius: 6,
-    backgroundColor: GC.cardAlt,
-  },
-  blankActive: {
-    backgroundColor: "#1A1035",
-    borderColor: GC.primaryLight,
+  blankPlaceholder: {
+    color: "#6366F1",
+    fontSize: 16,
+    fontWeight: "800",
+    backgroundColor: "#EEF2FF",
     borderWidth: 1,
+    borderColor: "#C7D2FE",
+    overflow: "hidden",
   },
-  blankCorrect: {
-    backgroundColor: "#052E16",
-    borderBottomColor: GC.success,
+  blankPlaceholderActive: {
+    backgroundColor: "#E0E7FF",
+    borderColor: "#818CF8",
   },
-  blankWrong: {
-    backgroundColor: "#2D0808",
-    borderBottomColor: GC.danger,
+  blankPlaceholderFilled: {
+    color: "#4338CA",
   },
-  blankText: { fontSize: 15, fontWeight: "700" },
-  blankFilled: { color: GC.primaryLight },
-  blankEmpty: { color: GC.textMuted },
-  optionsSection: { gap: 10 },
+  optionsSection: { gap: 12 },
   optionsLabel: {
     color: GC.textMuted,
     fontSize: 10,
@@ -218,33 +222,49 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   optionChip: {
-    backgroundColor: GC.card,
-    borderWidth: 1.5,
-    borderColor: GC.primaryBorder,
-    borderRadius: 24,
+    backgroundColor: GC.surface,
+    borderWidth: 2,
+    borderColor: GC.border,
+    borderRadius: 12,
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
   optionChipText: {
-    color: GC.primaryLight,
+    color: GC.textPrimary,
     fontSize: 14,
     fontWeight: "700",
   },
-  explanationBox: {
-    flexDirection: "row",
-    gap: 8,
-    backgroundColor: "#0A1628",
+  submitBtn: {
+    backgroundColor: "#4F46E5",
+    padding: 16,
     borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: GC.accent,
-    alignItems: "flex-start",
+    alignItems: "center",
   },
-  explanationText: {
-    color: GC.textSecondary,
-    fontSize: 13,
-    fontWeight: "500",
-    flex: 1,
-    lineHeight: 18,
+  submitBtnDisabled: {
+    backgroundColor: GC.border,
+  },
+  submitBtnError: {
+    backgroundColor: GC.danger,
+  },
+  submitBtnText: {
+    color: GC.bg,
+    fontWeight: "800",
+    fontSize: 15,
+  },
+  successBanner: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderColor: GC.success,
+    borderWidth: 1,
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  successText: {
+    color: GC.success,
+    fontWeight: "800",
+    fontSize: 14,
   },
 });

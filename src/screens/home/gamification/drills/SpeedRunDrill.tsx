@@ -24,34 +24,30 @@ export default function SpeedRunDrill({
 }: DrillProps) {
   const [startTime] = useState(Date.now());
   const [wrongAttempts, setWrongAttempts] = useState(0);
-  const timeLimit = drillData?.time_limit_seconds || 30;
+  const timeLimit = 30; // Web uses hardcoded 30 seconds
   const [timeLeft, setTimeLeft] = useState(timeLimit);
-  const [currentQIdx, setCurrentQIdx] = useState(0);
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selectedOpt, setSelectedOpt] = useState<string | null>(null);
   const [isWrong, setIsWrong] = useState(false);
   const timerRef = useRef<any>(null);
   const shakeAnim = useState(new Animated.Value(0))[0];
-  const timerAnim = useRef(new Animated.Value(1)).current;
 
-  const questions: any[] = drillData?.questions || [];
-  const currentQ = questions[currentQIdx];
-  const done = currentQIdx >= questions.length;
+  const question = drillData?.question || "";
+  const options = Array.isArray(drillData?.options) ? drillData.options : [];
+  const correctAnswer = drillData?.correct_answer || "";
 
   useEffect(() => {
-    if (isCompleted || done) return;
+    if (isCompleted) return;
     timerRef.current = setInterval(() => {
       setTimeLeft((prev: number) => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
-          // Time out — record as failed with many wrong attempts
-          onComplete(wrongAttempts + 5, timeLimit);
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timerRef.current);
-  }, [currentQIdx, done, isCompleted]);
+  }, [isCompleted]);
 
   const shake = () => {
     Animated.sequence([
@@ -62,31 +58,20 @@ export default function SpeedRunDrill({
     ]).start();
   };
 
-  const handleSelect = (idx: number) => {
-    if (selected !== null || isCompleted || done) return;
-    const correct = currentQ?.correct_option_index ?? -1;
-    setSelected(idx);
+  const handleSelect = (opt: string) => {
+    if (isCompleted) return;
 
-    if (idx === correct) {
-      // Correct — advance
-      setTimeout(() => {
-        setSelected(null);
-        const nextIdx = currentQIdx + 1;
-        setCurrentQIdx(nextIdx);
-        if (nextIdx >= questions.length) {
-          clearInterval(timerRef.current);
-          const elapsed = Math.floor((Date.now() - startTime) / 1000);
-          onComplete(wrongAttempts, elapsed);
-        }
-      }, 500);
+    if (opt === correctAnswer) {
+      clearInterval(timerRef.current);
+      setSelectedOpt(opt);
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      onComplete(wrongAttempts, elapsed);
     } else {
       setWrongAttempts((p) => p + 1);
       setIsWrong(true);
       shake();
-      // Penalize 5s
-      setTimeLeft((p: number) => Math.max(1, p - 5));
+      setTimeLeft((p: number) => Math.max(0, p - 5));
       setTimeout(() => {
-        setSelected(null);
         setIsWrong(false);
       }, 900);
     }
@@ -96,39 +81,25 @@ export default function SpeedRunDrill({
   const timerColor =
     timerPct > 50 ? GC.success : timerPct > 25 ? GC.gold : GC.danger;
 
-  if (isCompleted) {
-    return (
-      <View style={styles.completedBox}>
-        <MaterialCommunityIcons name="lightning-bolt" size={32} color={GC.gold} />
-        <Text style={styles.completedText}>Speed Run Complete!</Text>
-      </View>
-    );
-  }
-
-  if (done) return null;
-
   return (
     <View style={styles.container}>
-      {/* Timer */}
-      <View style={styles.timerSection}>
-        <View style={styles.timerRow}>
-          <MaterialCommunityIcons name="clock-fast" size={18} color={timerColor} />
-          <Text style={[styles.timerText, { color: timerColor }]}>{timeLeft}s</Text>
-          <Text style={styles.qCount}>
-            Q {currentQIdx + 1}/{questions.length}
-          </Text>
+      {!isCompleted && (
+        <View style={styles.timerSection}>
+          <View style={styles.timerRow}>
+            <MaterialCommunityIcons name="clock-fast" size={24} color={timerColor} />
+            <Text style={[styles.timerText, { color: timerColor }]}>{timeLeft}s</Text>
+          </View>
+          <View style={styles.timerBarBg}>
+            <View
+              style={[
+                styles.timerBarFill,
+                { width: `${timerPct}%`, backgroundColor: timerColor },
+              ]}
+            />
+          </View>
         </View>
-        <View style={styles.timerBarBg}>
-          <View
-            style={[
-              styles.timerBarFill,
-              { width: `${timerPct}%`, backgroundColor: timerColor },
-            ]}
-          />
-        </View>
-      </View>
+      )}
 
-      {/* Question */}
       <Animated.View
         style={[
           styles.questionCard,
@@ -136,86 +107,82 @@ export default function SpeedRunDrill({
           { transform: [{ translateX: shakeAnim }] },
         ]}
       >
-        <Text style={styles.questionText}>{currentQ?.question || ""}</Text>
+        <Text style={styles.questionText}>{question}</Text>
       </Animated.View>
 
-      {/* Options */}
       <View style={styles.optionsGrid}>
-        {(currentQ?.options || []).map((opt: string, i: number) => {
-          const isSelected = selected === i;
-          const correct = currentQ?.correct_option_index;
+        {options.map((opt: string, i: number) => {
           let btnStyle = styles.optionDefault;
-          if (isSelected && i === correct) btnStyle = styles.optionCorrect;
-          else if (isSelected && i !== correct) btnStyle = styles.optionWrong;
+          let isOptSelected = false;
+
+          if (isCompleted) {
+            if (opt === correctAnswer) {
+              btnStyle = styles.optionCorrect;
+            } else {
+              btnStyle = styles.optionDisabled;
+            }
+          } else if (isWrong && selectedOpt === opt) {
+            // Technically we don't hold the wrong selection state, just flash it.
+            // But we flash the question card instead.
+          }
 
           return (
             <TouchableOpacity
               key={i}
               style={[styles.option, btnStyle]}
-              onPress={() => handleSelect(i)}
+              onPress={() => handleSelect(opt)}
+              disabled={isCompleted}
               activeOpacity={0.8}
             >
-              <Text style={styles.optionLetter}>
-                {["A", "B", "C", "D"][i]}
-              </Text>
               <Text style={styles.optionText}>{opt}</Text>
             </TouchableOpacity>
           );
         })}
       </View>
+
+      {isCompleted && (
+        <View style={styles.successBanner}>
+          <MaterialCommunityIcons name="check-circle" size={20} color={GC.success} />
+          <Text style={styles.successText}>
+            Successfully Completed! (+{earnedXp || 0} XP)
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 16 },
-  completedBox: {
-    alignItems: "center",
-    padding: 32,
-    gap: 12,
-    backgroundColor: GC.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: GC.gold,
-  },
-  completedText: {
-    color: GC.gold,
-    fontSize: 18,
-    fontWeight: "800",
-  },
-  timerSection: { gap: 8 },
+  container: { gap: 20, paddingBottom: 30 },
+  timerSection: { gap: 12, alignItems: "center" },
   timerRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
   },
   timerText: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: "900",
-    flex: 1,
-  },
-  qCount: {
-    color: GC.textMuted,
-    fontSize: 12,
-    fontWeight: "700",
   },
   timerBarBg: {
-    height: 6,
+    height: 8,
     backgroundColor: GC.border,
-    borderRadius: 6,
+    borderRadius: 8,
     overflow: "hidden",
+    width: "100%",
   },
   timerBarFill: {
     height: "100%",
-    borderRadius: 6,
+    borderRadius: 8,
   },
   questionCard: {
     backgroundColor: GC.card,
-    borderRadius: 18,
-    borderWidth: 1.5,
+    borderRadius: 20,
+    borderWidth: 2,
     borderColor: GC.border,
-    padding: 20,
-    minHeight: 90,
+    padding: 24,
+    minHeight: 120,
     justifyContent: "center",
   },
   questionCardWrong: {
@@ -224,19 +191,16 @@ const styles = StyleSheet.create({
   },
   questionText: {
     color: GC.textPrimary,
-    fontSize: 17,
-    fontWeight: "700",
-    lineHeight: 26,
+    fontSize: 18,
+    fontWeight: "800",
+    lineHeight: 28,
     textAlign: "center",
   },
-  optionsGrid: { gap: 10 },
+  optionsGrid: { gap: 12 },
   option: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    padding: 14,
+    borderRadius: 16,
+    borderWidth: 2,
+    padding: 16,
   },
   optionDefault: {
     backgroundColor: GC.card,
@@ -246,22 +210,32 @@ const styles = StyleSheet.create({
     backgroundColor: "#052E16",
     borderColor: GC.success,
   },
-  optionWrong: {
-    backgroundColor: "#2D0808",
-    borderColor: GC.danger,
-  },
-  optionLetter: {
-    color: GC.primaryLight,
-    fontSize: 14,
-    fontWeight: "900",
-    width: 24,
-    textAlign: "center",
+  optionDisabled: {
+    backgroundColor: GC.cardAlt,
+    borderColor: GC.border,
+    opacity: 0.5,
   },
   optionText: {
     color: GC.textPrimary,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "600",
-    flex: 1,
-    lineHeight: 20,
+    textAlign: "center",
+  },
+  successBanner: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderColor: GC.success,
+    borderWidth: 1,
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 10,
+  },
+  successText: {
+    color: GC.success,
+    fontWeight: "800",
+    fontSize: 14,
   },
 });

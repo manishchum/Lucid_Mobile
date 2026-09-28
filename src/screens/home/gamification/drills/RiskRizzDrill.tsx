@@ -1,18 +1,13 @@
-﻿import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  PanResponder,
-  Animated,
-  Dimensions,
+  ScrollView,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { GC } from "./GamificationColors";
-
-const SCREEN_WIDTH = Dimensions.get("window").width;
-const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.3;
 
 interface DrillProps {
   drillData: any;
@@ -29,319 +24,233 @@ export default function RiskRizzDrill({
 }: DrillProps) {
   const [startTime] = useState(Date.now());
   const [wrongAttempts, setWrongAttempts] = useState(0);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [swipeDirection, setSwipeDirection] = useState<"left" | "right" | null>(null);
-  const translateX = useRef(new Animated.Value(0)).current;
-  const rotate = translateX.interpolate({
-    inputRange: [-SCREEN_WIDTH, 0, SCREEN_WIDTH],
-    outputRange: ["-15deg", "0deg", "15deg"],
-  });
 
-  const statements: any[] = Array.isArray(drillData?.statements)
-    ? drillData.statements
-    : Array.isArray(drillData?.pairs)
-    ? drillData.pairs.map((p: any) => ({
-        statement: p.left || p.term || "",
-        is_compliant: false,
-        correct_action: p.right || p.definition || "",
-      }))
-    : drillData?.statement
-    ? [drillData]
-    : [];
+  const rawPairs = Array.isArray(drillData?.pairs) ? drillData.pairs : [];
 
-  const total = statements.length;
-  const done = currentIndex >= total;
+  const [leftItems] = useState(() =>
+    rawPairs.map((p, i) => ({ id: i, text: p.left || p.term })).sort(() => (isCompleted ? 0 : Math.random() - 0.5))
+  );
+  const [rightItems] = useState(() =>
+    rawPairs.map((p, i) => ({ id: i, text: p.right || p.definition })).sort(() => (isCompleted ? 0 : Math.random() - 0.5))
+  );
+
+  const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
+  const [matchedPairs, setMatchedPairs] = useState<number[]>([]);
+  const [errorPair, setErrorPair] = useState<{ left: number; right: number } | null>(null);
 
   useEffect(() => {
-    if (done) {
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      onComplete(wrongAttempts, elapsed);
+    if (isCompleted) {
+      setMatchedPairs(rawPairs.map((_, i) => i));
     }
-  }, [done]);
+  }, [isCompleted, rawPairs.length]);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) =>
-        Math.abs(g.dx) > 5 && !isCompleted,
-      onPanResponderMove: (_, g) => {
-        translateX.setValue(g.dx);
-        setSwipeDirection(g.dx > 0 ? "right" : "left");
-      },
-      onPanResponderRelease: (_, g) => {
-        if (g.dx > SWIPE_THRESHOLD) {
-          handleSwipe("right");
-        } else if (g.dx < -SWIPE_THRESHOLD) {
-          handleSwipe("left");
-        } else {
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-          }).start();
-          setSwipeDirection(null);
-        }
-      },
-    })
-  ).current;
+  const handleRightClick = (rightId: number) => {
+    if (selectedLeft === null) return;
 
-  const handleSwipe = (direction: "left" | "right") => {
-    const current = statements[currentIndex];
-    const correct = current?.is_compliant === true ? "right" : "left";
-    const toX = direction === "right" ? SCREEN_WIDTH * 1.5 : -SCREEN_WIDTH * 1.5;
+    if (selectedLeft === rightId) {
+      const newMatches = [...matchedPairs, rightId];
+      setMatchedPairs(newMatches);
+      setSelectedLeft(null);
 
-    Animated.timing(translateX, {
-      toValue: toX,
-      duration: 250,
-      useNativeDriver: true,
-    }).start(() => {
-      if (direction !== correct) {
-        setWrongAttempts((p) => p + 1);
+      if (newMatches.length === rawPairs.length) {
+        const timeSecs = Math.floor((Date.now() - startTime) / 1000);
+        onComplete(wrongAttempts, timeSecs);
       }
-      translateX.setValue(0);
-      setSwipeDirection(null);
-      setCurrentIndex((p) => p + 1);
-    });
+    } else {
+      setWrongAttempts((prev) => prev + 1);
+      setErrorPair({ left: selectedLeft, right: rightId });
+      setTimeout(() => {
+        setErrorPair(null);
+        setSelectedLeft(null);
+      }, 800);
+    }
   };
 
-  if (statements.length === 0) {
+  if (rawPairs.length === 0) {
     return (
-      <View style={styles.emptyBox}>
-        <Text style={styles.emptyText}>Invalid drill data. Please regenerate.</Text>
+      <View style={styles.errorBox}>
+        <Text style={styles.errorText}>
+          Error: This drill was generated with invalid data. Please regenerate the sprint.
+        </Text>
       </View>
     );
   }
-
-  if (isCompleted || done) {
-    return (
-      <View style={styles.completedBox}>
-        <MaterialCommunityIcons name="check-circle" size={40} color={GC.success} />
-        <Text style={styles.completedText}>All cards judged correctly!</Text>
-      </View>
-    );
-  }
-
-  const current = statements[currentIndex];
 
   return (
-    <View style={styles.container}>
-      <View style={styles.progressRow}>
-        <Text style={styles.progressText}>
-          {currentIndex + 1} / {total}
-        </Text>
-        <View style={styles.progressBar}>
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${((currentIndex) / total) * 100}%` },
-            ]}
-          />
+    <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.columnsWrapper}>
+        {/* LEFT COLUMN */}
+        <View style={styles.column}>
+          <Text style={styles.columnTitle}>Terms / Scenarios</Text>
+          {leftItems.map((item) => {
+            const isMatched = matchedPairs.includes(item.id);
+            const isSelected = selectedLeft === item.id;
+            const isError = errorPair?.left === item.id;
+
+            return (
+              <TouchableOpacity
+                key={`L-${item.id}`}
+                style={[
+                  styles.itemCard,
+                  isMatched && styles.matchedCard,
+                  isSelected && styles.selectedLeftCard,
+                  isError && styles.errorCard,
+                ]}
+                disabled={isMatched}
+                onPress={() =>
+                  !isMatched && setSelectedLeft(isSelected ? null : item.id)
+                }
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.itemText,
+                    isMatched && styles.matchedText,
+                    isSelected && styles.selectedText,
+                    isError && styles.errorTextColored,
+                  ]}
+                >
+                  {item.text}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* RIGHT COLUMN */}
+        <View style={styles.column}>
+          <Text style={styles.columnTitle}>Definitions / Actions</Text>
+          {rightItems.map((item) => {
+            const isMatched = matchedPairs.includes(item.id);
+            const isError = errorPair?.right === item.id;
+
+            return (
+              <TouchableOpacity
+                key={`R-${item.id}`}
+                style={[
+                  styles.itemCard,
+                  isMatched && styles.matchedCard,
+                  isError && styles.errorCard,
+                ]}
+                disabled={isMatched || selectedLeft === null}
+                onPress={() => !isMatched && handleRightClick(item.id)}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.itemText,
+                    isMatched && styles.matchedText,
+                    isError && styles.errorTextColored,
+                  ]}
+                >
+                  {item.text}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
-      <View style={styles.legendRow}>
-        <View style={styles.legendItem}>
-          <MaterialCommunityIcons name="arrow-left-circle" size={18} color={GC.danger} />
-          <Text style={styles.legendLabel}>VIOLATION</Text>
+      {isCompleted && (
+        <View style={styles.successBanner}>
+          <MaterialCommunityIcons name="check-circle" size={20} color={GC.success} />
+          <Text style={styles.successText}>
+            Successfully Completed! (+{earnedXp || 0} XP)
+          </Text>
         </View>
-        <View style={styles.legendItem}>
-          <Text style={styles.legendLabel}>COMPLIANT</Text>
-          <MaterialCommunityIcons name="arrow-right-circle" size={18} color={GC.success} />
-        </View>
-      </View>
-
-      <Animated.View
-        {...panResponder.panHandlers}
-        style={[
-          styles.card,
-          {
-            transform: [{ translateX }, { rotate }],
-            borderColor:
-              swipeDirection === "right"
-                ? GC.success
-                : swipeDirection === "left"
-                ? GC.danger
-                : GC.border,
-          },
-        ]}
-      >
-        {swipeDirection === "right" && (
-          <View style={[styles.swipeLabel, styles.rightLabel]}>
-            <Text style={styles.swipeLabelText}>PASS ✅</Text>
-          </View>
-        )}
-        {swipeDirection === "left" && (
-          <View style={[styles.swipeLabel, styles.leftLabel]}>
-            <Text style={styles.swipeLabelText}>FLAG 🚩</Text>
-          </View>
-        )}
-        <Text style={styles.statementText}>{current?.statement || current?.left || current?.term}</Text>
-        {current?.violation_category && (
-          <Text style={styles.categoryChip}>{current.violation_category}</Text>
-        )}
-      </Animated.View>
-
-      <View style={styles.buttonRow}>
-        <TouchableOpacity style={styles.btnFlag} onPress={() => handleSwipe("left")}>
-          <MaterialCommunityIcons name="flag" size={22} color={GC.danger} />
-          <Text style={[styles.btnLabel, { color: GC.danger }]}>VIOLATION</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnPass} onPress={() => handleSwipe("right")}>
-          <MaterialCommunityIcons name="check-bold" size={22} color={GC.success} />
-          <Text style={[styles.btnLabel, { color: GC.success }]}>COMPLIANT</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+      )}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 16 },
-  emptyBox: {
-    padding: 24,
-    backgroundColor: "#2D0808",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: GC.danger,
+  container: {
+    paddingBottom: 40,
+    gap: 16,
   },
-  emptyText: { color: GC.danger, fontSize: 14, fontWeight: "600" },
-  completedBox: {
-    alignItems: "center",
-    padding: 32,
+  errorBox: {
+    padding: 16,
+    backgroundColor: "#FFF1F2",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FECDD3",
+  },
+  errorText: {
+    color: "#E11D48",
+    fontWeight: "500",
+  },
+  columnsWrapper: {
+    flexDirection: "row",
+    gap: 16,
+  },
+  column: {
+    flex: 1,
     gap: 12,
-    backgroundColor: GC.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: GC.success,
   },
-  completedText: {
-    color: GC.success,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  progressRow: { gap: 8 },
-  progressText: {
-    color: GC.textMuted,
-    fontSize: 12,
-    fontWeight: "700",
-    textAlign: "right",
-  },
-  progressBar: {
-    height: 4,
-    backgroundColor: GC.border,
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: GC.primary,
-    borderRadius: 4,
-  },
-  legendRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 4,
-  },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  legendLabel: {
+  columnTitle: {
     color: GC.textMuted,
     fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.5,
-  },
-  card: {
-    backgroundColor: GC.card,
-    borderRadius: 20,
-    borderWidth: 2,
-    padding: 28,
-    minHeight: 180,
-    justifyContent: "center",
-    alignItems: "center",
-    position: "relative",
-    shadowColor: GC.primary,
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
-  },
-  statementText: {
-    color: GC.textPrimary,
-    fontSize: 18,
-    fontWeight: "700",
-    textAlign: "center",
-    lineHeight: 26,
-  },
-  categoryChip: {
-    marginTop: 12,
-    color: GC.textMuted,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1.5,
+    fontWeight: "900",
     textTransform: "uppercase",
-    backgroundColor: GC.cardAlt,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: GC.border,
+    letterSpacing: 1.5,
+    marginBottom: 8,
   },
-  swipeLabel: {
-    position: "absolute",
-    top: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 10,
+  itemCard: {
+    backgroundColor: GC.surface,
+    padding: 16,
+    borderRadius: 16,
     borderWidth: 2,
+    borderColor: GC.border,
+    minHeight: 80,
+    justifyContent: "center",
   },
-  rightLabel: {
-    right: 12,
-    backgroundColor: "#052E16",
-    borderColor: GC.success,
+  matchedCard: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+    opacity: 0.5,
   },
-  leftLabel: {
-    left: 12,
-    backgroundColor: "#2D0808",
-    borderColor: GC.danger,
+  selectedLeftCard: {
+    backgroundColor: "#EEF2FF",
+    borderColor: "#6366F1",
+    shadowColor: "#6366F1",
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
-  swipeLabelText: {
+  errorCard: {
+    backgroundColor: "#FFF1F2",
+    borderColor: "#FB7185",
+  },
+  itemText: {
     color: GC.textPrimary,
+    fontWeight: "600",
     fontSize: 13,
-    fontWeight: "900",
   },
-  buttonRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 8,
+  matchedText: {
+    color: "#047857",
   },
-  btnFlag: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 16,
-    backgroundColor: "#2D0808",
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: GC.danger,
+  selectedText: {
+    color: "#4338CA",
   },
-  btnPass: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 16,
-    backgroundColor: "#052E16",
-    borderRadius: 16,
-    borderWidth: 1.5,
+  errorTextColored: {
+    color: "#BE123C",
+  },
+  successBanner: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
     borderColor: GC.success,
+    borderWidth: 1,
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 16,
   },
-  btnLabel: {
-    fontSize: 13,
-    fontWeight: "900",
-    letterSpacing: 1,
+  successText: {
+    color: GC.success,
+    fontWeight: "800",
+    fontSize: 14,
   },
 });
