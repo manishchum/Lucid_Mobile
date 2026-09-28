@@ -128,7 +128,17 @@ export default function SprintsTab({
         ).length;
         const sprintPct =
           drills.length > 0 ? (completedCount / drills.length) * 100 : 0;
-        const isLocked = sprint.is_locked;
+        let isLocked = sprint.is_locked;
+        if (sprintIdx > 0) {
+          const prevSprint = sprints[sprintIdx - 1];
+          const prevDrills = prevSprint.gamification_drills || [];
+          const prevCompletedCount = prevDrills.filter((d) =>
+            completedDrills.has(d.drill_id)
+          ).length;
+          isLocked = prevDrills.length === 0 || prevCompletedCount < prevDrills.length;
+        } else {
+          isLocked = false;
+        }
 
         return (
           <View
