@@ -6,11 +6,13 @@ import {
   ScrollView,
   Animated,
   ActivityIndicator,
+  ImageBackground,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { GC } from "../drills/GamificationColors";
 import { GamificationProfile } from "../../../../api/gamification/Request";
 import { useAuth } from "../../../../contex/AuthContext";
+import { LinearGradient } from "expo-linear-gradient";
 
 interface Props {
   profile: GamificationProfile | null;
@@ -18,72 +20,21 @@ interface Props {
   activeDates: string[];
 }
 
-function XpCounter({ value }: { value: number }) {
-  const animVal = useRef(new Animated.Value(0)).current;
-  const displayVal = useRef(0);
-
-  useEffect(() => {
-    Animated.timing(animVal, {
-      toValue: value,
-      duration: 1400,
-      useNativeDriver: false,
-    }).start();
-    animVal.addListener(({ value: v }) => {
-      displayVal.current = Math.floor(v);
-    });
-    return () => animVal.removeAllListeners();
-  }, [value]);
-
-  return (
-    <Animated.Text style={styles.xpValue}>
-      {value.toLocaleString()}
-    </Animated.Text>
-  );
-}
-
-const DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-function getLast7Days(): string[] {
-  const days: string[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    days.push(d.toISOString().split("T")[0]);
-  }
-  return days;
-}
-
 export default function ProfileTab({ profile, isLoading, activeDates }: Props) {
   const { cachedUser } = useAuth();
-  const last7Days = getLast7Days();
-  const activeSet = new Set(activeDates || []);
-
   const xp = profile?.total_xp || 0;
   const streak = profile?.current_streak_days || 0;
   const bestStreak = profile?.best_streak_days || 0;
   const drillsCompleted = profile?.drills_completed_count || 0;
+  const badgesCount = profile?.unlocked_badges?.length || 0;
 
   // XP level calculation
   const level = Math.floor(xp / 500) + 1;
-  const xpInLevel = xp % 500;
-  const xpPct = (xpInLevel / 500) * 100;
-
-  const streakAnim = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (streak > 0) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(streakAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
-          Animated.timing(streakAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-        ])
-      ).start();
-    }
-  }, [streak]);
 
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={GC.primary} size="large" />
+        <ActivityIndicator color="#A855F7" size="large" />
       </View>
     );
   }
@@ -100,356 +51,243 @@ export default function ProfileTab({ profile, isLoading, activeDates }: Props) {
     <ScrollView
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
+      bounces={false}
     >
-      {/* User Info Card */}
-      <View style={styles.userCard}>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarInitials}>
-            {cachedUser?.name ? getInitials(cachedUser.name) : "US"}
-          </Text>
-        </View>
-        <View style={styles.userInfo}>
-          <Text style={styles.userName}>{cachedUser?.name || "Player"}</Text>
-          <Text style={styles.userEmail}>{cachedUser?.email || "No Email Provided"}</Text>
-        </View>
-        <View style={styles.userLevelBadge}>
-          <Text style={styles.userLevelLabel}>LVL</Text>
-          <Text style={styles.userLevelValue}>{level}</Text>
-        </View>
+      {/* Top Banner (Theme of Image 2: Deep Purples) */}
+      <View style={styles.headerBanner}>
+        <LinearGradient
+          colors={["#35155D", "#1A0B2E"]}
+          style={StyleSheet.absoluteFillObject}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+        {/* Curved cutout effect for the avatar */}
+        <View style={styles.headerCurve} />
       </View>
 
-      {/* XP Hero Card */}
-      <View style={styles.xpHeroCard}>
-        <View style={styles.xpHeroTop}>
-          <View>
-            <Text style={styles.xpLabel}>TOTAL XP</Text>
-            <Text style={styles.xpValue}>{xp.toLocaleString()}</Text>
-          </View>
-          <MaterialCommunityIcons name="star-shooting" size={36} color={GC.gold} style={{ opacity: 0.8 }} />
-        </View>
-        <View style={styles.xpProgressRow}>
-          <Text style={styles.xpProgressLabel}>
-            {xpInLevel} / 500 XP to Level {level + 1}
-          </Text>
-          <Text style={styles.xpProgressPct}>{Math.round(xpPct)}%</Text>
-        </View>
-        <View style={styles.xpProgressBar}>
-          <Animated.View style={[styles.xpProgressFill, { width: `${xpPct}%` }]} />
-        </View>
-      </View>
-
-      {/* Stats Row */}
-      <View style={styles.statsRow}>
-        {/* Streak */}
-        <View style={[styles.statCard, styles.streakCard]}>
-          <Animated.View style={{ transform: [{ scale: streakAnim }] }}>
-            <Text style={styles.streakFlame}>🔥</Text>
-          </Animated.View>
-          <Text style={styles.statBigValue}>{streak}</Text>
-          <Text style={styles.statLabel}>Day Streak</Text>
+      <View style={styles.profileSection}>
+        {/* Avatar */}
+        <View style={styles.avatarWrapper}>
+          <LinearGradient
+            colors={["#A855F7", "#3B82F6"]}
+            style={styles.avatarBorder}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.avatarInner}>
+              <Text style={styles.avatarInitials}>
+                {cachedUser?.name ? getInitials(cachedUser.name) : "US"}
+              </Text>
+            </View>
+          </LinearGradient>
         </View>
 
-        {/* Best Streak */}
-        <View style={styles.statCard}>
-          <MaterialCommunityIcons name="trophy" size={24} color={GC.gold} />
-          <Text style={styles.statBigValue}>{bestStreak}</Text>
-          <Text style={styles.statLabel}>Best Streak</Text>
-        </View>
-
-        {/* Drills */}
-        <View style={styles.statCard}>
-          <MaterialCommunityIcons name="lightning-bolt" size={24} color={GC.primary} />
-          <Text style={styles.statBigValue}>{drillsCompleted}</Text>
-          <Text style={styles.statLabel}>Drills Done</Text>
-        </View>
-      </View>
-
-      {/* 7-Day Activity Calendar */}
-      <View style={styles.calendarCard}>
-        <Text style={styles.calendarTitle}>7-DAY ACTIVITY</Text>
-        <View style={styles.calendarRow}>
-          {last7Days.map((dateStr, i) => {
-            const isActive = activeSet.has(dateStr);
-            const day = new Date(dateStr);
-            const dayLabel = DAYS_OF_WEEK[day.getDay() === 0 ? 6 : day.getDay() - 1];
-            const isToday = dateStr === new Date().toISOString().split("T")[0];
-            return (
-              <View key={dateStr} style={styles.calendarDay}>
-                <Text style={[styles.calendarDayLabel, isToday && styles.calendarDayToday]}>
-                  {dayLabel}
-                </Text>
-                <View
-                  style={[
-                    styles.calendarDot,
-                    isActive && styles.calendarDotActive,
-                    isToday && styles.calendarDotToday,
-                  ]}
-                >
-                  {isActive && (
-                    <MaterialCommunityIcons
-                      name="check"
-                      size={10}
-                      color={GC.bg}
-                    />
-                  )}
-                </View>
-              </View>
-            );
-          })}
-        </View>
-        <Text style={styles.calendarSubtext}>
-          {activeSet.size} of 7 days active this week
+        {/* Name and Username */}
+        <Text style={styles.nameText}>{cachedUser?.name || "Player"}</Text>
+        <Text style={styles.usernameText}>
+          {cachedUser?.email || "No Email Provided"}
         </Text>
-      </View>
 
-      {/* Badges count */}
-      <View style={styles.badgesSummaryCard}>
-        <MaterialCommunityIcons name="shield-star" size={24} color={GC.primaryLight} />
-        <View style={styles.badgesSummaryInfo}>
-          <Text style={styles.badgesSummaryValue}>
-            {profile?.unlocked_badges?.length || 0} Badges
-          </Text>
-          <Text style={styles.badgesSummaryLabel}>Achievement badges unlocked</Text>
+        {/* XP / Coins Row (Like Image 1) */}
+        <View style={styles.xpRow}>
+          <LinearGradient
+            colors={["#4F46E5", "#3B82F6"]}
+            style={styles.xpPill}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <MaterialCommunityIcons name="star-shooting" size={18} color="#FFF" />
+            <Text style={styles.xpPillText}>{xp.toLocaleString()} XP</Text>
+          </LinearGradient>
+          <Text style={styles.xpSubText}>How to earn XP?</Text>
         </View>
-        <MaterialCommunityIcons name="chevron-right" size={18} color={GC.textMuted} />
+
+        {/* Stats Grid 2x2 (Theme of Image 2 cards) */}
+        <View style={styles.statsGrid}>
+          {/* Level */}
+          <View style={styles.statCard}>
+            <View style={[styles.iconCircle, { backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
+              <MaterialCommunityIcons name="trophy" size={24} color="#10B981" />
+            </View>
+            <View>
+              <Text style={styles.statLabel}>Level</Text>
+              <Text style={styles.statValue}>{level}</Text>
+            </View>
+          </View>
+
+          {/* Time/Streak */}
+          <View style={styles.statCard}>
+            <View style={[styles.iconCircle, { backgroundColor: "rgba(59, 130, 246, 0.15)" }]}>
+              <MaterialCommunityIcons name="fire" size={24} color="#3B82F6" />
+            </View>
+            <View>
+              <Text style={styles.statLabel}>Streak</Text>
+              <Text style={styles.statValue}>{streak} Days</Text>
+            </View>
+          </View>
+
+          {/* Badges/Skills */}
+          <View style={styles.statCard}>
+            <View style={[styles.iconCircle, { backgroundColor: "rgba(239, 68, 68, 0.15)" }]}>
+              <MaterialCommunityIcons name="shield-star" size={24} color="#EF4444" />
+            </View>
+            <View>
+              <Text style={styles.statLabel}>Badges</Text>
+              <Text style={styles.statValue}>{badgesCount}</Text>
+            </View>
+          </View>
+
+          {/* Games/Drills */}
+          <View style={styles.statCard}>
+            <View style={[styles.iconCircle, { backgroundColor: "rgba(245, 158, 11, 0.15)" }]}>
+              <MaterialCommunityIcons name="controller-classic" size={24} color="#F59E0B" />
+            </View>
+            <View>
+              <Text style={styles.statLabel}>Drills</Text>
+              <Text style={styles.statValue}>{drillsCompleted}</Text>
+            </View>
+          </View>
+        </View>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 14, paddingBottom: 80 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  userCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: GC.card,
-    borderRadius: 24,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: GC.border,
-    gap: 14,
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#0A0F1E" },
+  container: {
+    backgroundColor: "#0A0F1E", // Gamification global bg
+    paddingBottom: 80,
+    minHeight: "100%",
   },
-  avatarCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: GC.primary,
+  headerBanner: {
+    height: 160,
+    width: "100%",
+    position: "relative",
+  },
+  headerCurve: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 40,
+    backgroundColor: "#0A0F1E",
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+  },
+  profileSection: {
+    paddingHorizontal: 20,
+    alignItems: "center",
+    marginTop: -60, // overlap the avatar onto the banner
+  },
+  avatarWrapper: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: "#0A0F1E",
     justifyContent: "center",
     alignItems: "center",
+    marginBottom: 16,
+    zIndex: 10,
+  },
+  avatarBorder: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarInner: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: "#1A0B2E",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#0A0F1E",
   },
   avatarInitials: {
-    color: GC.bg,
-    fontSize: 22,
-    fontWeight: "900",
-    letterSpacing: 1,
-  },
-  userInfo: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  userName: {
-    color: GC.textPrimary,
-    fontSize: 18,
-    fontWeight: "800",
-    marginBottom: 2,
-  },
-  userEmail: {
-    color: GC.textMuted,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  userLevelBadge: {
-    alignItems: "center",
-    backgroundColor: GC.cardAlt,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: GC.border,
-  },
-  userLevelLabel: {
-    color: GC.primaryLight,
-    fontSize: 10,
-    fontWeight: "900",
-    letterSpacing: 1.5,
-  },
-  userLevelValue: {
-    color: GC.textPrimary,
-    fontSize: 20,
+    color: "#FFF",
+    fontSize: 32,
     fontWeight: "900",
   },
-  xpHeroCard: {
-    backgroundColor: GC.card,
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: GC.primaryBorder,
-    padding: 20,
-    gap: 12,
-    shadowColor: GC.primary,
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-  },
-  xpHeroTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  xpLabel: {
-    color: GC.primaryLight,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 2,
-    marginBottom: 4,
-  },
-  xpValue: {
-    color: GC.textPrimary,
-    fontSize: 36,
-    fontWeight: "900",
-  },
-  levelBadge: {
-    backgroundColor: GC.primary,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  levelBadgeLabel: {
-    color: GC.textPrimary,
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 2,
-    opacity: 0.8,
-  },
-  levelBadgeValue: {
-    color: GC.textPrimary,
+  nameText: {
+    color: "#FFFFFF",
     fontSize: 24,
     fontWeight: "900",
-  },
-  xpProgressRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  xpProgressLabel: {
-    color: GC.textMuted,
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  xpProgressPct: {
-    color: GC.primaryLight,
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  xpProgressBar: {
-    height: 6,
-    backgroundColor: GC.border,
-    borderRadius: 6,
-    overflow: "hidden",
-  },
-  xpProgressFill: {
-    height: "100%",
-    backgroundColor: GC.primary,
-    borderRadius: 6,
-  },
-  statsRow: { flexDirection: "row", gap: 10 },
-  statCard: {
-    flex: 1,
-    backgroundColor: GC.card,
-    borderRadius: 18,
-    padding: 14,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: GC.border,
-    gap: 6,
-  },
-  streakCard: {
-    borderColor: "#3D1500",
-    backgroundColor: "#180A00",
-  },
-  streakFlame: { fontSize: 22 },
-  statBigValue: {
-    color: GC.textPrimary,
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  statLabel: {
-    color: GC.textMuted,
-    fontSize: 10,
-    fontWeight: "700",
-    textAlign: "center",
     letterSpacing: 0.5,
+    marginBottom: 4,
   },
-  calendarCard: {
-    backgroundColor: GC.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: GC.border,
-    padding: 18,
-    gap: 14,
-  },
-  calendarTitle: {
-    color: GC.textMuted,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 2,
-  },
-  calendarRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  calendarDay: { alignItems: "center", gap: 6 },
-  calendarDayLabel: {
-    color: GC.textMuted,
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  calendarDayToday: { color: GC.primaryLight },
-  calendarDot: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: GC.cardAlt,
-    borderWidth: 1,
-    borderColor: GC.border,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  calendarDotActive: {
-    backgroundColor: GC.success,
-    borderColor: GC.success,
-  },
-  calendarDotToday: {
-    borderColor: GC.primaryLight,
-    borderWidth: 2,
-  },
-  calendarSubtext: {
-    color: GC.textMuted,
-    fontSize: 11,
+  usernameText: {
+    color: "#94A3B8",
+    fontSize: 14,
     fontWeight: "600",
-    textAlign: "center",
+    marginBottom: 24,
   },
-  badgesSummaryCard: {
+  xpRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
-    backgroundColor: GC.card,
-    borderRadius: 18,
-    padding: 16,
+    backgroundColor: "#141D2E",
+    borderRadius: 30,
+    paddingRight: 20,
+    paddingVertical: 6,
+    paddingLeft: 6,
     borderWidth: 1,
-    borderColor: GC.primaryBorder,
+    borderColor: "#1E2D4A",
+    marginBottom: 32,
   },
-  badgesSummaryInfo: { flex: 1 },
-  badgesSummaryValue: {
-    color: GC.textPrimary,
+  xpPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    gap: 8,
+  },
+  xpPillText: {
+    color: "#FFF",
     fontSize: 16,
     fontWeight: "800",
   },
-  badgesSummaryLabel: {
-    color: GC.textMuted,
+  xpSubText: {
+    color: "#94A3B8",
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 16,
+  },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    width: "100%",
+    gap: 16,
+  },
+  statCard: {
+    width: "47%", // slightly less than 50% for gap
+    backgroundColor: "#1A1A24", // Like image 2 card color
+    borderRadius: 20,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  iconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  statLabel: {
+    color: "#94A3B8",
     fontSize: 12,
-    fontWeight: "500",
-    marginTop: 2,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  statValue: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "800",
   },
 });

@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { GC } from "../drills/GamificationColors";
 import { LeaderboardUser } from "../../../../api/gamification/Request";
 
@@ -16,9 +17,6 @@ interface Props {
   isLoading: boolean;
   onRefresh: () => void;
 }
-
-const MEDAL_COLORS = ["#F59E0B", "#94A3B8", "#B45309"];
-const MEDAL_EMOJIS = ["🥇", "🥈", "🥉"];
 
 function getInitials(name: string) {
   return name
@@ -52,200 +50,326 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
   }
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={false}
-          onRefresh={onRefresh}
-          tintColor={GC.primary}
-          colors={[GC.primary]}
-        />
-      }
-    >
-      {/* Podium */}
-      <View style={styles.podiumSection}>
-        {top3.length >= 2 && (
-          <View style={styles.podiumItem}>
-            <Text style={styles.podiumMedal}>{MEDAL_EMOJIS[1]}</Text>
-            <View style={[styles.podiumAvatar, { borderColor: MEDAL_COLORS[1] }]}>
-              <Text style={styles.podiumAvatarText}>{getInitials(top3[1]?.name || "")}</Text>
-            </View>
-            <Text style={styles.podiumName} numberOfLines={1}>{top3[1]?.name}</Text>
-            <Text style={[styles.podiumXp, { color: MEDAL_COLORS[1] }]}>
-              {(top3[1]?.xp || 0).toLocaleString()} XP
-            </Text>
-            <View style={[styles.podiumBase, { backgroundColor: MEDAL_COLORS[1] + "22", height: 60 }]} />
-          </View>
-        )}
-
-        {top3.length >= 1 && (
-          <View style={[styles.podiumItem, styles.podiumFirst]}>
-            <Text style={styles.podiumCrown}>👑</Text>
-            <Text style={styles.podiumMedal}>{MEDAL_EMOJIS[0]}</Text>
-            <View style={[styles.podiumAvatar, styles.podiumAvatarFirst, { borderColor: MEDAL_COLORS[0] }]}>
-              <Text style={styles.podiumAvatarTextFirst}>{getInitials(top3[0]?.name || "")}</Text>
-            </View>
-            <Text style={styles.podiumName} numberOfLines={1}>{top3[0]?.name}</Text>
-            <Text style={[styles.podiumXp, { color: MEDAL_COLORS[0] }]}>
-              {(top3[0]?.xp || 0).toLocaleString()} XP
-            </Text>
-            <View style={[styles.podiumBase, { backgroundColor: MEDAL_COLORS[0] + "22", height: 80 }]} />
-          </View>
-        )}
-
-        {top3.length >= 3 && (
-          <View style={styles.podiumItem}>
-            <Text style={styles.podiumMedal}>{MEDAL_EMOJIS[2]}</Text>
-            <View style={[styles.podiumAvatar, { borderColor: MEDAL_COLORS[2] }]}>
-              <Text style={styles.podiumAvatarText}>{getInitials(top3[2]?.name || "")}</Text>
-            </View>
-            <Text style={styles.podiumName} numberOfLines={1}>{top3[2]?.name}</Text>
-            <Text style={[styles.podiumXp, { color: MEDAL_COLORS[2] }]}>
-              {(top3[2]?.xp || 0).toLocaleString()} XP
-            </Text>
-            <View style={[styles.podiumBase, { backgroundColor: MEDAL_COLORS[2] + "22", height: 44 }]} />
-          </View>
-        )}
-      </View>
-
-      {/* Rest of leaderboard */}
-      {rest.map((user, i) => {
-        const rank = i + 4;
-        return (
-          <View
-            key={user.id}
-            style={[styles.row, user.is_current_user && styles.rowCurrent]}
-          >
-            <Text style={[styles.rank, user.is_current_user && styles.rankCurrent]}>
-              #{rank}
-            </Text>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{getInitials(user.name)}</Text>
-            </View>
-            <View style={styles.rowInfo}>
-              <Text style={styles.rowName}>{user.name}</Text>
-              <Text style={styles.rowRole} numberOfLines={1}>{user.role}</Text>
-            </View>
-            <View style={styles.rowStats}>
-              <View style={styles.statItem}>
-                <MaterialCommunityIcons name="shield-star" size={12} color={GC.primaryLight} />
-                <Text style={styles.statText}>{user.badges_count}</Text>
+    <View style={styles.wrapper}>
+      {/* Background Gradient matching Image 2 */}
+      <LinearGradient
+        colors={["#1A0B2E", "#35155D"]}
+        style={StyleSheet.absoluteFillObject}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      />
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={false}
+            onRefresh={onRefresh}
+            tintColor={"#FFF"}
+            colors={["#FFF"]}
+          />
+        }
+      >
+        {/* Podium Section */}
+        <View style={styles.podiumSection}>
+          {top3.length >= 2 && (
+            <View style={styles.podiumItemWrapper}>
+              <View style={styles.podiumAvatarContainer}>
+                <View style={styles.podiumAvatar}>
+                  <Text style={styles.podiumAvatarText}>{getInitials(top3[1]?.name || "")}</Text>
+                </View>
+                <View style={styles.rankBadge}>
+                  <Text style={styles.rankBadgeText}>2</Text>
+                </View>
               </View>
-              <Text style={styles.xpText}>{user.xp.toLocaleString()} XP</Text>
+              <Text style={styles.podiumName} numberOfLines={1}>{top3[1]?.name}</Text>
+              <View style={styles.xpRow}>
+                <MaterialCommunityIcons name="star-four-points" size={14} color="#A855F7" />
+                <Text style={styles.podiumXp}>{(top3[1]?.xp || 0).toLocaleString()}</Text>
+              </View>
+              <View style={[styles.podiumBlock, { height: 110 }]}>
+                <Text style={styles.podiumBlockText}>2</Text>
+              </View>
             </View>
-          </View>
-        );
-      })}
-    </ScrollView>
+          )}
+
+          {top3.length >= 1 && (
+            <View style={[styles.podiumItemWrapper, styles.podiumFirst]}>
+              <View style={styles.podiumAvatarContainer}>
+                <View style={[styles.podiumAvatar, styles.podiumAvatarFirst]}>
+                  <Text style={styles.podiumAvatarTextFirst}>{getInitials(top3[0]?.name || "")}</Text>
+                </View>
+                <View style={[styles.rankBadge, styles.rankBadgeFirst]}>
+                  <Text style={styles.rankBadgeTextFirst}>1</Text>
+                </View>
+              </View>
+              <Text style={[styles.podiumName, styles.podiumNameFirst]} numberOfLines={1}>
+                {top3[0]?.name}
+              </Text>
+              <View style={styles.xpRow}>
+                <MaterialCommunityIcons name="star-four-points" size={14} color="#A855F7" />
+                <Text style={styles.podiumXp}>{(top3[0]?.xp || 0).toLocaleString()}</Text>
+              </View>
+              <View style={[styles.podiumBlock, { height: 160 }]}>
+                <Text style={styles.podiumBlockText}>1</Text>
+              </View>
+            </View>
+          )}
+
+          {top3.length >= 3 && (
+            <View style={styles.podiumItemWrapper}>
+              <View style={styles.podiumAvatarContainer}>
+                <View style={styles.podiumAvatar}>
+                  <Text style={styles.podiumAvatarText}>{getInitials(top3[2]?.name || "")}</Text>
+                </View>
+                <View style={[styles.rankBadge, { backgroundColor: "#B45309" }]}>
+                  <Text style={styles.rankBadgeText}>3</Text>
+                </View>
+              </View>
+              <Text style={styles.podiumName} numberOfLines={1}>{top3[2]?.name}</Text>
+              <View style={styles.xpRow}>
+                <MaterialCommunityIcons name="star-four-points" size={14} color="#A855F7" />
+                <Text style={styles.podiumXp}>{(top3[2]?.xp || 0).toLocaleString()}</Text>
+              </View>
+              <View style={[styles.podiumBlock, { height: 90 }]}>
+                <Text style={styles.podiumBlockText}>3</Text>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* List Section */}
+        <View style={styles.listSection}>
+          {rest.map((user, i) => {
+            const rank = i + 4;
+            return (
+              <View
+                key={user.id}
+                style={[styles.row, user.is_current_user && styles.rowCurrent]}
+              >
+                {/* Background Huge Number */}
+                <View style={styles.hugeRankContainer}>
+                  <Text style={styles.hugeRankText}>{rank}</Text>
+                </View>
+
+                {/* Content */}
+                <View style={styles.rowContent}>
+                  <View style={styles.listAvatar}>
+                    <Text style={styles.listAvatarText}>{getInitials(user.name)}</Text>
+                  </View>
+                  <View style={styles.rowInfo}>
+                    <Text style={styles.rowName}>{user.name}</Text>
+                    <View style={styles.xpRow}>
+                      <MaterialCommunityIcons name="star-four-points" size={12} color="#A855F7" />
+                      <Text style={styles.rowXp}>{user.xp.toLocaleString()}</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 10, paddingBottom: 80 },
+  wrapper: { flex: 1 },
+  container: { paddingBottom: 100 },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     padding: 32,
-    gap: 16,
+    backgroundColor: "#1A0B2E",
   },
-  emptyTitle: { color: GC.textPrimary, fontSize: 18, fontWeight: "800" },
-  emptySubtitle: { color: GC.textMuted, fontSize: 14, textAlign: "center" },
+  emptyTitle: { color: "#FFF", fontSize: 18, fontWeight: "800", marginTop: 16 },
+  emptySubtitle: { color: "#94A3B8", fontSize: 14, textAlign: "center", marginTop: 8 },
   podiumSection: {
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "center",
-    gap: 8,
-    marginBottom: 8,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingTop: 40,
+    marginBottom: 20,
   },
-  podiumItem: {
+  podiumItemWrapper: {
     flex: 1,
     alignItems: "center",
-    gap: 4,
   },
-  podiumFirst: { flex: 1.2 },
-  podiumCrown: { fontSize: 20 },
-  podiumMedal: { fontSize: 22 },
+  podiumFirst: {
+    flex: 1.1,
+    zIndex: 10,
+  },
+  podiumAvatarContainer: {
+    position: "relative",
+    marginBottom: 8,
+  },
   podiumAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: GC.card,
-    borderWidth: 2.5,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#3B82F6",
     justifyContent: "center",
     alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#FFF",
   },
   podiumAvatarFirst: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 3,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: "#EF4444",
   },
   podiumAvatarText: {
-    color: GC.textPrimary,
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  podiumAvatarTextFirst: {
-    color: GC.textPrimary,
+    color: "#FFF",
     fontSize: 20,
     fontWeight: "900",
   },
-  podiumName: {
-    color: GC.textPrimary,
-    fontSize: 11,
-    fontWeight: "800",
-    textAlign: "center",
-    maxWidth: 80,
-  },
-  podiumXp: { fontSize: 11, fontWeight: "900" },
-  podiumBase: {
-    width: "100%",
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-    marginTop: 4,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: GC.card,
-    borderRadius: 14,
-    padding: 12,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: GC.border,
-  },
-  rowCurrent: {
-    borderColor: GC.primary,
-    backgroundColor: "#140D2B",
-  },
-  rank: {
-    color: GC.textMuted,
-    fontSize: 13,
+  podiumAvatarTextFirst: {
+    color: "#FFF",
+    fontSize: 26,
     fontWeight: "900",
-    width: 28,
-    textAlign: "center",
   },
-  rankCurrent: { color: GC.primaryLight },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: GC.primary + "33",
-    borderWidth: 1,
-    borderColor: GC.primaryBorder,
+  rankBadge: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    backgroundColor: "#94A3B8", // silver for 2
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     justifyContent: "center",
     alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#1A0B2E",
   },
-  avatarText: { color: GC.primaryLight, fontSize: 13, fontWeight: "900" },
-  rowInfo: { flex: 1 },
-  rowName: { color: GC.textPrimary, fontSize: 14, fontWeight: "700" },
-  rowRole: { color: GC.textMuted, fontSize: 11, fontWeight: "500" },
-  rowStats: { alignItems: "flex-end", gap: 2 },
-  statItem: { flexDirection: "row", alignItems: "center", gap: 4 },
-  statText: { color: GC.primaryLight, fontSize: 11, fontWeight: "700" },
-  xpText: { color: GC.gold, fontSize: 13, fontWeight: "900" },
+  rankBadgeFirst: {
+    backgroundColor: "#F59E0B", // gold for 1
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    top: -8,
+    right: -8,
+  },
+  rankBadgeText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  rankBadgeTextFirst: {
+    color: "#FFF",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  podiumName: {
+    color: "#FFF",
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "center",
+    maxWidth: 90,
+  },
+  podiumNameFirst: {
+    color: "#EF4444", // Red name for 1st place in image 2
+    fontSize: 16,
+  },
+  xpRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 8,
+    marginTop: 2,
+  },
+  podiumXp: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  podiumBlock: {
+    width: "95%",
+    backgroundColor: "#475569", // grey podium blocks
+    justifyContent: "center",
+    alignItems: "center",
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -4 },
+  },
+  podiumBlockText: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 48,
+    fontWeight: "900",
+  },
+  listSection: {
+    paddingHorizontal: 16,
+    gap: 12,
+    paddingTop: 10,
+    backgroundColor: "#1A1A24",
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    minHeight: 400,
+  },
+  row: {
+    backgroundColor: "#2C2C35",
+    borderRadius: 20,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    position: "relative",
+    overflow: "hidden",
+  },
+  rowCurrent: {
+    borderWidth: 1,
+    borderColor: "#A855F7",
+  },
+  hugeRankContainer: {
+    position: "absolute",
+    left: 8,
+    top: 4,
+    bottom: 0,
+    justifyContent: "center",
+  },
+  hugeRankText: {
+    fontSize: 64,
+    fontWeight: "900",
+    color: "rgba(255, 255, 255, 0.05)",
+  },
+  rowContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginLeft: 30, // push past the huge number
+  },
+  listAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#3B82F6",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
+  },
+  listAvatarText: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  rowInfo: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  rowName: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  rowXp: {
+    color: "#94A3B8",
+    fontSize: 13,
+    fontWeight: "700",
+  },
 });
