@@ -55,7 +55,7 @@ export default function SprintsTab({
   const [expandedSprints, setExpandedSprints] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
 
-  const completedDrills = new Set(profile?.completed_drills || []);
+  const completedDrills = new Set((profile?.completed_drills || []).map(d => d.drill_id));
 
   const toggleSprint = (id: string) => {
     setExpandedSprints((prev) => {

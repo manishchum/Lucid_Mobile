@@ -116,7 +116,7 @@ export default function GamificationHubScreen() {
           ...profile,
           total_xp: profile.total_xp + (result?.earned_xp || 0),
           drills_completed_count: profile.drills_completed_count + 1,
-          completed_drills: [...(profile.completed_drills || []), drillId],
+          completed_drills: [...(profile.completed_drills || []), { drill_id: drillId, earned_xp: result.earned_xp }],
         };
         setProfile(updatedProfile);
       }

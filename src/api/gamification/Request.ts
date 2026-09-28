@@ -58,7 +58,7 @@ export interface GamificationProfile {
   current_streak_days: number;
   best_streak_days: number;
   drills_completed_count: number;
-  completed_drills: string[];
+  completed_drills: { drill_id: string; earned_xp: number }[];
   unlocked_badges: UnlockedBadge[];
 }
 
