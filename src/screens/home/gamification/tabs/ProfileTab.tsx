@@ -10,6 +10,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { GC } from "../drills/GamificationColors";
 import { GamificationProfile } from "../../../../api/gamification/Request";
+import { useAuth } from "../../../../contex/AuthContext";
 
 interface Props {
   profile: GamificationProfile | null;
@@ -53,6 +54,7 @@ function getLast7Days(): string[] {
 }
 
 export default function ProfileTab({ profile, isLoading, activeDates }: Props) {
+  const { cachedUser } = useAuth();
   const last7Days = getLast7Days();
   const activeSet = new Set(activeDates || []);
 
@@ -86,11 +88,36 @@ export default function ProfileTab({ profile, isLoading, activeDates }: Props) {
     );
   }
 
+  const getInitials = (name: string) => {
+    const parts = name.split(" ");
+    if (parts.length > 1) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
+
   return (
     <ScrollView
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
     >
+      {/* User Info Card */}
+      <View style={styles.userCard}>
+        <View style={styles.avatarCircle}>
+          <Text style={styles.avatarInitials}>
+            {cachedUser?.name ? getInitials(cachedUser.name) : "US"}
+          </Text>
+        </View>
+        <View style={styles.userInfo}>
+          <Text style={styles.userName}>{cachedUser?.name || "Player"}</Text>
+          <Text style={styles.userEmail}>{cachedUser?.email || "No Email Provided"}</Text>
+        </View>
+        <View style={styles.userLevelBadge}>
+          <Text style={styles.userLevelLabel}>LVL</Text>
+          <Text style={styles.userLevelValue}>{level}</Text>
+        </View>
+      </View>
+
       {/* XP Hero Card */}
       <View style={styles.xpHeroCard}>
         <View style={styles.xpHeroTop}>
@@ -98,10 +125,7 @@ export default function ProfileTab({ profile, isLoading, activeDates }: Props) {
             <Text style={styles.xpLabel}>TOTAL XP</Text>
             <Text style={styles.xpValue}>{xp.toLocaleString()}</Text>
           </View>
-          <View style={styles.levelBadge}>
-            <Text style={styles.levelBadgeLabel}>LVL</Text>
-            <Text style={styles.levelBadgeValue}>{level}</Text>
-          </View>
+          <MaterialCommunityIcons name="star-shooting" size={36} color={GC.gold} style={{ opacity: 0.8 }} />
         </View>
         <View style={styles.xpProgressRow}>
           <Text style={styles.xpProgressLabel}>
@@ -196,6 +220,65 @@ export default function ProfileTab({ profile, isLoading, activeDates }: Props) {
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 14, paddingBottom: 80 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  userCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: GC.card,
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: GC.border,
+    gap: 14,
+  },
+  avatarCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: GC.primary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarInitials: {
+    color: GC.bg,
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  userInfo: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  userName: {
+    color: GC.textPrimary,
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  userEmail: {
+    color: GC.textMuted,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  userLevelBadge: {
+    alignItems: "center",
+    backgroundColor: GC.cardAlt,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: GC.border,
+  },
+  userLevelLabel: {
+    color: GC.primaryLight,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+  },
+  userLevelValue: {
+    color: GC.textPrimary,
+    fontSize: 20,
+    fontWeight: "900",
+  },
   xpHeroCard: {
     backgroundColor: GC.card,
     borderRadius: 24,
