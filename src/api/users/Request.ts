@@ -1055,16 +1055,24 @@ export const getProcessedModuleById = async (
 export const getDashboardSummary = async (
   userId: string,
   companyId: string,
+  forceFresh: boolean = false,
 ): Promise<DashboardSummaryResponse> => {
   try {
-    const url = `${API_BASE_URL}/employee/dashboard_summary/${encodeURIComponent(userId)}`;
-    logger.debug("[Request] getDashboardSummary →", url);
+    const url = `${API_BASE_URL}/employee/dashboard_summary/${encodeURIComponent(userId)}${
+      forceFresh ? `?_ts=${Date.now()}` : ""
+    }`;
+    logger.debug("[Request] getDashboardSummary →", url, "forceFresh:", forceFresh);
     const json = await apiFetch<any>(url, {
       method: "GET",
       userId,
       companyId,
       timeoutMs: 30000,
-      headers: { "X-Company-ID": companyId },
+      headers: {
+        "X-Company-ID": companyId,
+        ...(forceFresh
+          ? { "Cache-Control": "no-cache", Pragma: "no-cache" }
+          : {}),
+      },
     });
 
     if (Array.isArray(json?.plans)) {
@@ -1109,6 +1117,7 @@ const isUuidFormat = (val?: string | null): boolean =>
 export const getTasks = async (
   userId: string,
   companyId: string,
+  forceFresh: boolean = false,
 ): Promise<TasksResponse> => {
   try {
     let resolvedUserId = userId;
@@ -1122,13 +1131,18 @@ export const getTasks = async (
       }
     }
     const targetId = resolvedUserId && resolvedUserId.trim() ? resolvedUserId : "me";
-    const url = `${API_BASE_URL}/task-manager/tasks/user/${encodeURIComponent(targetId)}`;
-    logger.debug("[Request] getTasks →", url);
+    const url = `${API_BASE_URL}/task-manager/tasks/user/${encodeURIComponent(targetId)}${
+      forceFresh ? `?_ts=${Date.now()}` : ""
+    }`;
+    logger.debug("[Request] getTasks →", url, "forceFresh:", forceFresh);
     const json = await apiFetch<any>(url, {
       method: "GET",
       userId: targetId === "me" ? undefined : targetId,
       companyId,
       timeoutMs: 30_000,
+      headers: forceFresh
+        ? { "Cache-Control": "no-cache", Pragma: "no-cache" }
+        : undefined,
     });
     logger.debug(
       "[Request] getTasks ✅ total:",

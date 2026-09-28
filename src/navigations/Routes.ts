@@ -24,6 +24,8 @@ export const STACK_ROUTES = {
   ROLEPLAY_CONFIG: "RoleplayConfig",
   ROLEPLAY_SESSION: "RoleplaySession",
   ROLEPLAY_REPORT: "RoleplayReport",
+  GAMIFICATION: "Arena",
+  GAMIFICATION_DRILL: "ArenaDrill",
 } as const;
 
 // Type exports

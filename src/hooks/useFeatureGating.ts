@@ -16,6 +16,7 @@ export const FEATURES = {
   ROLE_PLAY: "rolePlay",
   SPRINTVERSE: "sprintverse",
   REPORTS: "reports",
+  GAMIFICATION: "gamification",
 } as const;
 
 export type FeatureName = (typeof FEATURES)[keyof typeof FEATURES];
@@ -34,6 +35,7 @@ const FEATURE_CONFIG: Record<FeatureName, { requiredAddons: Addon[] }> = {
   [FEATURES.ROLE_PLAY]: { requiredAddons: ["role_play"] },
   [FEATURES.SPRINTVERSE]: { requiredAddons: ["sprintverse"] },
   [FEATURES.REPORTS]: { requiredAddons: ["reports"] },
+  [FEATURES.GAMIFICATION]: { requiredAddons: ["gamification"] },
 };
 
 const deriveFrontendTier = (addons: Addon[]): Tier | null => {

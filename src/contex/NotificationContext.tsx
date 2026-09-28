@@ -130,6 +130,7 @@ export const NotificationProvider = ({
         });
         eventBus.emit("refresh_dashboard");
         eventBus.emit("refresh_tasks");
+        eventBus.emit("refresh_roleplay");
       }
     },
   });

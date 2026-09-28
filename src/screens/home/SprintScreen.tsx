@@ -301,6 +301,15 @@ export default function SprintScreen({
 		},
 	});
 
+	useRealtimeSubscription({
+		table: "learning_plan",
+		onPayload: () => {
+			refetchTrainingPlan();
+			refetchModuleProgress();
+			eventBus.emit("refresh_dashboard");
+		},
+	});
+
 
 	const onRefresh = useCallback(async () => {
 		setRefreshing(true);

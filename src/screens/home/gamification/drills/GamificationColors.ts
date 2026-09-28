@@ -1,0 +1,21 @@
+﻿// Shared color tokens for the Gamification dark theme
+export const GC = {
+  bg: "#0A0F1E",
+  surface: "#0D1424",
+  card: "#111827",
+  cardAlt: "#141D2E",
+  border: "#1E2D4A",
+  primaryBorder: "#3730A3",
+  primary: "#7C3AED",
+  primaryLight: "#A78BFA",
+  primaryGlow: "#A855F7",
+  gold: "#F59E0B",
+  goldLight: "#FCD34D",
+  success: "#10B981",
+  danger: "#EF4444",
+  textPrimary: "#F8FAFC",
+  textSecondary: "#94A3B8",
+  textMuted: "#64748B",
+  accent: "#3B82F6",
+  headerBg: "#070C18",
+};

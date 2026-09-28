@@ -24,7 +24,8 @@ export type Addon =
   | "kpi"
   | "role_play"
   | "sprintverse"
-  | "reports";
+  | "reports"
+  | "gamification";
 
 type CompanyInfo = {
   company_id?: string;
@@ -63,6 +64,7 @@ const KNOWN_ADDONS: Addon[] = [
   "role_play",
   "sprintverse",
   "reports",
+  "gamification",
 ];
 
 const normalizeAddonKey = (value: string): Addon | null => {

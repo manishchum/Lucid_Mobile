@@ -1206,10 +1206,10 @@ export const useGetDashboardSummary = (
   const { setCompanyFromDashboard } = useTenant();
 
   const fetchDashboardData = useCallback(
-    async (showSpinner: boolean) => {
+    async (showSpinner: boolean, forceFresh = false) => {
       if (!userId || !companyId) return;
 
-      if (fetchPromiseRef.current) {
+      if (!forceFresh && fetchPromiseRef.current) {
         logger.debug(
           "[Hook] fetchDashboardData already in progress, awaiting existing promise...",
         );
@@ -1234,10 +1234,12 @@ export const useGetDashboardSummary = (
             userId,
             "companyId:",
             companyId,
+            "forceFresh:",
+            forceFresh,
           );
 
           const apiStart = Date.now();
-          const data = await getDashboardSummary(userId, companyId);
+          const data = await getDashboardSummary(userId, companyId, forceFresh);
           const apiEnd = Date.now();
           logger.debug(
             `[Timing] getDashboardSummary API took ${apiEnd - apiStart}ms`,
@@ -1495,9 +1497,9 @@ export const useGetDashboardSummary = (
   useEffect(() => {
     const handleRefresh = () => {
       logger.debug(
-        "[Hook] EventBus triggered refresh_dashboard. Refreshing silently...",
+        "[Hook] EventBus triggered refresh_dashboard. Refreshing with forceFresh...",
       );
-      fetchDashboardData(false).catch(() => {});
+      fetchDashboardData(false, true).catch(() => {});
     };
 
     const handleModuleCompleted = (data?: { processedModuleId?: string; quizScore?: number; taskId?: string }) => {
@@ -1565,7 +1567,7 @@ export const useGetDashboardSummary = (
     error,
     refetch: useCallback(
       async (showSpinner = true) => {
-        await fetchDashboardData(showSpinner);
+        await fetchDashboardData(showSpinner, true);
       },
       [fetchDashboardData],
     ),
@@ -1625,16 +1627,6 @@ export const useModuleProgress = (
               };
             }
             return networkEntry;
-          });
-
-          const networkPids = new Set(data.map((d) => d.processed_module_id));
-          prevProgress.forEach((p) => {
-            if (
-              p.processed_module_id &&
-              !networkPids.has(p.processed_module_id)
-            ) {
-              mergedData.push(p);
-            }
           });
 
           const cacheKey = `@module_progress_${userId}`;
@@ -1864,7 +1856,7 @@ export const useGetTasks = (
   }, [tasks]);
 
   const fetchTasks = useCallback(
-    async (isSilent = false) => {
+    async (isSilent = false, forceFresh = false) => {
       if (!userId || !companyId || !enabled) return;
       if (isOnline === false) return;
 
@@ -1876,7 +1868,7 @@ export const useGetTasks = (
       setError(null);
 
       try {
-        const response: TasksResponse = await getTasks(userId, companyId);
+        const response: TasksResponse = await getTasks(userId, companyId, forceFresh);
         const fetchedTasks = Array.isArray(response.tasks) ? response.tasks : [];
         setTasks(fetchedTasks);
         setTotal(response.total ?? fetchedTasks.length);
@@ -1910,7 +1902,7 @@ export const useGetTasks = (
   }, [userId, companyId, enabled, fetchTasks]);
 
   const refetch = useCallback(
-    (isSilent = true) => fetchTasks(isSilent),
+    (isSilent = true) => fetchTasks(isSilent, true),
     [fetchTasks],
   );
 

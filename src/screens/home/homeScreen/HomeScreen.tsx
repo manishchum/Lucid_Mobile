@@ -360,6 +360,32 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
     },
   });
 
+  // Real-time Supabase WebSocket subscription for learning plans (sprints assigned/updated)
+  useRealtimeSubscription({
+    table: "learning_plan",
+    onPayload: () => {
+      refetch(false);
+    },
+  });
+
+  // Real-time Supabase WebSocket subscription for task assignments
+  useRealtimeSubscription({
+    table: "task_assignments",
+    onPayload: () => {
+      refetch(false);
+      eventBus.emit("refresh_tasks");
+    },
+  });
+
+  // Real-time Supabase WebSocket subscription for scenario assignments (roleplay)
+  useRealtimeSubscription({
+    table: "scenario_assignments",
+    onPayload: () => {
+      refetch(false);
+      eventBus.emit("refresh_roleplay");
+    },
+  });
+
 
   // Initial loading is true if:
   // 1. User fetching is active without cached user

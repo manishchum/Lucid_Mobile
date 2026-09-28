@@ -45,6 +45,8 @@ import RoleplayScreen from "../screens/home/roleplay/RoleplayScreen";
 import RoleplayConfigScreen from "../screens/home/roleplay/RoleplayConfigScreen";
 import RoleplaySessionScreen from "../screens/home/roleplay/RoleplaySessionScreen";
 import RoleplayReportScreen from "../screens/home/roleplay/RoleplayReportScreen";
+import GamificationHubScreen from "../screens/home/gamification/GamificationHubScreen";
+import DrillPlayerScreen from "../screens/home/gamification/DrillPlayerScreen";
 
 // Components
 import AppHeader from "../components/navigation/AppHeader";
@@ -374,6 +376,24 @@ function AppNavigatorContent() {
               options={{
                 presentation: "card",
                 animation: "slide_from_right",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.GAMIFICATION}
+              component={GamificationHubScreen}
+              options={{
+                presentation: "card",
+                animation: "fade",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.GAMIFICATION_DRILL}
+              component={DrillPlayerScreen}
+              options={{
+                presentation: "card",
+                animation: "slide_from_bottom",
                 headerShown: false,
               }}
             />

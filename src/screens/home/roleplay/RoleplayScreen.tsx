@@ -20,6 +20,7 @@ import { useAuth } from "../../../contex/AuthContext";
 import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
 import { eventBus } from "../../../utils/EventBus";
 import { logger } from "../../../utils/UnifiedLogger";
+import { useRealtimeSubscription } from "../../../hooks/useRealtimeSubscription";
 
 export default function RoleplayScreen({ navigation }: { navigation: any }) {
   const { cachedUser } = useAuth();
@@ -72,6 +73,21 @@ export default function RoleplayScreen({ navigation }: { navigation: any }) {
       unsub();
     };
   }, [loadData]);
+
+  // Real-time Supabase subscription for scenario assignments and scenarios
+  useRealtimeSubscription({
+    table: "scenario_assignments",
+    onPayload: () => {
+      loadData();
+    },
+  });
+
+  useRealtimeSubscription({
+    table: "scenarios",
+    onPayload: () => {
+      loadData();
+    },
+  });
 
   const onRefresh = () => {
     setIsRefreshing(true);
