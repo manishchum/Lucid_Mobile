@@ -1,4 +1,4 @@
-﻿import { getFirebaseToken } from "../users/Request";
+import { getFirebaseToken } from "../users/Request";
 
 const EXPO_API_URL =
   process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
@@ -46,9 +46,8 @@ export interface GamificationDrill {
 export interface GamificationSprint {
   sprint_id: string;
   module_id: string;
-  module_title: string;
-  sprint_title: string;
-  sprint_description: string;
+  title: string;
+  description: string;
   sprint_number: number;
   is_locked: boolean;
   gamification_drills: GamificationDrill[];

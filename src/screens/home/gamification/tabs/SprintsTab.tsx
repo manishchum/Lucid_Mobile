@@ -154,21 +154,21 @@ export default function SprintsTab({
               <View style={styles.sprintInfo}>
                 <Text
                   style={[
-                    styles.sprintModuleLabel,
+                    styles.sprintTitle,
                     isLocked && styles.textMuted,
                   ]}
                   numberOfLines={1}
                 >
-                  {sprint.module_title}
+                  {sprint.title}
                 </Text>
                 <Text
                   style={[
-                    styles.sprintTitle,
+                    styles.sprintDescription,
                     isLocked && styles.textMuted,
                   ]}
                   numberOfLines={2}
                 >
-                  {sprint.sprint_title}
+                  {sprint.description}
                 </Text>
                 {!isLocked && (
                   <View style={styles.progressRow}>
@@ -337,12 +337,11 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   sprintInfo: { flex: 1, gap: 4 },
-  sprintModuleLabel: {
-    color: GC.primaryLight,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.5,
-    textTransform: "uppercase",
+  sprintDescription: {
+    color: GC.textMuted,
+    fontSize: 12,
+    fontWeight: "500",
+    lineHeight: 18,
   },
   sprintTitle: {
     color: GC.textPrimary,
