@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -27,17 +27,17 @@ export default function VibeCheckDrill({
   const shakeAnim = useState(new Animated.Value(0))[0];
 
   const scenario =
-    drillData?.scenario_text ||
     drillData?.scenario ||
     drillData?.statement ||
+    drillData?.question ||
     "No scenario provided.";
-  const options = drillData?.options || [];
-  const takeaway = drillData?.takeaway || "";
+  
+  const isTrue =
+    drillData?.is_true === true ||
+    drillData?.is_true === "true" ||
+    drillData?.correct_answer === true;
 
-  const [selected, setSelected] = useState<string | null>(
-    isCompleted ? "done" : null
-  );
-  const [feedback, setFeedback] = useState<string>("");
+  const [isError, setIsError] = useState(false);
 
   const shake = () => {
     Animated.sequence([
@@ -64,17 +64,15 @@ export default function VibeCheckDrill({
     ]).start();
   };
 
-  const handleSelect = (opt: any) => {
-    if (isCompleted || selected) return;
-    setSelected(opt.id);
-    setFeedback(opt.feedback || "");
-    if (opt.is_ethical) {
+  const handleSelect = (userChoice: boolean) => {
+    if (userChoice === isTrue) {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      setTimeout(() => onComplete(wrongAttempts, elapsed), 800);
+      onComplete(wrongAttempts, elapsed);
     } else {
       setWrongAttempts((p) => p + 1);
+      setIsError(true);
       shake();
-      setTimeout(() => setSelected(null), 1000);
+      setTimeout(() => setIsError(false), 1000);
     }
   };
 
@@ -82,49 +80,70 @@ export default function VibeCheckDrill({
     <View style={styles.container}>
       <Animated.View
         style={[
-          styles.scenarioCard,
+          styles.scenarioBox,
+          isError && styles.scenarioBoxError,
           { transform: [{ translateX: shakeAnim }] },
         ]}
       >
         <Text style={styles.scenarioText}>"{scenario}"</Text>
       </Animated.View>
 
-      <Text style={styles.label}>WHAT DO YOU DO?</Text>
+      <View style={styles.buttonsRow}>
+        <TouchableOpacity
+          style={[
+            styles.choiceBtn,
+            styles.choiceBtnTrue,
+            isCompleted && isTrue && styles.choiceBtnActiveTrue,
+            isCompleted && !isTrue && styles.choiceBtnDisabled,
+          ]}
+          disabled={isCompleted}
+          onPress={() => handleSelect(true)}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons 
+            name="thumb-up" 
+            size={32} 
+            color={isCompleted && isTrue ? "#FFF" : "#059669"} 
+          />
+          <Text style={[
+            styles.choiceBtnText,
+            { color: isCompleted && isTrue ? "#FFF" : "#059669" }
+          ]}>
+            True / Pass
+          </Text>
+        </TouchableOpacity>
 
-      {options.map((opt: any) => {
-        const isSelected = selected === opt.id;
-        const isCorrect = opt.is_ethical;
-        let bg = styles.optionDefault;
-        if (isCompleted && isCorrect) bg = styles.optionCorrect;
-        else if (isSelected && isCorrect) bg = styles.optionCorrect;
-        else if (isSelected && !isCorrect) bg = styles.optionWrong;
+        <TouchableOpacity
+          style={[
+            styles.choiceBtn,
+            styles.choiceBtnFalse,
+            isCompleted && !isTrue && styles.choiceBtnActiveFalse,
+            isCompleted && isTrue && styles.choiceBtnDisabled,
+          ]}
+          disabled={isCompleted}
+          onPress={() => handleSelect(false)}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons 
+            name="thumb-down" 
+            size={32} 
+            color={isCompleted && !isTrue ? "#FFF" : "#E11D48"} 
+          />
+          <Text style={[
+            styles.choiceBtnText,
+            { color: isCompleted && !isTrue ? "#FFF" : "#E11D48" }
+          ]}>
+            False / Fail
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-        return (
-          <TouchableOpacity
-            key={opt.id}
-            style={[styles.option, bg]}
-            onPress={() => handleSelect(opt)}
-            activeOpacity={0.8}
-            disabled={isCompleted}
-          >
-            <Text style={styles.optionText}>{opt.text}</Text>
-            {((isCompleted && isCorrect) || (isSelected && isCorrect)) && (
-              <MaterialCommunityIcons name="check-circle" size={20} color={GC.success} />
-            )}
-          </TouchableOpacity>
-        );
-      })}
-
-      {feedback !== "" && (
-        <View style={styles.feedbackBox}>
-          <Text style={styles.feedbackText}>{feedback}</Text>
-        </View>
-      )}
-
-      {takeaway !== "" && isCompleted && (
-        <View style={styles.takeawayBox}>
-          <MaterialCommunityIcons name="lightbulb-on" size={16} color={GC.gold} />
-          <Text style={styles.takeawayText}>{takeaway}</Text>
+      {isCompleted && (
+        <View style={styles.successBanner}>
+          <MaterialCommunityIcons name="check-circle" size={20} color={GC.success} />
+          <Text style={styles.successText}>
+            Successfully Completed! (+{earnedXp || 0} XP)
+          </Text>
         </View>
       )}
     </View>
@@ -132,84 +151,87 @@ export default function VibeCheckDrill({
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 12 },
-  scenarioCard: {
-    backgroundColor: GC.cardAlt,
-    borderWidth: 1,
+  container: {
+    gap: 24,
+  },
+  scenarioBox: {
+    backgroundColor: GC.surface,
+    padding: 24,
+    borderRadius: 24,
+    borderWidth: 2,
     borderColor: GC.border,
-    borderRadius: 16,
-    padding: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 2,
+    minHeight: 160,
+    justifyContent: "center",
+  },
+  scenarioBoxError: {
+    borderColor: "#FDA4AF",
+    backgroundColor: "#FFF1F2",
   },
   scenarioText: {
     color: GC.textPrimary,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "600",
-    lineHeight: 24,
-    fontStyle: "italic",
+    textAlign: "center",
+    lineHeight: 28,
   },
-  label: {
-    color: GC.textMuted,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 2,
-    marginTop: 4,
-  },
-  option: {
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1.5,
+  buttonsRow: {
     flexDirection: "row",
+    gap: 16,
+  },
+  choiceBtn: {
+    flex: 1,
+    padding: 24,
+    borderRadius: 20,
+    borderWidth: 2,
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
     gap: 8,
   },
-  optionDefault: {
-    backgroundColor: GC.card,
+  choiceBtnTrue: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+  },
+  choiceBtnFalse: {
+    backgroundColor: "#FFF1F2",
+    borderColor: "#FECDD3",
+  },
+  choiceBtnActiveTrue: {
+    backgroundColor: "#10B981",
+    borderColor: "#059669",
+  },
+  choiceBtnActiveFalse: {
+    backgroundColor: "#F43F5E",
+    borderColor: "#E11D48",
+  },
+  choiceBtnDisabled: {
+    opacity: 0.5,
+    backgroundColor: GC.surface,
     borderColor: GC.border,
   },
-  optionCorrect: {
-    backgroundColor: "#052E16",
+  choiceBtnText: {
+    fontWeight: "900",
+    fontSize: 16,
+  },
+  successBanner: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
     borderColor: GC.success,
-  },
-  optionWrong: {
-    backgroundColor: "#2D0808",
-    borderColor: GC.danger,
-  },
-  optionText: {
-    color: GC.textPrimary,
-    fontSize: 14,
-    fontWeight: "600",
-    flex: 1,
-    lineHeight: 20,
-  },
-  feedbackBox: {
-    backgroundColor: "#1A1A2E",
-    borderRadius: 12,
-    padding: 12,
     borderWidth: 1,
-    borderColor: GC.primaryBorder,
-  },
-  feedbackText: {
-    color: GC.primaryLight,
-    fontSize: 13,
-    fontWeight: "500",
-    lineHeight: 18,
-  },
-  takeawayBox: {
+    padding: 16,
+    borderRadius: 12,
     flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-    backgroundColor: "#1C1200",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#3D2800",
-    alignItems: "flex-start",
+    marginTop: 8,
   },
-  takeawayText: {
-    color: GC.gold,
-    fontSize: 13,
-    fontWeight: "600",
-    flex: 1,
-    lineHeight: 18,
+  successText: {
+    color: GC.success,
+    fontWeight: "800",
+    fontSize: 14,
   },
 });

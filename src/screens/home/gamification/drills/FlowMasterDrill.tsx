@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -25,242 +25,225 @@ export default function FlowMasterDrill({
   const [startTime] = useState(Date.now());
   const [wrongAttempts, setWrongAttempts] = useState(0);
 
-  const rawSteps: any[] = drillData?.steps || [];
-  const procedureTitle = drillData?.procedure_title || "Arrange the Steps";
-  const hint = drillData?.hint || "";
+  const rawSteps = Array.isArray(drillData?.steps) ? drillData.steps : [];
+  const steps = rawSteps.map((s: any) => s?.text || s?.step || s?.description || String(s || ""));
 
-  // Shuffle initially (unless already completed)
-  const [orderedSteps, setOrderedSteps] = useState<any[]>(() => {
-    const shuffled = [...rawSteps];
-    if (!isCompleted) {
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-    } else {
-      shuffled.sort((a, b) => a.correct_order - b.correct_order);
-    }
-    return shuffled;
+  const [availableSteps, setAvailableSteps] = useState<string[]>(() => {
+    if (isCompleted) return [];
+    return [...steps].sort(() => Math.random() - 0.5);
   });
+  
+  const [flow, setFlow] = useState<string[]>(
+    isCompleted ? [...steps] : []
+  );
+  
+  const [isError, setIsError] = useState(false);
 
-  const [submitted, setSubmitted] = useState(isCompleted);
-  const [result, setResult] = useState<boolean | null>(isCompleted ? true : null);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-
-  const moveItem = (from: number, to: number) => {
-    const newSteps = [...orderedSteps];
-    const [item] = newSteps.splice(from, 1);
-    newSteps.splice(to, 0, item);
-    setOrderedSteps(newSteps);
-    setSelectedIndex(null);
+  const handleSelect = (step: string) => {
+    setAvailableSteps((prev) => prev.filter((s) => s !== step));
+    setFlow((prev) => [...prev, step]);
   };
 
-  const handleStepPress = (index: number) => {
-    if (submitted) return;
-    if (selectedIndex === null) {
-      setSelectedIndex(index);
-    } else if (selectedIndex === index) {
-      setSelectedIndex(null);
-    } else {
-      moveItem(selectedIndex, index);
-    }
+  const handleRemove = (step: string) => {
+    setFlow((prev) => prev.filter((s) => s !== step));
+    setAvailableSteps((prev) => [...prev, step]);
   };
 
   const handleSubmit = () => {
-    const correct = orderedSteps.every(
-      (step, idx) => step.correct_order === idx + 1
-    );
-    setResult(correct);
-    setSubmitted(true);
-    if (correct) {
+    let isCorrect = true;
+    for (let i = 0; i < steps.length; i++) {
+      if (flow[i] !== steps[i]) {
+        isCorrect = false;
+        break;
+      }
+    }
+
+    if (isCorrect) {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      setTimeout(() => onComplete(wrongAttempts, elapsed), 600);
+      onComplete(wrongAttempts, elapsed);
     } else {
       setWrongAttempts((p) => p + 1);
-      setTimeout(() => {
-        setSubmitted(false);
-        setResult(null);
-      }, 1500);
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1000);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.procedureTitle}>{procedureTitle}</Text>
-      <Text style={styles.instruction}>
-        {selectedIndex !== null
-          ? "Tap another step to swap positions"
-          : "Tap a step to select, then tap another to swap"}
-      </Text>
-
-      {hint !== "" && (
-        <View style={styles.hintBox}>
-          <MaterialCommunityIcons name="lightbulb-outline" size={14} color={GC.gold} />
-          <Text style={styles.hintText}>{hint}</Text>
-        </View>
-      )}
-
-      <View style={styles.stepsContainer}>
-        {orderedSteps.map((step, index) => {
-          const isSelected = selectedIndex === index;
-          const isWrong =
-            submitted && result === false && step.correct_order !== index + 1;
-          const isRight =
-            submitted && result === true;
-
-          return (
-            <TouchableOpacity
-              key={step.id}
-              onPress={() => handleStepPress(index)}
-              style={[
-                styles.step,
-                isSelected && styles.stepSelected,
-                isWrong && styles.stepWrong,
-                isRight && styles.stepCorrect,
-              ]}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.stepNumber, isSelected && styles.stepNumberSelected]}>
-                <Text style={styles.stepNumberText}>{index + 1}</Text>
-              </View>
-              <Text style={styles.stepText}>{step.text}</Text>
-              {isSelected && (
-                <MaterialCommunityIcons
-                  name="swap-vertical"
-                  size={18}
-                  color={GC.primaryLight}
+    <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.orderedContainer}>
+        <Text style={styles.sectionTitle}>PROCESS FLOW</Text>
+        {flow.length === 0 ? (
+          <Text style={styles.placeholderText}>
+            Tap steps below to build the flowchart
+          </Text>
+        ) : (
+          flow.map((step, idx) => (
+            <View key={`flow-${idx}`} style={styles.flowWrapper}>
+              <TouchableOpacity
+                style={[
+                  styles.orderedItem,
+                  isCompleted && styles.completedItem,
+                ]}
+                disabled={isCompleted}
+                onPress={() => handleRemove(step)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.orderedText}>{step}</Text>
+              </TouchableOpacity>
+              {idx < flow.length - 1 && (
+                <MaterialCommunityIcons 
+                  name="arrow-down" 
+                  size={24} 
+                  color="#06B6D4" 
+                  style={{ alignSelf: 'center', marginVertical: 8 }} 
                 />
               )}
-            </TouchableOpacity>
-          );
-        })}
+            </View>
+          ))
+        )}
       </View>
 
-      {!isCompleted && !submitted && (
-        <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
-          <Text style={styles.submitBtnText}>CHECK ORDER</Text>
-          <MaterialCommunityIcons name="check-bold" size={18} color={GC.bg} />
-        </TouchableOpacity>
-      )}
+      <View style={styles.availableContainer}>
+        {availableSteps.map((step, idx) => (
+          <TouchableOpacity
+            key={`av-${idx}`}
+            style={styles.availableItem}
+            onPress={() => handleSelect(step)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.availableText}>{step}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
-      {result === false && (
-        <View style={styles.wrongBanner}>
-          <MaterialCommunityIcons name="close-circle" size={16} color={GC.danger} />
-          <Text style={styles.wrongBannerText}>Wrong order! Try again.</Text>
+      {!isCompleted ? (
+        <TouchableOpacity
+          style={[
+            styles.submitBtn,
+            flow.length < steps.length && styles.submitBtnDisabled,
+            isError && styles.submitBtnError,
+          ]}
+          disabled={flow.length < steps.length || isError}
+          onPress={handleSubmit}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.submitBtnText}>
+            {isError ? "Incorrect Sequence! Try Again." : "Verify Flow"}
+          </Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.successBanner}>
+          <MaterialCommunityIcons name="check-circle" size={20} color={GC.success} />
+          <Text style={styles.successText}>
+            Successfully Completed! (+{earnedXp || 0} XP)
+          </Text>
         </View>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 14 },
-  procedureTitle: {
-    color: GC.textPrimary,
-    fontSize: 17,
-    fontWeight: "800",
-    lineHeight: 24,
+  container: {
+    paddingBottom: 40,
+    gap: 24,
   },
-  instruction: {
+  orderedContainer: {
+    backgroundColor: GC.surface,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: GC.border,
+    minHeight: 150,
+  },
+  sectionTitle: {
     color: GC.textMuted,
     fontSize: 12,
-    fontWeight: "600",
-    fontStyle: "italic",
-  },
-  hintBox: {
-    flexDirection: "row",
-    gap: 8,
-    backgroundColor: "#1C1200",
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#3D2800",
-    alignItems: "flex-start",
-  },
-  hintText: {
-    color: GC.gold,
-    fontSize: 12,
-    fontWeight: "600",
-    flex: 1,
-  },
-  stepsContainer: { gap: 8 },
-  step: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: GC.card,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1.5,
-    borderColor: GC.border,
-  },
-  stepSelected: {
-    borderColor: GC.primary,
-    backgroundColor: "#1A1035",
-  },
-  stepWrong: {
-    borderColor: GC.danger,
-    backgroundColor: "#2D0808",
-  },
-  stepCorrect: {
-    borderColor: GC.success,
-    backgroundColor: "#052E16",
-  },
-  stepNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: GC.cardAlt,
-    borderWidth: 1,
-    borderColor: GC.border,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  stepNumberSelected: {
-    backgroundColor: GC.primary,
-    borderColor: GC.primaryLight,
-  },
-  stepNumberText: {
-    color: GC.textPrimary,
-    fontSize: 12,
     fontWeight: "800",
+    letterSpacing: 1,
+    marginBottom: 16,
+    textAlign: "center",
   },
-  stepText: {
-    color: GC.textPrimary,
-    fontSize: 14,
+  placeholderText: {
+    color: GC.textMuted,
+    fontStyle: "italic",
+    textAlign: "center",
+    marginTop: 20,
+    borderWidth: 1,
+    borderColor: GC.border,
+    borderStyle: "dashed",
+    padding: 20,
+    borderRadius: 12,
+  },
+  flowWrapper: {
+    width: "100%",
+  },
+  orderedItem: {
+    backgroundColor: "#0891B2",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  completedItem: {
+    backgroundColor: GC.success,
+    opacity: 0.9,
+  },
+  orderedText: {
+    color: "#FFFFFF",
     fontWeight: "600",
-    flex: 1,
-    lineHeight: 20,
+    fontSize: 14,
+    textAlign: "center",
+  },
+  availableContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  availableItem: {
+    backgroundColor: GC.bg,
+    borderWidth: 2,
+    borderColor: GC.border,
+    padding: 16,
+    borderRadius: 12,
+    width: "100%",
+  },
+  availableText: {
+    color: GC.textPrimary,
+    fontWeight: "600",
+    fontSize: 14,
   },
   submitBtn: {
-    flexDirection: "row",
+    backgroundColor: "#0891B2",
+    padding: 16,
+    borderRadius: 12,
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: GC.primary,
-    borderRadius: 14,
-    paddingVertical: 16,
-    marginTop: 4,
+  },
+  submitBtnDisabled: {
+    backgroundColor: GC.border,
+  },
+  submitBtnError: {
+    backgroundColor: GC.danger,
   },
   submitBtnText: {
     color: GC.bg,
+    fontWeight: "800",
     fontSize: 15,
-    fontWeight: "900",
-    letterSpacing: 1.5,
   },
-  wrongBanner: {
+  successBanner: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderColor: GC.success,
+    borderWidth: 1,
+    padding: 16,
+    borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-    backgroundColor: "#2D0808",
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: GC.danger,
   },
-  wrongBannerText: {
-    color: GC.danger,
-    fontSize: 13,
-    fontWeight: "700",
+  successText: {
+    color: GC.success,
+    fontWeight: "800",
+    fontSize: 14,
   },
 });

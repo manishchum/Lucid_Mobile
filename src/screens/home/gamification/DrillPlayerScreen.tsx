@@ -24,6 +24,7 @@ import FlowMasterDrill from "./drills/FlowMasterDrill";
 import CodeBreakerDrill from "./drills/CodeBreakerDrill";
 import AuditSpotterDrill from "./drills/AuditSpotterDrill";
 import SpeedRunDrill from "./drills/SpeedRunDrill";
+import { eventBus } from "../../../utils/EventBus";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -43,14 +44,13 @@ export interface DrillPlayerParams {
   isCompleted: boolean;
   earnedXp?: number;
   profile?: GamificationProfile | null;
-  onDrillComplete?: (drillId: string, result: any) => void;
 }
 
 export default function DrillPlayerScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { drill, sprintId, isCompleted, earnedXp, onDrillComplete } =
+  const { drill, sprintId, isCompleted, earnedXp } =
     route.params as DrillPlayerParams;
 
   const { submit, isSubmitting } = useSubmitDrillProgress();
@@ -98,7 +98,7 @@ export default function DrillPlayerScreen() {
     if (res) {
       setFinalXp(res.earned_xp);
       setNewBadges(res.new_badges || []);
-      onDrillComplete?.(drill.drill_id, res);
+      eventBus.emit("drill_completed", { drillId: drill.drill_id, result: res });
       showCelebration(res.earned_xp);
     }
   };

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import SprintsTab from "./tabs/SprintsTab";
 import LeaderboardTab from "./tabs/LeaderboardTab";
 import BadgesTab from "./tabs/BadgesTab";
 import ProfileTab from "./tabs/ProfileTab";
+import { eventBus } from "../../../utils/EventBus";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -128,6 +129,15 @@ export default function GamificationHubScreen() {
     [profile]
   );
 
+  useEffect(() => {
+    const unsub = eventBus.on("drill_completed", ({ drillId, result }: any) => {
+      handleDrillComplete(drillId, result);
+    });
+    return () => {
+      unsub();
+    };
+  }, [handleDrillComplete]);
+
   const handleRefreshAll = useCallback(async () => {
     await Promise.all([
       fetchSprints(true),
@@ -193,7 +203,6 @@ export default function GamificationHubScreen() {
               profile={profile}
               isLoading={sprintsLoading}
               onRefresh={handleRefreshAll}
-              onDrillComplete={handleDrillComplete}
             />
           )}
           {activeTab === "leaderboard" && (

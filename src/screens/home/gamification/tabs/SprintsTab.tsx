@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -43,7 +43,6 @@ interface Props {
   profile: GamificationProfile | null;
   isLoading: boolean;
   onRefresh: () => void;
-  onDrillComplete: (drillId: string, result: any) => void;
 }
 
 export default function SprintsTab({
@@ -51,7 +50,6 @@ export default function SprintsTab({
   profile,
   isLoading,
   onRefresh,
-  onDrillComplete,
 }: Props) {
   const navigation = useNavigation<any>();
   const [expandedSprints, setExpandedSprints] = useState<Set<string>>(new Set());
@@ -81,7 +79,6 @@ export default function SprintsTab({
       sprintId: sprint.sprint_id,
       isCompleted,
       earnedXp: isCompleted ? drill.base_xp : undefined,
-      onDrillComplete,
     } as never);
   };
 
