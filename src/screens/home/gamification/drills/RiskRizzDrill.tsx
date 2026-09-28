@@ -28,10 +28,10 @@ export default function RiskRizzDrill({
   const rawPairs = Array.isArray(drillData?.pairs) ? drillData.pairs : [];
 
   const [leftItems] = useState(() =>
-    rawPairs.map((p, i) => ({ id: i, text: p.left || p.term })).sort(() => (isCompleted ? 0 : Math.random() - 0.5))
+    rawPairs.map((p: any, i: number) => ({ id: i, text: p.left || p.term })).sort(() => (isCompleted ? 0 : Math.random() - 0.5))
   );
   const [rightItems] = useState(() =>
-    rawPairs.map((p, i) => ({ id: i, text: p.right || p.definition })).sort(() => (isCompleted ? 0 : Math.random() - 0.5))
+    rawPairs.map((p: any, i: number) => ({ id: i, text: p.right || p.definition })).sort(() => (isCompleted ? 0 : Math.random() - 0.5))
   );
 
   const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
@@ -40,7 +40,7 @@ export default function RiskRizzDrill({
 
   useEffect(() => {
     if (isCompleted) {
-      setMatchedPairs(rawPairs.map((_, i) => i));
+      setMatchedPairs(rawPairs.map((_: any, i: number) => i));
     }
   }, [isCompleted, rawPairs.length]);
 
@@ -82,7 +82,7 @@ export default function RiskRizzDrill({
         {/* LEFT COLUMN */}
         <View style={styles.column}>
           <Text style={styles.columnTitle}>Terms / Scenarios</Text>
-          {leftItems.map((item) => {
+          {leftItems.map((item: { id: number; text: string }) => {
             const isMatched = matchedPairs.includes(item.id);
             const isSelected = selectedLeft === item.id;
             const isError = errorPair?.left === item.id;
@@ -120,7 +120,7 @@ export default function RiskRizzDrill({
         {/* RIGHT COLUMN */}
         <View style={styles.column}>
           <Text style={styles.columnTitle}>Definitions / Actions</Text>
-          {rightItems.map((item) => {
+          {rightItems.map((item: { id: number; text: string }) => {
             const isMatched = matchedPairs.includes(item.id);
             const isError = errorPair?.right === item.id;
 
