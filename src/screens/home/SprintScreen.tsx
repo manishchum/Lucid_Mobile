@@ -316,16 +316,24 @@ export default function SprintScreen({
 		}
 	}, [refetchTrainingPlan, refetchModuleProgress]);
 
-	// ── Verified completion sets
+	const activeProcessedIdSet = useMemo(
+		() => new Set(processedModuleIds.filter(Boolean)),
+		[processedModuleIds],
+	);
+
 	const { completedProcessedModuleIds, quizPassedProcessedModuleIds } =
 		useMemo(() => {
 			const completed = new Set<string>();
 			const quizPassed = new Set<string>();
 			moduleProgressEntries.forEach((entry) => {
 				if (!entry.processed_module_id) return;
+				const isModuleInActiveSprint = activeProcessedIdSet.has(
+					entry.processed_module_id,
+				);
 				const entryOriginalModuleId =
 					entry.processed_modules?.original_module_id;
 				if (
+					!isModuleInActiveSprint &&
 					entryOriginalModuleId &&
 					entryOriginalModuleId !== moduleId
 				) {
@@ -345,7 +353,7 @@ export default function SprintScreen({
 				completedProcessedModuleIds: completed,
 				quizPassedProcessedModuleIds: quizPassed,
 			};
-		}, [moduleProgressEntries, moduleId]);
+		}, [moduleProgressEntries, moduleId, activeProcessedIdSet]);
 
 	// Which of this sprint's module slots are done, by index
 	const moduleDoneFlags = useMemo(
