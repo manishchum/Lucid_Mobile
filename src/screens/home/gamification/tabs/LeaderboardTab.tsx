@@ -29,18 +29,28 @@ function getInitials(name: string) {
 }
 
 const PodiumBlock3D = ({ width, height, rank }: { width: number; height: number; rank: number }) => {
-  const dx = 28; // 3D depth X
-  const dy = 24; // 3D depth Y
+  const dx = 36; // 3D depth X
+  const dy = 28; // 3D depth Y
+  const shadowOffset = 10;
 
   return (
-    <View style={{ width: width + dx, height: height + dy, position: "relative" }}>
-      <Svg width={width + dx} height={height + dy}>
+    <View style={{ width: width + dx + shadowOffset, height: height + dy + shadowOffset, position: "relative" }}>
+      <Svg width={width + dx + shadowOffset} height={height + dy + shadowOffset}>
+        {/* Shadow Polygon */}
+        <Polygon 
+          points={`0,${dy} ${dx},0 ${width + dx},0 ${width + dx},${height} ${width},${height + dy} 0,${height + dy}`} 
+          fill="rgba(0,0,0,0.25)" 
+          transform={`translate(6, 8)`}
+        />
+        {/* Top Face */}
         <Polygon points={`0,${dy} ${dx},0 ${width + dx},0 ${width},${dy}`} fill="#E5E5E5" />
+        {/* Right Face */}
         <Polygon points={`${width},${dy} ${width + dx},0 ${width + dx},${height} ${width},${height + dy}`} fill="#A3A3A3" />
+        {/* Front Face */}
         <Rect x={0} y={dy} width={width} height={height} fill="#C4C4C4" />
       </Svg>
       <View style={{ position: "absolute", left: 0, top: dy, width: width, height: height, justifyContent: "center", alignItems: "center" }}>
-         <Text style={{ fontSize: 64, fontWeight: "900", color: "rgba(255,255,255,0.4)" }}>{rank}</Text>
+         <Text style={{ fontSize: 64, fontWeight: "900", color: "#E5E5E5" }}>{rank}</Text>
       </View>
     </View>
   );
@@ -92,7 +102,7 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
         {/* Podium Section */}
         <View style={styles.podiumSection}>
           {top3.length >= 2 && (
-            <View style={[styles.podiumItemWrapper, { zIndex: 1, marginRight: -28 }]}>
+            <View style={[styles.podiumItemWrapper, { zIndex: 1, marginRight: -36 }]}>
               <View style={styles.podiumAvatarContainer}>
                 <View style={styles.podiumAvatar}>
                   <Text style={styles.podiumAvatarText}>{getInitials(top3[1]?.name || "")}</Text>
@@ -132,7 +142,7 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
           )}
 
           {top3.length >= 3 && (
-            <View style={[styles.podiumItemWrapper, { zIndex: 0, marginLeft: -28 }]}>
+            <View style={[styles.podiumItemWrapper, { zIndex: 0, marginLeft: -36 }]}>
               <View style={styles.podiumAvatarContainer}>
                 <View style={styles.podiumAvatar}>
                   <Text style={styles.podiumAvatarText}>{getInitials(top3[2]?.name || "")}</Text>
