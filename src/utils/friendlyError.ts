@@ -123,6 +123,7 @@ export function friendlyError(err: unknown): string {
   if (
     lower.includes("unauthori") ||
     lower.includes("not authenticated") ||
+    lower.includes("missing bearer token") ||
     lower.includes("invalid token") ||
     lower.includes("token expired") ||
     lower.includes("token invalid") ||

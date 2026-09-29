@@ -1399,10 +1399,7 @@ export const submitFormatAnswer = async (
     }
   }
 
-  const usesTextAnalysis = TEXT_ANALYSIS_FORMATS.includes(format);
-  const url = usesTextAnalysis
-    ? `${API_BASE_URL}/text-analysis/submit`
-    : `${API_BASE_URL}/task-manager/tasks/submit`;
+  const url = `${API_BASE_URL}/task-manager/tasks/submit`;
 
   const body: Record<string, any> = {
     task_id: taskId,

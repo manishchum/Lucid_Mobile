@@ -1,6 +1,6 @@
-import * as FileSystem from "expo-file-system";
-import { UploadType } from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { logger } from "../utils/UnifiedLogger";
+import { getAuth, getIdToken } from "@react-native-firebase/auth";
 
 const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
 const API_BASE_URL = `${EXPO_API_URL}/api`;
@@ -21,9 +21,10 @@ export async function getPresignedUploadUrlApi(
   fileSize?: number,
   userId?: string,
 ): Promise<PresignedUploadResponse> {
+  const normalizedContentType = contentType.toLowerCase() === "audio/3gp" ? "audio/3gpp" : contentType;
   const params: string[] = [
     `file_name=${encodeURIComponent(fileName)}`,
-    `content_type=${encodeURIComponent(contentType)}`,
+    `content_type=${encodeURIComponent(normalizedContentType)}`,
   ];
   if (fileSize !== undefined && fileSize !== null) {
     params.push(`file_size=${fileSize}`);
@@ -31,6 +32,17 @@ export async function getPresignedUploadUrlApi(
   const url = `${API_BASE_URL}/generate-upload-url?${params.join("&")}`;
   const headers: Record<string, string> = { Accept: "application/json" };
   if (userId) headers["X-User-ID"] = userId;
+
+  try {
+    const authInstance = getAuth();
+    const currentUser = authInstance.currentUser;
+    if (currentUser) {
+      const token = await getIdToken(currentUser);
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+    }
+  } catch (e) {
+    logger.warn("[StorageUpload] Error reading auth token:", e);
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15_000);
@@ -175,7 +187,7 @@ export async function uploadMediaToStorage(
     trimmedUri,
     {
       httpMethod: "PUT",
-      uploadType: UploadType.BINARY_CONTENT as any,
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
       headers: {
         "Content-Type": mimeType,
       },
