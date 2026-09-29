@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Polygon, Rect, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
 import { GC } from "../drills/GamificationColors";
 import { LeaderboardUser } from "../../../../api/gamification/Request";
 
@@ -29,14 +30,40 @@ function getInitials(name: string) {
 
 const PodiumBlock3D = ({ width, height, rank }: { width: number; height: number; rank: number }) => {
   const dy = 30; // 3D depth Y (top face height)
+  const inset = 12; // Trapezoid inset
 
   return (
     <View style={{ width, height: height + dy, position: "relative", marginTop: -dy, zIndex: -1 }}>
-      {/* Top Face */}
-      <View style={{ width, height: dy, backgroundColor: "#E5E5E5" }} />
-      {/* Front Face */}
-      <View style={{ width, height, backgroundColor: "#C4C4C4", justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ fontSize: 64, fontWeight: "900", color: "#E5E5E5" }}>{rank}</Text>
+      <Svg width={width} height={height + dy}>
+        <Defs>
+          <SvgLinearGradient id={`frontGrad${rank}`} x1="0%" y1="100%" x2="0%" y2="0%">
+            <Stop offset="0%" stopColor="#404040" />
+            <Stop offset="100%" stopColor="#B3B3B3" />
+          </SvgLinearGradient>
+          <SvgLinearGradient id={`topGrad${rank}`} x1="0%" y1="0%" x2="0%" y2="100%">
+            <Stop offset="0%" stopColor="#D9D9D9" />
+            <Stop offset="100%" stopColor="#FFFFFF" />
+          </SvgLinearGradient>
+        </Defs>
+
+        {/* Top Face (Trapezoid) */}
+        <Polygon 
+          points={`${inset},0 ${width - inset},0 ${width},${dy} 0,${dy}`} 
+          fill={`url(#topGrad${rank})`} 
+        />
+
+        {/* Front Face (Gradient Rectangle) */}
+        <Rect 
+          x={0} 
+          y={dy} 
+          width={width} 
+          height={height} 
+          fill={`url(#frontGrad${rank})`} 
+        />
+      </Svg>
+
+      <View style={{ position: "absolute", left: 0, top: dy, width: width, height: height, justifyContent: "center", alignItems: "center" }}>
+        <Text style={{ fontSize: 64, fontWeight: "900", color: "#F5F5F5", opacity: 0.9 }}>{rank}</Text>
       </View>
     </View>
   );
@@ -297,7 +324,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 12,
     paddingTop: 20,
-    marginTop: -30,
+    marginTop: 0,
+    zIndex:10,
     backgroundColor: "#1A1A24",
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
