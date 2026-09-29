@@ -302,13 +302,13 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
 
   useFocusEffect(
     React.useCallback(() => {
-      refetch(false); // Silent background update on screen focus
+      refetch(false).catch(() => {}); // Silent background update on screen focus
     }, [refetch]),
   );
 
   React.useEffect(() => {
     const handleRefresh = () => {
-      refetch(false);
+      refetch(false).catch(() => {});
     };
     const unsub1 = eventBus.on("refresh_dashboard", handleRefresh);
     const unsub2 = eventBus.on("TASK_UPDATED", handleRefresh);
@@ -324,7 +324,7 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
   useRealtimeSubscription({
     table: "employee_assessments",
     onPayload: () => {
-      refetch(false);
+      refetch(false).catch(() => {});
     },
   });
 
@@ -332,7 +332,7 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
   useRealtimeSubscription({
     table: "tasks",
     onPayload: () => {
-      refetch(false);
+      refetch(false).catch(() => {});
     },
   });
 
@@ -340,7 +340,7 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
   useRealtimeSubscription({
     table: "module_progress",
     onPayload: () => {
-      refetch(false);
+      refetch(false).catch(() => {});
     },
   });
 
@@ -348,7 +348,7 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
   useRealtimeSubscription({
     table: "task_submissions",
     onPayload: () => {
-      refetch(false);
+      refetch(false).catch(() => {});
     },
   });
 
@@ -356,7 +356,7 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
   useRealtimeSubscription({
     table: "child_task_submissions",
     onPayload: () => {
-      refetch(false);
+      refetch(false).catch(() => {});
     },
   });
 
@@ -364,7 +364,7 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
   useRealtimeSubscription({
     table: "learning_plan",
     onPayload: () => {
-      refetch(false);
+      refetch(false).catch(() => {});
     },
   });
 
@@ -372,7 +372,7 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
   useRealtimeSubscription({
     table: "task_assignments",
     onPayload: () => {
-      refetch(false);
+      refetch(false).catch(() => {});
       eventBus.emit("refresh_tasks");
     },
   });
@@ -381,7 +381,7 @@ export default function HomeScreen({ navigation, route }: { navigation: any; rou
   useRealtimeSubscription({
     table: "scenario_assignments",
     onPayload: () => {
-      refetch(false);
+      refetch(false).catch(() => {});
       eventBus.emit("refresh_roleplay");
     },
   });

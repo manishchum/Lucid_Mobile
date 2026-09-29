@@ -1449,6 +1449,7 @@ export const useGetDashboardSummary = (
               ? err
               : new Error("Failed to fetch dashboard summary");
           logger.error("[Hook] fetchDashboardData error:", error.message);
+          setError(error);
           throw error;
         }
       })();
@@ -1566,8 +1567,12 @@ export const useGetDashboardSummary = (
     isLoading,
     error,
     refetch: useCallback(
-      async (showSpinner = true) => {
-        await fetchDashboardData(showSpinner, true);
+      async (showSpinner = true): Promise<void> => {
+        try {
+          await fetchDashboardData(showSpinner, true);
+        } catch {
+          // Handled gracefully — error state is updated in hook
+        }
       },
       [fetchDashboardData],
     ),

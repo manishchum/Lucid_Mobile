@@ -196,7 +196,7 @@ const getPublicHeaders = (userId?: string, companyId?: string): Record<string, s
 };
 
 // ==================== CENTRALIZED FETCH WRAPPER ====================
-export const DEFAULT_FETCH_TIMEOUT_MS = 15_000; // 15 seconds
+export const DEFAULT_FETCH_TIMEOUT_MS = 20_000; // 20 seconds (allows for backend container cold-start)
 export const DEFAULT_RETRY_DELAY_MS = 800; // 800ms
 
 export class ApiError extends Error {
@@ -312,7 +312,9 @@ export async function apiFetch<T = any>(
       response = await fetch(url, { ...rest, headers, signal: controller.signal });
     } catch (networkErr: any) {
       if (isTimeout) {
-        if (retryBudget > 0 && !userSignal?.aborted) {
+        // Do not auto-retry long timeouts unless explicitly configured in options
+        const allowTimeoutRetry = typeof options.retries === "number" && retryBudget > 0;
+        if (allowTimeoutRetry && !userSignal?.aborted) {
           logger.warn(
             `[apiFetch] ${method} ${url} timed out after ${timeoutMs}ms, retrying (${retryBudget} retries left)...`,
           );
@@ -418,9 +420,11 @@ export async function apiFetch<T = any>(
 
   if (dedupKey) {
     inFlightRequests.set(dedupKey, executionPromise);
-    executionPromise.finally(() => {
-      inFlightRequests.delete(dedupKey);
-    });
+    executionPromise
+      .finally(() => {
+        inFlightRequests.delete(dedupKey);
+      })
+      .catch(() => {});
   }
 
   return executionPromise;

@@ -198,7 +198,7 @@ export const TenantProvider = ({
       return;
     }
 
-    refreshAddons();
+    refreshAddons().catch(() => {});
   }, [cachedUser?.companyId, refreshAddons]);
 
   // Instant Realtime sync: Listen for company updates in Supabase

@@ -7,6 +7,8 @@ import {
   Animated,
   StatusBar,
   Dimensions,
+  Modal,
+  BackHandler,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -39,6 +41,13 @@ export default function GamificationHubScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const [activeTab, setActiveTab] = useState<Tab>("sprints");
+  const [showExitModal, setShowExitModal] = useState(false);
+
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  const showExitModalRef = useRef(showExitModal);
+  showExitModalRef.current = showExitModal;
 
   // --- Entry animation ---
   const entryOpacity = useRef(new Animated.Value(0)).current;
@@ -105,6 +114,30 @@ export default function GamificationHubScreen() {
       fetchProfile();
       fetchLeaderboard();
       fetchCalendar();
+
+      // Intercept Android hardware back button:
+      // - If exit modal is open, dismiss it
+      // - If on another tab (ranks/badges/profile), return to sprints tab
+      // - If already on sprints tab, prevent exit from the arena (exiting is only via Profile tab)
+      const onHardwareBackPress = () => {
+        if (showExitModalRef.current) {
+          setShowExitModal(false);
+          return true;
+        }
+
+        if (activeTabRef.current !== "sprints") {
+          setActiveTab("sprints");
+          return true;
+        }
+
+        // Keep user inside arena on sprints tab
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener("hardwareBackPress", onHardwareBackPress);
+      return () => {
+        subscription.remove();
+      };
     }, [])
   );
 
@@ -147,6 +180,10 @@ export default function GamificationHubScreen() {
     ]);
   }, []);
 
+  const handleExitArena = useCallback(() => {
+    setShowExitModal(true);
+  }, []);
+
   const xp = profile?.total_xp || 0;
   const streak = profile?.current_streak_days || 0;
 
@@ -166,30 +203,29 @@ export default function GamificationHubScreen() {
       >
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          {/* Back */}
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backBtn}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons name="arrow-left" size={22} color={GC.textPrimary} />
-          </TouchableOpacity>
-
-          {/* Center branding */}
-          <View style={styles.headerCenter}>
-            <MaterialCommunityIcons name="gamepad-variant" size={24} color={GC.primaryLight} />
+          {/* Left: ARENA Branding */}
+          <View style={styles.headerLeft}>
+            <View style={styles.arenaIconBadge}>
+              <MaterialCommunityIcons name="gamepad-variant" size={18} color="#A855F7" />
+            </View>
             <Text style={styles.headerTitle}>ARENA</Text>
           </View>
 
-          {/* Right: XP + Streak pills */}
+          {/* Right: Streak + XP pills + Exit button */}
           <View style={styles.headerRight}>
-            {streak > 0 && (
-              <View style={styles.streakPill}>
-                <Text style={styles.streakPillText}>🔥{streak}</Text>
-              </View>
-            )}
+            <View style={styles.streakPill}>
+              <MaterialCommunityIcons
+                name="fire"
+                size={14}
+                color={streak > 0 ? "#F97316" : "#64748B"}
+              />
+              <Text style={[styles.streakPillText, streak === 0 && styles.pillTextZero]}>
+                {streak}
+              </Text>
+            </View>
+
             <View style={styles.xpPill}>
-              <MaterialCommunityIcons name="star-four-points" size={10} color={GC.gold} />
+              <MaterialCommunityIcons name="star-four-points" size={13} color="#A855F7" />
               <Text style={styles.xpPillText}>{xp.toLocaleString()}</Text>
             </View>
           </View>
@@ -223,12 +259,13 @@ export default function GamificationHubScreen() {
               profile={profile}
               isLoading={profileLoading}
               activeDates={activeDates || []}
+              onExitPress={() => setShowExitModal(true)}
             />
           )}
         </View>
 
         {/* Bottom Navigation */}
-        <View style={[styles.bottomNav, { paddingBottom: insets.bottom + 6 }]}>
+        <View style={[styles.bottomNav, { paddingBottom: insets.bottom + 8 }]}>
           {TABS.map((tab) => {
             const isActive = activeTab === tab.key;
             return (
@@ -236,15 +273,14 @@ export default function GamificationHubScreen() {
                 key={tab.key}
                 style={styles.bottomNavItem}
                 onPress={() => setActiveTab(tab.key)}
-                activeOpacity={0.8}
+                activeOpacity={0.7}
               >
                 <View style={[styles.tabIconWrap, isActive && styles.tabIconWrapActive]}>
                   <MaterialCommunityIcons
                     name={tab.icon as any}
-                    size={22}
-                    color={isActive ? GC.primaryLight : GC.textMuted}
+                    size={21}
+                    color={isActive ? "#A855F7" : "#64748B"}
                   />
-                  {isActive && <View style={styles.tabActiveDot} />}
                 </View>
                 <Text
                   style={[
@@ -259,6 +295,55 @@ export default function GamificationHubScreen() {
           })}
         </View>
       </Animated.View>
+
+      {/* Custom Exit Confirmation Modal */}
+      <Modal
+        visible={showExitModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setShowExitModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowExitModal(false)}
+          />
+          <View style={styles.modalCard}>
+            <View style={styles.modalIconWrap}>
+              <MaterialCommunityIcons name="door-open" size={28} color="#EF4444" />
+            </View>
+
+            <Text style={styles.modalTitle}>Exit Arena?</Text>
+            <Text style={styles.modalDesc}>
+              Your streak, XP, and drill progress are safely saved. You can jump back in anytime!
+            </Text>
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.modalStayBtn}
+                onPress={() => setShowExitModal(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalStayText}>Stay</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalConfirmExitBtn}
+                onPress={() => {
+                  setShowExitModal(false);
+                  navigation.goBack();
+                }}
+                activeOpacity={0.8}
+              >
+                <MaterialCommunityIcons name="logout-variant" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.modalConfirmExitText}>Exit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -266,7 +351,7 @@ export default function GamificationHubScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: GC.bg,
+    backgroundColor: "#1A1A24",
   },
   contentWrapper: {
     flex: 1,
@@ -274,122 +359,197 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingBottom: 12,
+    backgroundColor: "#1A1A24",
     borderBottomWidth: 1,
-    borderBottomColor: GC.border,
-    gap: 12,
-    position: "relative",
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
   },
-  headerCenter: {
-    flex: 1,
+  headerLeft: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     gap: 8,
-    position: "relative",
   },
-  // headerGlow: {
-  //   position: "absolute",
-  //   width: 120,
-  //   height: 30,
-  //   backgroundColor: GC.primary,
-  //   borderRadius: 60,
-  //   opacity: 0.15,
-  //   top: -6,
-  // },
-  headerTitle: {
-    color: GC.textPrimary,
-    fontSize: 14,
-    fontWeight: "900",
-    letterSpacing: 3,
-  },
-  backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
-    backgroundColor: GC.card,
+  arenaIconBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: "rgba(168, 85, 247, 0.14)",
     borderWidth: 1,
-    borderColor: GC.border,
+    borderColor: "rgba(168, 85, 247, 0.28)",
     justifyContent: "center",
     alignItems: "center",
+  },
+  headerTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 2.5,
   },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 7,
   },
   streakPill: {
-    backgroundColor: "#180A00",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#2C2C35",
     borderRadius: 20,
-    paddingHorizontal: 8,
+    paddingHorizontal: 9,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: "#3D1500",
+    borderColor: "rgba(255, 255, 255, 0.08)",
   },
   streakPillText: {
-    color: GC.textPrimary,
+    color: "#FFFFFF",
     fontSize: 12,
-    fontWeight: "900",
+    fontWeight: "800",
+  },
+  pillTextZero: {
+    color: "#94A3B8",
   },
   xpPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#1C1200",
+    backgroundColor: "#2C2C35",
     borderRadius: 20,
-    paddingHorizontal: 8,
+    paddingHorizontal: 9,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: GC.gold + "55",
+    borderColor: "rgba(255, 255, 255, 0.08)",
   },
   xpPillText: {
-    color: GC.gold,
+    color: "#FFFFFF",
     fontSize: 12,
-    fontWeight: "900",
+    fontWeight: "800",
   },
   tabContent: { flex: 1 },
   bottomNav: {
     flexDirection: "row",
     borderTopWidth: 1,
-    borderTopColor: GC.border,
-    backgroundColor: GC.surface,
-    paddingTop: 6,
+    borderTopColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "#1A1A24",
+    paddingTop: 8,
+    paddingHorizontal: 8,
   },
   bottomNavItem: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 3,
-    paddingVertical: 4,
+    gap: 4,
+    paddingVertical: 2,
   },
   tabIconWrap: {
-    width: 44,
-    height: 36,
-    borderRadius: 12,
+    width: 48,
+    height: 30,
+    borderRadius: 15,
     justifyContent: "center",
     alignItems: "center",
-    position: "relative",
   },
   tabIconWrapActive: {
-    backgroundColor: GC.primary + "22",
-  },
-  tabActiveDot: {
-    position: "absolute",
-    bottom: 3,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: GC.primaryLight,
+    backgroundColor: "rgba(168, 85, 247, 0.16)",
   },
   tabLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: GC.textMuted,
-    letterSpacing: 0.3,
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+    letterSpacing: 0.2,
   },
   tabLabelActive: {
-    color: GC.primaryLight,
+    color: "#A855F7",
+    fontWeight: "800",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(10, 10, 16, 0.78)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 340,
+    backgroundColor: "#22222E",
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.6,
+    shadowRadius: 28,
+    elevation: 24,
+  },
+  modalIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 20,
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.25)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+    textAlign: "center",
+  },
+  modalDesc: {
+    color: "#94A3B8",
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 24,
+    paddingHorizontal: 4,
+  },
+  modalActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    width: "100%",
+  },
+  modalStayBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: "#2C2C35",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalStayText: {
+    color: "#CBD5E1",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  modalConfirmExitBtn: {
+    flex: 1.1,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: "#EF4444",
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#EF4444",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  modalConfirmExitText: {
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "800",
   },
 });

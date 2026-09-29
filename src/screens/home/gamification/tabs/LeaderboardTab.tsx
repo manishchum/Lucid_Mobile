@@ -30,7 +30,7 @@ function getInitials(name: string) {
 
 const PodiumBlock3D = ({ width, height, rank, dy = 3, leftInset = 12, rightInset = 12 }: { width: number; height: number; rank: number, dy?: number, leftInset?: number, rightInset?: number }) => {
   return (
-    <View style={{ width, height: height + dy, position: "relative", marginTop: 0, zIndex: -1 }}>
+    <View style={{ width, height: height + dy, position: "relative", marginTop: -5, zIndex: -1 }}>
       <Svg width={width} height={height + dy}>
         <Defs>
           <SvgLinearGradient id={`frontGrad${rank}`} x1="10%" y1="100%" x2="0%" y2="0%">
@@ -110,14 +110,14 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={false}
-            onRefresh={onRefresh}
-            tintColor={"#FFF"}
-            colors={["#FFF"]}
-          />
-        }
+        // refreshControl={
+        //   <RefreshControl
+        //     refreshing={false}
+        //     onRefresh={onRefresh}
+        //     tintColor={"#FFF"}
+        //     colors={["#FFF"]}
+        //   />
+        // }
       >
         {/* Podium Section */}
         <View style={styles.podiumSection}>
@@ -219,7 +219,7 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
 
 const styles = StyleSheet.create({
   wrapper: { flex: 1 },
-  container: { paddingBottom: 100 },
+  container: { paddingBottom: 20 },
   center: {
     flex: 1,
     alignItems: "center",
