@@ -28,17 +28,17 @@ function getInitials(name: string) {
     .slice(0, 2);
 }
 
-const PodiumBlock3D = ({ width, height, rank, dy = 30, leftInset = 12, rightInset = 12 }: { width: number; height: number; rank: number, dy?: number, leftInset?: number, rightInset?: number }) => {
+const PodiumBlock3D = ({ width, height, rank, dy = 3, leftInset = 12, rightInset = 12 }: { width: number; height: number; rank: number, dy?: number, leftInset?: number, rightInset?: number }) => {
   return (
-    <View style={{ width, height: height + dy, position: "relative", marginTop: -10, zIndex: -1 }}>
+    <View style={{ width, height: height + dy, position: "relative", marginTop: 0, zIndex: -1 }}>
       <Svg width={width} height={height + dy}>
         <Defs>
           <SvgLinearGradient id={`frontGrad${rank}`} x1="0%" y1="100%" x2="0%" y2="0%">
-            <Stop offset="10%" stopColor="#404040" />
-            <Stop offset="100%" stopColor="#B3B3B3" />
+            <Stop offset="10%" stopColor="#2A2A2A" />
+            <Stop offset="100%" stopColor="#A3A3A3" />
           </SvgLinearGradient>
           <SvgLinearGradient id={`topGrad${rank}`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <Stop offset="10%" stopColor="#D9D9D9" />
+            <Stop offset="10%" stopColor="#C4C4C4" />
             <Stop offset="100%" stopColor="#FFFFFF" />
           </SvgLinearGradient>
         </Defs>
@@ -49,8 +49,11 @@ const PodiumBlock3D = ({ width, height, rank, dy = 30, leftInset = 12, rightInse
           fill={`url(#topGrad${rank})`} 
         />
         
-        {/* Floating Shadow on Top Face */}
-        <Ellipse cx={width / 2} cy={dy / 2} rx={width / 3} ry={dy / 3} fill="rgba(0,0,0,0.15)" />
+        {/* Floating Shadow on Top Face (Stacked Opacity to avoid Android RadialGradient bugs) */}
+        <Ellipse cx={width / 2} cy={dy / 2} rx={width / 2.2} ry={dy / 2.2} fill="rgba(0,0,0,0)" />
+        <Ellipse cx={width / 2} cy={dy / 2} rx={width / 2.8} ry={dy / 2.8} fill="rgba(0,0,0,0.01)" />
+        <Ellipse cx={width / 2} cy={dy / 2} rx={width / 3.5} ry={dy / 3.5} fill="rgba(0,0,0,0.02)" />
+        <Ellipse cx={width / 2} cy={dy / 2} rx={width / 4.5} ry={dy / 4.5} fill="rgba(0,0,0,0.04)" />
 
         {/* Front Face (Gradient Rectangle) */}
         <Rect 
@@ -60,6 +63,10 @@ const PodiumBlock3D = ({ width, height, rank, dy = 30, leftInset = 12, rightInse
           height={height} 
           fill={`url(#frontGrad${rank})`} 
         />
+
+        {/* 3D Edge Bevel Highlights */}
+        {/* <Rect x={0} y={dy} width={width} height={2} fill="rgba(255,255,255,0.9)" />
+        <Rect x={0} y={dy} width={width} height={4} fill="rgba(255,255,255,0.4)" /> */}
       </Svg>
 
       <View style={{ position: "absolute", left: 0, top: dy, width: width, height: height, justifyContent: "center", alignItems: "center" }}>
@@ -115,7 +122,7 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
         {/* Podium Section */}
         <View style={styles.podiumSection}>
           {top3.length >= 2 && (
-            <View style={[styles.podiumItemWrapper, { zIndex: 1, marginRight: 0 }]}>
+            <View style={[styles.podiumItemWrapper, { zIndex: 5, marginRight: -10, marginBottom: 15 }]}>
               <View style={styles.podiumAvatarContainer}>
                 <View style={styles.podiumAvatar}>
                   <Text style={styles.podiumAvatarText}>{getInitials(top3[1]?.name || "")}</Text>
@@ -155,7 +162,7 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
           )}
 
           {top3.length >= 3 && (
-            <View style={[styles.podiumItemWrapper, { zIndex: 0, marginLeft: 0 }]}>
+            <View style={[styles.podiumItemWrapper, { zIndex: 1, marginLeft: -10, marginBottom: 30 }]}>
               <View style={styles.podiumAvatarContainer}>
                 <View style={styles.podiumAvatar}>
                   <Text style={styles.podiumAvatarText}>{getInitials(top3[2]?.name || "")}</Text>
@@ -228,7 +235,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 16,
     paddingTop: 40,
-    marginBottom: 0,
+    marginBottom: -30,
   },
   podiumItemWrapper: {
     alignItems: "center",
@@ -315,7 +322,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   podiumXp: {
-    color: "#94A3B8",
+    color: "#FFF",
     fontSize: 12,
     fontWeight: "800",
   },
