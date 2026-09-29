@@ -9,7 +9,6 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import Svg, { Polygon, Rect } from "react-native-svg";
 import { GC } from "../drills/GamificationColors";
 import { LeaderboardUser } from "../../../../api/gamification/Request";
 
@@ -29,28 +28,15 @@ function getInitials(name: string) {
 }
 
 const PodiumBlock3D = ({ width, height, rank }: { width: number; height: number; rank: number }) => {
-  const dx = 36; // 3D depth X
-  const dy = 28; // 3D depth Y
-  const shadowOffset = 10;
+  const dy = 30; // 3D depth Y (top face height)
 
   return (
-    <View style={{ width: width + dx + shadowOffset, height: height + dy + shadowOffset, position: "relative" }}>
-      <Svg width={width + dx + shadowOffset} height={height + dy + shadowOffset}>
-        {/* Shadow Polygon */}
-        <Polygon 
-          points={`0,${dy} ${dx},0 ${width + dx},0 ${width + dx},${height} ${width},${height + dy} 0,${height + dy}`} 
-          fill="rgba(0,0,0,0.25)" 
-          transform={`translate(6, 8)`}
-        />
-        {/* Top Face */}
-        <Polygon points={`0,${dy} ${dx},0 ${width + dx},0 ${width},${dy}`} fill="#E5E5E5" />
-        {/* Right Face */}
-        <Polygon points={`${width},${dy} ${width + dx},0 ${width + dx},${height} ${width},${height + dy}`} fill="#A3A3A3" />
-        {/* Front Face */}
-        <Rect x={0} y={dy} width={width} height={height} fill="#C4C4C4" />
-      </Svg>
-      <View style={{ position: "absolute", left: 0, top: dy, width: width, height: height, justifyContent: "center", alignItems: "center" }}>
-         <Text style={{ fontSize: 64, fontWeight: "900", color: "#E5E5E5" }}>{rank}</Text>
+    <View style={{ width, height: height + dy, position: "relative", marginTop: -dy, zIndex: -1 }}>
+      {/* Top Face */}
+      <View style={{ width, height: dy, backgroundColor: "#E5E5E5" }} />
+      {/* Front Face */}
+      <View style={{ width, height, backgroundColor: "#C4C4C4", justifyContent: "center", alignItems: "center" }}>
+        <Text style={{ fontSize: 64, fontWeight: "900", color: "#E5E5E5" }}>{rank}</Text>
       </View>
     </View>
   );
@@ -102,7 +88,7 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
         {/* Podium Section */}
         <View style={styles.podiumSection}>
           {top3.length >= 2 && (
-            <View style={[styles.podiumItemWrapper, { zIndex: 1, marginRight: -36 }]}>
+            <View style={[styles.podiumItemWrapper, { zIndex: 1, marginRight: 0 }]}>
               <View style={styles.podiumAvatarContainer}>
                 <View style={styles.podiumAvatar}>
                   <Text style={styles.podiumAvatarText}>{getInitials(top3[1]?.name || "")}</Text>
@@ -142,7 +128,7 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
           )}
 
           {top3.length >= 3 && (
-            <View style={[styles.podiumItemWrapper, { zIndex: 0, marginLeft: -36 }]}>
+            <View style={[styles.podiumItemWrapper, { zIndex: 0, marginLeft: 0 }]}>
               <View style={styles.podiumAvatarContainer}>
                 <View style={styles.podiumAvatar}>
                   <Text style={styles.podiumAvatarText}>{getInitials(top3[2]?.name || "")}</Text>
@@ -215,7 +201,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 16,
     paddingTop: 40,
-    marginBottom: 20,
+    marginBottom: 0,
   },
   podiumItemWrapper: {
     alignItems: "center",
@@ -310,7 +296,8 @@ const styles = StyleSheet.create({
   listSection: {
     paddingHorizontal: 16,
     gap: 12,
-    paddingTop: 10,
+    paddingTop: 20,
+    marginTop: -30,
     backgroundColor: "#1A1A24",
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
