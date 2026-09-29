@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Polygon, Rect } from "react-native-svg";
 import { GC } from "../drills/GamificationColors";
 import { LeaderboardUser } from "../../../../api/gamification/Request";
 
@@ -26,6 +27,24 @@ function getInitials(name: string) {
     .toUpperCase()
     .slice(0, 2);
 }
+
+const PodiumBlock3D = ({ width, height, rank }: { width: number; height: number; rank: number }) => {
+  const dx = 28; // 3D depth X
+  const dy = 24; // 3D depth Y
+
+  return (
+    <View style={{ width: width + dx, height: height + dy, position: "relative" }}>
+      <Svg width={width + dx} height={height + dy}>
+        <Polygon points={`0,${dy} ${dx},0 ${width + dx},0 ${width},${dy}`} fill="#9CA3AF" />
+        <Polygon points={`${width},${dy} ${width + dx},0 ${width + dx},${height} ${width},${height + dy}`} fill="#4B5563" />
+        <Rect x={0} y={dy} width={width} height={height} fill="#6B7280" />
+      </Svg>
+      <View style={{ position: "absolute", left: 0, top: dy, width: width, height: height, justifyContent: "center", alignItems: "center" }}>
+         <Text style={{ fontSize: 64, fontWeight: "900", color: "rgba(255,255,255,0.4)" }}>{rank}</Text>
+      </View>
+    </View>
+  );
+};
 
 export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
   const top3 = data.slice(0, 3);
@@ -73,7 +92,7 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
         {/* Podium Section */}
         <View style={styles.podiumSection}>
           {top3.length >= 2 && (
-            <View style={styles.podiumItemWrapper}>
+            <View style={[styles.podiumItemWrapper, { zIndex: 1, marginRight: -28 }]}>
               <View style={styles.podiumAvatarContainer}>
                 <View style={styles.podiumAvatar}>
                   <Text style={styles.podiumAvatarText}>{getInitials(top3[1]?.name || "")}</Text>
@@ -87,9 +106,7 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
                 <MaterialCommunityIcons name="star-four-points" size={14} color="#A855F7" />
                 <Text style={styles.podiumXp}>{(top3[1]?.xp || 0).toLocaleString()}</Text>
               </View>
-              <View style={[styles.podiumBlock, { height: 110 }]}>
-                <Text style={styles.podiumBlockText}>2</Text>
-              </View>
+              <PodiumBlock3D width={105} height={120} rank={2} />
             </View>
           )}
 
@@ -110,14 +127,12 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
                 <MaterialCommunityIcons name="star-four-points" size={14} color="#A855F7" />
                 <Text style={styles.podiumXp}>{(top3[0]?.xp || 0).toLocaleString()}</Text>
               </View>
-              <View style={[styles.podiumBlock, { height: 160 }]}>
-                <Text style={styles.podiumBlockText}>1</Text>
-              </View>
+              <PodiumBlock3D width={115} height={160} rank={1} />
             </View>
           )}
 
           {top3.length >= 3 && (
-            <View style={styles.podiumItemWrapper}>
+            <View style={[styles.podiumItemWrapper, { zIndex: 0, marginLeft: -28 }]}>
               <View style={styles.podiumAvatarContainer}>
                 <View style={styles.podiumAvatar}>
                   <Text style={styles.podiumAvatarText}>{getInitials(top3[2]?.name || "")}</Text>
@@ -131,9 +146,7 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
                 <MaterialCommunityIcons name="star-four-points" size={14} color="#A855F7" />
                 <Text style={styles.podiumXp}>{(top3[2]?.xp || 0).toLocaleString()}</Text>
               </View>
-              <View style={[styles.podiumBlock, { height: 90 }]}>
-                <Text style={styles.podiumBlockText}>3</Text>
-              </View>
+              <PodiumBlock3D width={105} height={90} rank={3} />
             </View>
           )}
         </View>
