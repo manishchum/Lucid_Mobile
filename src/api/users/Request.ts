@@ -1058,9 +1058,7 @@ export const getDashboardSummary = async (
   forceFresh: boolean = false,
 ): Promise<DashboardSummaryResponse> => {
   try {
-    const url = `${API_BASE_URL}/employee/dashboard_summary/${encodeURIComponent(userId)}${
-      forceFresh ? `?_ts=${Date.now()}` : ""
-    }`;
+    const url = `${API_BASE_URL}/employee/dashboard_summary/${encodeURIComponent(userId)}`;
     logger.debug("[Request] getDashboardSummary →", url, "forceFresh:", forceFresh);
     const json = await apiFetch<any>(url, {
       method: "GET",
@@ -1131,9 +1129,7 @@ export const getTasks = async (
       }
     }
     const targetId = resolvedUserId && resolvedUserId.trim() ? resolvedUserId : "me";
-    const url = `${API_BASE_URL}/task-manager/tasks/user/${encodeURIComponent(targetId)}${
-      forceFresh ? `?_ts=${Date.now()}` : ""
-    }`;
+    const url = `${API_BASE_URL}/task-manager/tasks/user/${encodeURIComponent(targetId)}`;
     logger.debug("[Request] getTasks →", url, "forceFresh:", forceFresh);
     const json = await apiFetch<any>(url, {
       method: "GET",
