@@ -35,9 +35,9 @@ const PodiumBlock3D = ({ width, height, rank }: { width: number; height: number;
   return (
     <View style={{ width: width + dx, height: height + dy, position: "relative" }}>
       <Svg width={width + dx} height={height + dy}>
-        <Polygon points={`0,${dy} ${dx},0 ${width + dx},0 ${width},${dy}`} fill="#9CA3AF" />
-        <Polygon points={`${width},${dy} ${width + dx},0 ${width + dx},${height} ${width},${height + dy}`} fill="#4B5563" />
-        <Rect x={0} y={dy} width={width} height={height} fill="#6B7280" />
+        <Polygon points={`0,${dy} ${dx},0 ${width + dx},0 ${width},${dy}`} fill="#E5E5E5" />
+        <Polygon points={`${width},${dy} ${width + dx},0 ${width + dx},${height} ${width},${height + dy}`} fill="#A3A3A3" />
+        <Rect x={0} y={dy} width={width} height={height} fill="#C4C4C4" />
       </Svg>
       <View style={{ position: "absolute", left: 0, top: dy, width: width, height: height, justifyContent: "center", alignItems: "center" }}>
          <Text style={{ fontSize: 64, fontWeight: "900", color: "rgba(255,255,255,0.4)" }}>{rank}</Text>
@@ -208,11 +208,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   podiumItemWrapper: {
-    flex: 1,
     alignItems: "center",
   },
   podiumFirst: {
-    flex: 1.1,
     zIndex: 10,
   },
   podiumAvatarContainer: {
@@ -299,23 +297,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
   },
-  podiumBlock: {
-    width: "95%",
-    backgroundColor: "#475569", // grey podium blocks
-    justifyContent: "center",
-    alignItems: "center",
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: -4 },
-  },
-  podiumBlockText: {
-    color: "rgba(255,255,255,0.4)",
-    fontSize: 48,
-    fontWeight: "900",
-  },
   listSection: {
     paddingHorizontal: 16,
     gap: 12,
@@ -324,6 +305,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     minHeight: 400,
+    paddingBottom: 800,
+    marginBottom: -800,
   },
   row: {
     backgroundColor: "#2C2C35",
