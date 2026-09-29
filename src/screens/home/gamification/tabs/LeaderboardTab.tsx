@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import Svg, { Polygon, Rect, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
+import Svg, { Polygon, Rect, Defs, LinearGradient as SvgLinearGradient, Stop, Ellipse } from "react-native-svg";
 import { GC } from "../drills/GamificationColors";
 import { LeaderboardUser } from "../../../../api/gamification/Request";
 
@@ -28,29 +28,29 @@ function getInitials(name: string) {
     .slice(0, 2);
 }
 
-const PodiumBlock3D = ({ width, height, rank }: { width: number; height: number; rank: number }) => {
-  const dy = 30; // 3D depth Y (top face height)
-  const inset = 12; // Trapezoid inset
-
+const PodiumBlock3D = ({ width, height, rank, dy = 30, leftInset = 12, rightInset = 12 }: { width: number; height: number; rank: number, dy?: number, leftInset?: number, rightInset?: number }) => {
   return (
-    <View style={{ width, height: height + dy, position: "relative", marginTop: -dy, zIndex: -1 }}>
+    <View style={{ width, height: height + dy, position: "relative", marginTop: -10, zIndex: -1 }}>
       <Svg width={width} height={height + dy}>
         <Defs>
           <SvgLinearGradient id={`frontGrad${rank}`} x1="0%" y1="100%" x2="0%" y2="0%">
-            <Stop offset="0%" stopColor="#404040" />
+            <Stop offset="10%" stopColor="#404040" />
             <Stop offset="100%" stopColor="#B3B3B3" />
           </SvgLinearGradient>
           <SvgLinearGradient id={`topGrad${rank}`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <Stop offset="0%" stopColor="#D9D9D9" />
+            <Stop offset="10%" stopColor="#D9D9D9" />
             <Stop offset="100%" stopColor="#FFFFFF" />
           </SvgLinearGradient>
         </Defs>
 
         {/* Top Face (Trapezoid) */}
         <Polygon 
-          points={`${inset},0 ${width - inset},0 ${width},${dy} 0,${dy}`} 
+          points={`${leftInset},0 ${width - rightInset},0 ${width},${dy} 0,${dy}`} 
           fill={`url(#topGrad${rank})`} 
         />
+        
+        {/* Floating Shadow on Top Face */}
+        <Ellipse cx={width / 2} cy={dy / 2} rx={width / 3} ry={dy / 3} fill="rgba(0,0,0,0.15)" />
 
         {/* Front Face (Gradient Rectangle) */}
         <Rect 
@@ -124,12 +124,12 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
                   <Text style={styles.rankBadgeText}>2</Text>
                 </View>
               </View>
-              <Text style={styles.podiumName} numberOfLines={1}>{top3[1]?.name}</Text>
+              <Text style={styles.podiumName}>{top3[1]?.name}</Text>
               <View style={styles.xpRow}>
                 <MaterialCommunityIcons name="star-four-points" size={14} color="#A855F7" />
                 <Text style={styles.podiumXp}>{(top3[1]?.xp || 0).toLocaleString()}</Text>
               </View>
-              <PodiumBlock3D width={105} height={120} rank={2} />
+              <PodiumBlock3D width={105} height={120} rank={2} dy={30} rightInset={0} leftInset={12} />
             </View>
           )}
 
@@ -143,14 +143,14 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
                   <Text style={styles.rankBadgeTextFirst}>1</Text>
                 </View>
               </View>
-              <Text style={[styles.podiumName, styles.podiumNameFirst]} numberOfLines={1}>
+              <Text style={[styles.podiumName, styles.podiumNameFirst]}>
                 {top3[0]?.name}
               </Text>
               <View style={styles.xpRow}>
                 <MaterialCommunityIcons name="star-four-points" size={14} color="#A855F7" />
                 <Text style={styles.podiumXp}>{(top3[0]?.xp || 0).toLocaleString()}</Text>
               </View>
-              <PodiumBlock3D width={115} height={160} rank={1} />
+              <PodiumBlock3D width={115} height={160} rank={1} dy={40} leftInset={12} rightInset={12} />
             </View>
           )}
 
@@ -164,12 +164,12 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
                   <Text style={styles.rankBadgeText}>3</Text>
                 </View>
               </View>
-              <Text style={styles.podiumName} numberOfLines={1}>{top3[2]?.name}</Text>
+              <Text style={styles.podiumName}>{top3[2]?.name}</Text>
               <View style={styles.xpRow}>
                 <MaterialCommunityIcons name="star-four-points" size={14} color="#A855F7" />
                 <Text style={styles.podiumXp}>{(top3[2]?.xp || 0).toLocaleString()}</Text>
               </View>
-              <PodiumBlock3D width={105} height={90} rank={3} />
+              <PodiumBlock3D width={105} height={90} rank={3} dy={30} leftInset={0} rightInset={12} />
             </View>
           )}
         </View>
@@ -302,7 +302,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     textAlign: "center",
-    maxWidth: 90,
   },
   podiumNameFirst: {
     color: "#EF4444", // Red name for 1st place in image 2
