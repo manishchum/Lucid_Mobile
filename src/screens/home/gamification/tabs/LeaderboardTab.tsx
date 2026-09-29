@@ -33,7 +33,7 @@ const PodiumBlock3D = ({ width, height, rank, dy = 3, leftInset = 12, rightInset
     <View style={{ width, height: height + dy, position: "relative", marginTop: 0, zIndex: -1 }}>
       <Svg width={width} height={height + dy}>
         <Defs>
-          <SvgLinearGradient id={`frontGrad${rank}`} x1="0%" y1="100%" x2="0%" y2="0%">
+          <SvgLinearGradient id={`frontGrad${rank}`} x1="10%" y1="100%" x2="0%" y2="0%">
             <Stop offset="10%" stopColor="#2A2A2A" />
             <Stop offset="100%" stopColor="#A3A3A3" />
           </SvgLinearGradient>
@@ -45,15 +45,15 @@ const PodiumBlock3D = ({ width, height, rank, dy = 3, leftInset = 12, rightInset
 
         {/* Top Face (Trapezoid) */}
         <Polygon 
-          points={`${leftInset},0 ${width - rightInset},0 ${width},${dy} 0,${dy}`} 
+          points={`${leftInset},20 ${width - rightInset},20 ${width},${dy} 0,${dy}`} 
           fill={`url(#topGrad${rank})`} 
         />
         
         {/* Floating Shadow on Top Face (Stacked Opacity to avoid Android RadialGradient bugs) */}
-        <Ellipse cx={width / 2} cy={dy / 2} rx={width / 2.2} ry={dy / 2.2} fill="rgba(0,0,0,0)" />
-        <Ellipse cx={width / 2} cy={dy / 2} rx={width / 2.8} ry={dy / 2.8} fill="rgba(0,0,0,0.01)" />
-        <Ellipse cx={width / 2} cy={dy / 2} rx={width / 3.5} ry={dy / 3.5} fill="rgba(0,0,0,0.02)" />
-        <Ellipse cx={width / 2} cy={dy / 2} rx={width / 4.5} ry={dy / 4.5} fill="rgba(0,0,0,0.04)" />
+        <Ellipse cx={width / 2} cy={20 + (dy - 20) / 2} rx={width / 2.2} ry={(dy - 20) / 2.2} fill="rgba(0,0,0,0)" />
+        <Ellipse cx={width / 2} cy={20 + (dy - 20) / 2} rx={width / 2.8} ry={(dy - 20) / 2.8} fill="rgba(0,0,0,0.01)" />
+        <Ellipse cx={width / 2} cy={20 + (dy - 20) / 2} rx={width / 3.5} ry={(dy - 20) / 3.5} fill="rgba(0,0,0,0.02)" />
+        <Ellipse cx={width / 2} cy={20 + (dy - 20) / 2} rx={width / 4.5} ry={(dy - 20) / 4.5} fill="rgba(0,0,0,0.04)" />
 
         {/* Front Face (Gradient Rectangle) */}
         <Rect 
