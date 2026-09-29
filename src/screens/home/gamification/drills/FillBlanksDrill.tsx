@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
+  Animated,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { GC } from "./GamificationColors";
 
 interface DrillProps {
   drillData: any;
@@ -25,18 +24,64 @@ export default function FillBlanksDrill({
   const [startTime] = useState(Date.now());
   const [wrongAttempts, setWrongAttempts] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
-  const [isError, setIsError] = useState(false);
-  const [activeBlankIndex, setActiveBlankIndex] = useState<number | null>(null);
+  const [activeBlankIndex, setActiveBlankIndex] = useState<number>(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const shakeAnim = useRef(new Animated.Value(0)).current;
 
-  // Parse payload robustly to match web
-  const textWithBlanks = drillData?.text_with_blanks || drillData?.text || "";
-  const blanks = (textWithBlanks.match(/\[BLANK\]/g) || []).length;
-  const options: string[] = Array.isArray(drillData?.options) ? drillData.options : [];
-  const correctAnswers: string[] = Array.isArray(drillData?.correct_answers) ? drillData.correct_answers : [];
+  // Comprehensive parsing: handle all possible field names and blank markers
+  const rawText =
+    drillData?.text_with_blanks ||
+    drillData?.text ||
+    drillData?.statement ||
+    drillData?.sentence ||
+    drillData?.passage ||
+    drillData?.question ||
+    drillData?.content?.text_with_blanks ||
+    drillData?.content?.text ||
+    "";
 
-  // Split text by [BLANK]
-  const parts = textWithBlanks.split(/\[BLANK\]/g);
+  const options: string[] = Array.isArray(drillData?.options)
+    ? drillData.options
+    : Array.isArray(drillData?.choices)
+    ? drillData.choices
+    : [];
 
+  const correctAnswers: string[] = Array.isArray(drillData?.correct_answers)
+    ? drillData.correct_answers
+    : drillData?.correct_answer
+    ? [drillData.correct_answer]
+    : [];
+
+  // Match [BLANK], [blank], [BLANK 1], [blank_1], {blank}, <blank>, (blank), __, ...
+  const blankPattern = /\[blank[^\]]*\]|\{blank[^\}]*\}|<blank[^>]*>|\(blank[^\)]*\)|_{2,}|\.{3,}/gi;
+  let normalizedText = rawText.replace(blankPattern, "[BLANK]");
+
+  let blanksCount = (normalizedText.match(/\[BLANK\]/g) || []).length;
+
+  // Fallback 1: If text did not have a blank marker, replace occurrences of correct answers with [BLANK]
+  if (blanksCount === 0 && correctAnswers.length > 0) {
+    for (const ans of correctAnswers) {
+      if (ans && typeof ans === "string" && ans.trim().length > 0) {
+        const escaped = ans.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const ansRegex = new RegExp(`\\b${escaped}\\b`, "i");
+        if (ansRegex.test(normalizedText)) {
+          normalizedText = normalizedText.replace(ansRegex, "[BLANK]");
+        }
+      }
+    }
+    blanksCount = (normalizedText.match(/\[BLANK\]/g) || []).length;
+  }
+
+  // Fallback 2: Ensure at least 1 blank target
+  if (blanksCount === 0) {
+    blanksCount = Math.max(1, correctAnswers.length);
+  }
+
+  const parts = normalizedText.includes("[BLANK]")
+    ? normalizedText.split("[BLANK]")
+    : [normalizedText, ""];
+
+  // Sync completed state
   useEffect(() => {
     if (isCompleted) {
       const correct: Record<number, string> = {};
@@ -47,224 +92,614 @@ export default function FillBlanksDrill({
     }
   }, [isCompleted, correctAnswers]);
 
+  const triggerShake = () => {
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 7, duration: 40, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -7, duration: 40, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 5, duration: 40, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -5, duration: 40, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 40, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const handleOptionSelect = (option: string) => {
+    if (isCompleted) return;
+    setErrorMessage(null);
+
+    // If an active blank is chosen, place it there
+    let targetIndex = activeBlankIndex;
+    if (targetIndex >= blanksCount || targetIndex < 0) {
+      // Find the first unfilled blank
+      for (let i = 0; i < blanksCount; i++) {
+        if (!selectedAnswers[i]) {
+          targetIndex = i;
+          break;
+        }
+      }
+    }
+
+    const updated = { ...selectedAnswers, [targetIndex]: option };
+    setSelectedAnswers(updated);
+
+    // Auto-advance to next unfilled blank
+    let nextUnfilled = -1;
+    for (let i = 0; i < blanksCount; i++) {
+      if (!updated[i]) {
+        nextUnfilled = i;
+        break;
+      }
+    }
+
+    if (nextUnfilled !== -1) {
+      setActiveBlankIndex(nextUnfilled);
+    } else {
+      // All filled! Keep on current or last
+      setActiveBlankIndex(targetIndex);
+    }
+  };
+
+  const handleBlankPress = (index: number) => {
+    if (isCompleted) return;
+    setErrorMessage(null);
+    if (selectedAnswers[index]) {
+      // If already filled, clicking toggles or clears it
+      setActiveBlankIndex(index);
+    } else {
+      setActiveBlankIndex(index);
+    }
+  };
+
+  const handleClearBlank = (index: number) => {
+    if (isCompleted) return;
+    const next = { ...selectedAnswers };
+    delete next[index];
+    setSelectedAnswers(next);
+    setActiveBlankIndex(index);
+    setErrorMessage(null);
+  };
+
   const handleSubmit = () => {
-    if (Object.keys(selectedAnswers).length < blanks) return;
+    if (isCompleted) return;
+    if (Object.keys(selectedAnswers).length < blanksCount) {
+      setErrorMessage("Please fill all the blanks before submitting!");
+      triggerShake();
+      return;
+    }
 
     let isCorrect = true;
-    for (let i = 0; i < blanks; i++) {
-      if (selectedAnswers[i] !== correctAnswers[i]) {
+    for (let i = 0; i < blanksCount; i++) {
+      const userAns = (selectedAnswers[i] || "").trim().toLowerCase();
+      const expectedAns = (correctAnswers[i] || "").trim().toLowerCase();
+      if (userAns !== expectedAns) {
         isCorrect = false;
         break;
       }
     }
 
     if (isCorrect) {
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const elapsed = Math.max(1, Math.floor((Date.now() - startTime) / 1000));
       onComplete(wrongAttempts, elapsed);
     } else {
       setWrongAttempts((prev) => prev + 1);
-      setIsError(true);
-      setTimeout(() => setIsError(false), 1000);
+      setErrorMessage("Some answers are incorrect. Review your choices and try again!");
+      triggerShake();
+      setTimeout(() => {
+        setErrorMessage(null);
+      }, 3500);
     }
   };
 
-  const handleOptionSelect = (opt: string) => {
-    if (activeBlankIndex === null) return;
-    setSelectedAnswers((prev) => ({ ...prev, [activeBlankIndex]: opt }));
-    setActiveBlankIndex(null);
-  };
-
-  if (!textWithBlanks) {
+  if (!rawText || !rawText.trim()) {
     return (
-      <View style={styles.errorBox}>
-        <Text style={styles.errorText}>
-          Error: This drill was generated with invalid data. Please regenerate the sprint.
+      <View style={styles.emptyCard}>
+        <MaterialCommunityIcons name="alert-circle-outline" size={24} color="#F59E0B" />
+        <Text style={styles.emptyCardText}>
+          No fill-in statement available for this drill.
         </Text>
       </View>
     );
   }
 
+  const filledCount = Object.keys(selectedAnswers).length;
+  const isAllFilled = filledCount === blanksCount;
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View
+    <View style={styles.container}>
+      {/* Top Header & Progress */}
+      <View style={styles.progressCard}>
+        <View style={styles.progressHeader}>
+          <View style={styles.progressTitleGroup}>
+            <MaterialCommunityIcons
+              name="text-box-edit-outline"
+              size={16}
+              color={isCompleted ? "#10B981" : "#A855F7"}
+            />
+            <Text style={styles.progressLabel}>
+              {isCompleted ? "Drill Completed" : "Fill In The Blanks"}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.progressCounterPill,
+              isAllFilled && styles.progressCounterPillCompleted,
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={isAllFilled ? "check-circle" : "circle-edit-outline"}
+              size={13}
+              color={isAllFilled ? "#10B981" : "#A855F7"}
+            />
+            <Text
+              style={[
+                styles.progressCounterText,
+                isAllFilled && styles.progressCounterTextCompleted,
+              ]}
+            >
+              {filledCount} / {blanksCount} Filled
+            </Text>
+          </View>
+        </View>
+
+        {/* Dynamic Instructional Hint */}
+        <Text style={[styles.hintText, errorMessage ? styles.hintTextError : null]}>
+          {errorMessage ||
+            (isCompleted
+              ? "All blanks solved accurately!"
+              : isAllFilled
+              ? "All blanks filled! Review and tap Submit Answer below."
+              : `Filling Blank ${activeBlankIndex + 1}: Select an option from the word bank.`)}
+        </Text>
+      </View>
+
+      {/* Main Passage Card with Shake Animation on Error */}
+      <Animated.View
         style={[
-          styles.textCard,
-          isError && styles.textCardError,
+          styles.passageCard,
+          errorMessage ? styles.passageCardError : null,
+          { transform: [{ translateX: shakeAnim }] },
         ]}
       >
-        <Text style={styles.paragraphText}>
+        <View style={styles.passageHeaderRow}>
+          <MaterialCommunityIcons name="format-quote-open" size={20} color="#A855F7" />
+          <Text style={styles.passageHeaderLabel}>STATEMENT / PASSAGE</Text>
+        </View>
+
+        <Text style={styles.passageText}>
           {parts.map((part: string, idx: number) => {
             const isLast = idx === parts.length - 1;
             const answer = selectedAnswers[idx];
-            const isActive = activeBlankIndex === idx;
+            const isActive = activeBlankIndex === idx && !isCompleted;
 
             return (
-              <React.Fragment key={idx}>
+              <React.Fragment key={`part-${idx}`}>
                 <Text style={styles.normalText}>{part}</Text>
                 {!isLast && (
                   <Text
                     style={[
-                      styles.blankPlaceholder,
-                      isActive && styles.blankPlaceholderActive,
-                      answer && styles.blankPlaceholderFilled,
+                      styles.blankSlot,
+                      isActive && styles.blankSlotActive,
+                      answer ? styles.blankSlotFilled : null,
+                      isCompleted && styles.blankSlotCompleted,
                     ]}
-                    onPress={() => !isCompleted && setActiveBlankIndex(isActive ? null : idx)}
+                    onPress={() => handleBlankPress(idx)}
                   >
-                    {answer ? ` ${answer} ` : " [ SELECT ] "}
+                    {answer ? ` ${answer} ` : ` [ Blank ${idx + 1} ] `}
                   </Text>
                 )}
               </React.Fragment>
             );
           })}
         </Text>
-      </View>
 
-      {activeBlankIndex !== null && !isCompleted && (
-        <View style={styles.optionsSection}>
-          <Text style={styles.optionsLabel}>SELECT OPTION FOR BLANK {activeBlankIndex + 1}</Text>
-          <View style={styles.optionsGrid}>
-            {options.map((opt: string, i: number) => (
-              <TouchableOpacity
-                key={i}
-                style={styles.optionChip}
-                onPress={() => handleOptionSelect(opt)}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.optionChipText}>{opt}</Text>
-              </TouchableOpacity>
-            ))}
+        {/* Active Blank Quick Clear Bar (if active blank is filled) */}
+        {!isCompleted && selectedAnswers[activeBlankIndex] && (
+          <View style={styles.clearBarRow}>
+            <Text style={styles.clearBarLabel}>
+              Blank {activeBlankIndex + 1}:{" "}
+              <Text style={styles.clearBarAnswer}>
+                "{selectedAnswers[activeBlankIndex]}"
+              </Text>
+            </Text>
+            <TouchableOpacity
+              onPress={() => handleClearBlank(activeBlankIndex)}
+              style={styles.clearBtn}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="close-circle" size={14} color="#EF4444" />
+              <Text style={styles.clearBtnText}>Remove</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </Animated.View>
+
+      {/* Word Bank / Options Section */}
+      {!isCompleted && options.length > 0 && (
+        <View style={styles.wordBankSection}>
+          <View style={styles.wordBankHeader}>
+            <MaterialCommunityIcons name="format-list-bulleted-type" size={14} color="#A855F7" />
+            <Text style={styles.wordBankTitle}>WORD BANK</Text>
+            <Text style={styles.wordBankSub}>
+              (Tap word to place into Blank {activeBlankIndex + 1})
+            </Text>
+          </View>
+
+          <View style={styles.optionsWrap}>
+            {options.map((opt: string, i: number) => {
+              // Check if option is already used in any blank
+              const usedInBlankIndex = Object.entries(selectedAnswers).find(
+                ([_, val]) => val === opt
+              )?.[0];
+              const isUsed = usedInBlankIndex !== undefined;
+              const isCurrentSelection =
+                selectedAnswers[activeBlankIndex] === opt;
+
+              return (
+                <TouchableOpacity
+                  key={`opt-${i}`}
+                  style={[
+                    styles.optionChip,
+                    isCurrentSelection && styles.optionChipActive,
+                    isUsed && !isCurrentSelection && styles.optionChipUsed,
+                  ]}
+                  onPress={() => handleOptionSelect(opt)}
+                  activeOpacity={0.75}
+                >
+                  <Text
+                    style={[
+                      styles.optionChipText,
+                      isCurrentSelection && styles.optionChipTextActive,
+                      isUsed && !isCurrentSelection && styles.optionChipTextUsed,
+                    ]}
+                  >
+                    {opt}
+                  </Text>
+                  {isUsed && (
+                    <View style={styles.usedBadge}>
+                      <Text style={styles.usedBadgeText}>
+                        B{Number(usedInBlankIndex) + 1}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
       )}
 
+      {/* Submit / Completed Action */}
       {isCompleted ? (
-        <View style={styles.successBanner}>
-          <MaterialCommunityIcons name="check-circle" size={20} color={GC.success} />
-          <Text style={styles.successText}>
-            Successfully Completed! (+{earnedXp || 0} XP)
+        <View style={styles.completedNotice}>
+          <MaterialCommunityIcons name="check-circle" size={18} color="#10B981" />
+          <Text style={styles.completedNoticeText}>
+            Drill Completed • All {blanksCount} blanks correct (+{earnedXp || 0} XP)
           </Text>
         </View>
       ) : (
         <TouchableOpacity
           style={[
             styles.submitBtn,
-            Object.keys(selectedAnswers).length < blanks && styles.submitBtnDisabled,
-            isError && styles.submitBtnError,
+            !isAllFilled && styles.submitBtnDisabled,
           ]}
-          disabled={Object.keys(selectedAnswers).length < blanks || isError}
+          disabled={!isAllFilled}
           onPress={handleSubmit}
-          activeOpacity={0.8}
+          activeOpacity={0.82}
         >
-          <Text style={styles.submitBtnText}>
-            {isError ? "Incorrect Answers! Try Again." : "Submit Answer"}
+          <MaterialCommunityIcons
+            name={isAllFilled ? "check-bold" : "dots-horizontal"}
+            size={18}
+            color={isAllFilled ? "#FFFFFF" : "#64748B"}
+          />
+          <Text
+            style={[
+              styles.submitBtnText,
+              !isAllFilled && styles.submitBtnTextDisabled,
+            ]}
+          >
+            {isAllFilled ? "Submit Answer" : `Fill All Blanks (${filledCount}/${blanksCount})`}
           </Text>
         </TouchableOpacity>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 24, paddingBottom: 40 },
-  errorBox: {
-    padding: 16,
-    backgroundColor: "#FFF1F2",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#FECDD3",
+  container: {
+    paddingBottom: 24,
+    gap: 16,
   },
-  errorText: { color: "#E11D48", fontWeight: "500" },
-  textCard: {
-    backgroundColor: GC.card,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: GC.border,
+
+  // Empty Card
+  emptyCard: {
+    backgroundColor: "#252532",
+    borderRadius: 16,
     padding: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
   },
-  textCardError: {
-    backgroundColor: "#FFF1F2",
-    borderColor: "#FDA4AF",
+  emptyCardText: {
+    color: "#94A3B8",
+    fontSize: 14,
+    textAlign: "center",
   },
-  paragraphText: {
+
+  // Progress Card
+  progressCard: {
+    backgroundColor: "#242430",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    gap: 10,
+  },
+  progressHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  progressTitleGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  progressLabel: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  progressCounterPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(168, 85, 247, 0.12)",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(168, 85, 247, 0.28)",
+  },
+  progressCounterPillCompleted: {
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    borderColor: "rgba(16, 185, 129, 0.3)",
+  },
+  progressCounterText: {
+    color: "#A855F7",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  progressCounterTextCompleted: {
+    color: "#10B981",
+  },
+  hintText: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "500",
+    lineHeight: 16,
+  },
+  hintTextError: {
+    color: "#F87171",
+  },
+
+  // Main Passage Card
+  passageCard: {
+    backgroundColor: "#242430",
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    gap: 14,
+  },
+  passageCardError: {
+    borderColor: "#EF4444",
+    backgroundColor: "rgba(239, 68, 68, 0.08)",
+  },
+  passageHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  passageHeaderLabel: {
+    color: "#94A3B8",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+  },
+  passageText: {
     lineHeight: 32,
   },
   normalText: {
-    color: GC.textPrimary,
-    fontSize: 16,
+    color: "#E2E8F0",
+    fontSize: 15,
     fontWeight: "500",
   },
-  blankPlaceholder: {
-    color: "#6366F1",
-    fontSize: 16,
-    fontWeight: "800",
-    backgroundColor: "#EEF2FF",
-    borderWidth: 1,
-    borderColor: "#C7D2FE",
+
+  // Blank Interactive Slots
+  blankSlot: {
+    color: "#A855F7",
+    fontSize: 14.5,
+    fontWeight: "700",
+    backgroundColor: "rgba(168, 85, 247, 0.10)",
+    borderWidth: 1.5,
+    borderColor: "rgba(168, 85, 247, 0.35)",
+    borderRadius: 8,
     overflow: "hidden",
   },
-  blankPlaceholderActive: {
-    backgroundColor: "#E0E7FF",
-    borderColor: "#818CF8",
-  },
-  blankPlaceholderFilled: {
-    color: "#4338CA",
-  },
-  optionsSection: { gap: 12 },
-  optionsLabel: {
-    color: GC.textMuted,
-    fontSize: 10,
+  blankSlotActive: {
+    color: "#FFFFFF",
+    backgroundColor: "#2E1F47",
+    borderColor: "#A855F7",
     fontWeight: "800",
-    letterSpacing: 2,
   },
-  optionsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  optionChip: {
-    backgroundColor: GC.surface,
-    borderWidth: 2,
-    borderColor: GC.border,
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  optionChipText: {
-    color: GC.textPrimary,
-    fontSize: 14,
+  blankSlotFilled: {
+    color: "#10B981",
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    borderColor: "rgba(16, 185, 129, 0.4)",
     fontWeight: "700",
   },
-  submitBtn: {
-    backgroundColor: "#4F46E5",
-    padding: 16,
-    borderRadius: 12,
+  blankSlotCompleted: {
+    color: "#10B981",
+    borderColor: "#10B981",
+  },
+
+  // Active Blank Clear Bar
+  clearBarRow: {
+    flexDirection: "row",
     alignItems: "center",
-  },
-  submitBtnDisabled: {
-    backgroundColor: GC.border,
-  },
-  submitBtnError: {
-    backgroundColor: GC.danger,
-  },
-  submitBtnText: {
-    color: GC.bg,
-    fontWeight: "800",
-    fontSize: 15,
-  },
-  successBanner: {
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
-    borderColor: GC.success,
+    justifyContent: "space-between",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
     borderWidth: 1,
-    padding: 16,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+  },
+  clearBarLabel: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "500",
+    flex: 1,
+  },
+  clearBarAnswer: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  clearBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+  },
+  clearBtnText: {
+    color: "#FCA5A5",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
+  // Word Bank Section
+  wordBankSection: {
+    gap: 10,
+  },
+  wordBankHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 2,
+  },
+  wordBankTitle: {
+    color: "#94A3B8",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+  },
+  wordBankSub: {
+    color: "#64748B",
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  optionsWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 9,
+  },
+  optionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#242430",
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  optionChipActive: {
+    backgroundColor: "#2E1F47",
+    borderColor: "#A855F7",
+  },
+  optionChipUsed: {
+    backgroundColor: "rgba(36, 36, 48, 0.6)",
+    borderColor: "rgba(255, 255, 255, 0.05)",
+    opacity: 0.6,
+  },
+  optionChipText: {
+    color: "#E2E8F0",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  optionChipTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+  },
+  optionChipTextUsed: {
+    color: "#94A3B8",
+  },
+  usedBadge: {
+    backgroundColor: "rgba(168, 85, 247, 0.2)",
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 5,
+  },
+  usedBadgeText: {
+    color: "#C084FC",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+
+  // Submit Button
+  submitBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
+    backgroundColor: "#A855F7",
+    borderRadius: 14,
+    paddingVertical: 15,
+    shadowColor: "#A855F7",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
   },
-  successText: {
-    color: GC.success,
-    fontWeight: "800",
+  submitBtnDisabled: {
+    backgroundColor: "#242430",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  submitBtnText: {
+    color: "#FFFFFF",
     fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  submitBtnTextDisabled: {
+    color: "#64748B",
+  },
+
+  // Completed Banner
+  completedNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.25)",
+  },
+  completedNoticeText: {
+    color: "#10B981",
+    fontSize: 13,
+    fontWeight: "700",
   },
 });

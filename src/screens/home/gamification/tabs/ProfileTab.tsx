@@ -69,29 +69,25 @@ export default function ProfileTab({ profile, isLoading, activeDates, onExitPres
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const isTodayCompleted = (activeDates || []).includes(todayStr);
 
-  const getWeekDays = () => {
-    const dayOfWeek = now.getDay();
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() + mondayOffset);
-
-    const dayLabels = ["M", "T", "W", "T", "F", "S", "S"];
+  const getPastSevenDays = () => {
+    const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
     const days = [];
 
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
+    // Past 7 days ending at today (6 days ago through today)
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
       const year = d.getFullYear();
       const month = String(d.getMonth() + 1).padStart(2, "0");
       const day = String(d.getDate()).padStart(2, "0");
       const dateStr = `${year}-${month}-${day}`;
 
-      const isToday = d.toDateString() === now.toDateString();
-      const isPast = d < now && !isToday;
+      const isToday = i === 0;
+      const isPast = i > 0;
       const isCompleted = (activeDates || []).includes(dateStr);
 
       days.push({
-        label: dayLabels[i],
+        label: DAY_LETTERS[d.getDay()],
         dateNumber: d.getDate(),
         dateStr,
         isToday,
@@ -229,9 +225,9 @@ export default function ProfileTab({ profile, isLoading, activeDates, onExitPres
               : "Complete a drill today to keep your streak alive!"}
           </Text>
 
-          {/* 7-Day Week Tracker */}
+          {/* 7-Day Past Streak Tracker */}
           <View style={styles.weekTrackRow}>
-            {getWeekDays().map((dayItem, idx) => (
+            {getPastSevenDays().map((dayItem, idx) => (
               <View key={idx} style={styles.dayCol}>
                 <Text style={[styles.dayLabel, dayItem.isToday && styles.dayLabelToday]}>
                   {dayItem.label}
@@ -278,8 +274,8 @@ export default function ProfileTab({ profile, isLoading, activeDates, onExitPres
 
           {/* Best Streak */}
           <View style={styles.statCard}>
-            <View style={[styles.iconCircle, { backgroundColor: "rgba(236, 72, 153, 0.15)" }]}>
-              <MaterialCommunityIcons name="lightning-bolt" size={24} color="#EC4899" />
+            <View style={[styles.iconCircle, { backgroundColor: "rgba(249, 115, 22, 0.15)" }]}>
+              <MaterialCommunityIcons name="fire" size={24} color="#F97316" />
             </View>
             <View>
               <Text style={styles.statLabel}>Best Streak</Text>

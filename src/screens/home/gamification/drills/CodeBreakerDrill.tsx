@@ -1,19 +1,23 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
+  Animated,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { GC } from "./GamificationColors";
 
 interface DrillProps {
   drillData: any;
   isCompleted: boolean;
   earnedXp?: number;
   onComplete: (wrong_attempts: number, completion_time_seconds: number) => void;
+}
+
+interface StepItem {
+  id: number;
+  text: string;
 }
 
 export default function CodeBreakerDrill({
@@ -25,214 +29,633 @@ export default function CodeBreakerDrill({
   const [startTime] = useState(Date.now());
   const [wrongAttempts, setWrongAttempts] = useState(0);
 
-  const sequence = Array.isArray(drillData?.sequence) ? drillData.sequence : [];
-  const steps = sequence.map((s: any) => s?.step || String(s || ""));
+  // Extract sequence items robustly
+  const rawSequence = Array.isArray(drillData?.sequence)
+    ? drillData.sequence
+    : Array.isArray(drillData?.steps)
+    ? drillData.steps
+    : Array.isArray(drillData?.ordered_steps)
+    ? drillData.ordered_steps
+    : [];
 
-  const [availableSteps, setAvailableSteps] = useState<string[]>(() => {
+  const initialSteps: StepItem[] = rawSequence.map((s: any, idx: number) => ({
+    id: idx,
+    text: typeof s === "string" ? s : s?.step || s?.title || s?.text || `Step ${idx + 1}`,
+  }));
+
+  const [availableSteps, setAvailableSteps] = useState<StepItem[]>(() => {
     if (isCompleted) return [];
-    return [...steps].sort(() => Math.random() - 0.5);
+    return [...initialSteps].sort(() => Math.random() - 0.5);
   });
-  
-  const [orderedSteps, setOrderedSteps] = useState<string[]>(
-    isCompleted ? [...steps] : []
-  );
-  
-  const [isError, setIsError] = useState(false);
 
-  const handleSelect = (step: string) => {
-    setAvailableSteps((prev) => prev.filter((s) => s !== step));
+  const [orderedSteps, setOrderedSteps] = useState<StepItem[]>(() => {
+    if (isCompleted) return [...initialSteps];
+    return [];
+  });
+
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+
+  // Sync completion state
+  useEffect(() => {
+    if (isCompleted) {
+      setOrderedSteps([...initialSteps]);
+      setAvailableSteps([]);
+    }
+  }, [isCompleted, initialSteps.length]);
+
+  const triggerShake = () => {
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 7, duration: 40, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -7, duration: 40, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 5, duration: 40, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -5, duration: 40, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 40, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const handleSelect = (step: StepItem) => {
+    if (isCompleted) return;
+    setErrorMessage(null);
+    setAvailableSteps((prev) => prev.filter((s) => s.id !== step.id));
     setOrderedSteps((prev) => [...prev, step]);
   };
 
-  const handleRemove = (step: string) => {
-    setOrderedSteps((prev) => prev.filter((s) => s !== step));
+  const handleRemove = (step: StepItem) => {
+    if (isCompleted) return;
+    setErrorMessage(null);
+    setOrderedSteps((prev) => prev.filter((s) => s.id !== step.id));
     setAvailableSteps((prev) => [...prev, step]);
   };
 
+  const handleReset = () => {
+    if (isCompleted) return;
+    setErrorMessage(null);
+    setAvailableSteps([...initialSteps].sort(() => Math.random() - 0.5));
+    setOrderedSteps([]);
+  };
+
   const handleSubmit = () => {
+    if (isCompleted) return;
+    if (orderedSteps.length < initialSteps.length) {
+      setErrorMessage("Please place all steps into the sequence before submitting.");
+      triggerShake();
+      return;
+    }
+
     let isCorrect = true;
-    for (let i = 0; i < steps.length; i++) {
-      if (orderedSteps[i] !== steps[i]) {
+    for (let i = 0; i < initialSteps.length; i++) {
+      if (orderedSteps[i]?.id !== initialSteps[i]?.id) {
         isCorrect = false;
         break;
       }
     }
 
     if (isCorrect) {
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const elapsed = Math.max(1, Math.floor((Date.now() - startTime) / 1000));
       onComplete(wrongAttempts, elapsed);
     } else {
       setWrongAttempts((p) => p + 1);
-      setIsError(true);
-      setTimeout(() => setIsError(false), 1000);
+      setErrorMessage("Sequence incorrect! Tap any step to remove it and try a different order.");
+      triggerShake();
+      setTimeout(() => setErrorMessage(null), 3500);
     }
   };
 
+  if (initialSteps.length === 0) {
+    return (
+      <View style={styles.emptyCard}>
+        <MaterialCommunityIcons name="alert-circle-outline" size={24} color="#F59E0B" />
+        <Text style={styles.emptyCardText}>No sequence steps available for this drill.</Text>
+      </View>
+    );
+  }
+
+  const placedCount = orderedSteps.length;
+  const totalCount = initialSteps.length;
+  const isAllPlaced = placedCount === totalCount;
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.orderedContainer}>
-        <Text style={styles.sectionTitle}>YOUR SEQUENCE</Text>
-        {orderedSteps.length === 0 ? (
-          <Text style={styles.placeholderText}>
-            Tap steps below to build the sequence
-          </Text>
-        ) : (
-          orderedSteps.map((step, idx) => (
-            <TouchableOpacity
-              key={`ord-${idx}`}
+    <View style={styles.container}>
+      {/* Top Header & Progress Card */}
+      <View style={styles.progressCard}>
+        <View style={styles.progressHeader}>
+          <View style={styles.progressTitleGroup}>
+            <MaterialCommunityIcons
+              name="lock-open-variant-outline"
+              size={16}
+              color={isCompleted ? "#10B981" : "#A855F7"}
+            />
+            <Text style={styles.progressLabel} numberOfLines={1}>
+              {isCompleted ? "Sequence Verified" : "Reconstruct Sequence"}
+            </Text>
+          </View>
+
+          <View style={styles.progressRightRow}>
+            {!isCompleted && orderedSteps.length > 0 && (
+              <TouchableOpacity
+                onPress={handleReset}
+                style={styles.resetBtn}
+                activeOpacity={0.7}
+              >
+                <MaterialCommunityIcons name="restart" size={13} color="#CBD5E1" />
+                <Text style={styles.resetBtnText}>Reset</Text>
+              </TouchableOpacity>
+            )}
+
+            <View
               style={[
-                styles.orderedItem,
-                isCompleted && styles.completedItem,
+                styles.progressCounterPill,
+                isAllPlaced && styles.progressCounterPillCompleted,
               ]}
-              disabled={isCompleted}
-              onPress={() => handleRemove(step)}
-              activeOpacity={0.8}
             >
-              <Text style={styles.orderedIndex}>{idx + 1}.</Text>
-              <Text style={styles.orderedText}>{step}</Text>
-            </TouchableOpacity>
-          ))
+              <MaterialCommunityIcons
+                name={isAllPlaced ? "check-circle" : "order-numeric-ascending"}
+                size={13}
+                color={isAllPlaced ? "#10B981" : "#A855F7"}
+              />
+              <Text
+                style={[
+                  styles.progressCounterText,
+                  isAllPlaced && styles.progressCounterTextCompleted,
+                ]}
+              >
+                {placedCount}/{totalCount}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Dynamic Instructional Guidance */}
+        <Text style={[styles.hintText, errorMessage ? styles.hintTextError : null]}>
+          {errorMessage ||
+            (isCompleted
+              ? "All steps arranged in exact operational sequence!"
+              : isAllPlaced
+              ? "All steps placed! Tap 'Verify Sequence' to check your answer."
+              : "Tap available steps below in their correct chronological order.")}
+        </Text>
+      </View>
+
+      {/* Target Sequence Container with Shake on Error */}
+      <Animated.View
+        style={[
+          styles.sequenceCard,
+          errorMessage ? styles.sequenceCardError : null,
+          { transform: [{ translateX: shakeAnim }] },
+        ]}
+      >
+        <View style={styles.sequenceHeaderRow}>
+          <MaterialCommunityIcons
+            name="format-list-numbered"
+            size={18}
+            color={isCompleted ? "#10B981" : "#A855F7"}
+          />
+          <Text style={styles.sequenceHeaderLabel}>YOUR SEQUENCE ORDER</Text>
+        </View>
+
+        {orderedSteps.length === 0 ? (
+          <View style={styles.placeholderBox}>
+            <MaterialCommunityIcons
+              name="gesture-tap"
+              size={28}
+              color="rgba(168, 85, 247, 0.4)"
+            />
+            <Text style={styles.placeholderTitle}>Sequence is empty</Text>
+            <Text style={styles.placeholderSubtitle}>
+              Tap steps from the pool below to begin ordering
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.orderedList}>
+            {orderedSteps.map((step, idx) => (
+              <TouchableOpacity
+                key={`ord-${step.id}`}
+                style={[
+                  styles.orderedRow,
+                  isCompleted && styles.orderedRowCompleted,
+                ]}
+                disabled={isCompleted}
+                onPress={() => handleRemove(step)}
+                activeOpacity={0.78}
+              >
+                {/* Step Number Circle */}
+                <View
+                  style={[
+                    styles.stepBadge,
+                    isCompleted && styles.stepBadgeCompleted,
+                  ]}
+                >
+                  <Text style={styles.stepBadgeNumber}>{idx + 1}</Text>
+                </View>
+
+                {/* Step Text (No Truncation) */}
+                <Text
+                  style={[
+                    styles.orderedText,
+                    isCompleted && styles.orderedTextCompleted,
+                  ]}
+                >
+                  {step.text}
+                </Text>
+
+                {/* Remove Indicator */}
+                {!isCompleted && (
+                  <View style={styles.removeIconCircle}>
+                    <MaterialCommunityIcons
+                      name="close"
+                      size={13}
+                      color="#94A3B8"
+                    />
+                  </View>
+                )}
+                {isCompleted && (
+                  <MaterialCommunityIcons
+                    name="check-circle"
+                    size={16}
+                    color="#10B981"
+                  />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
         )}
-      </View>
+      </Animated.View>
 
-      <View style={styles.availableContainer}>
-        {availableSteps.map((step, idx) => (
-          <TouchableOpacity
-            key={`av-${idx}`}
-            style={styles.availableItem}
-            onPress={() => handleSelect(step)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.availableText}>{step}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* Available Steps Pool */}
+      {!isCompleted && availableSteps.length > 0 && (
+        <View style={styles.availableSection}>
+          <View style={styles.availableHeaderRow}>
+            <MaterialCommunityIcons name="layers-outline" size={14} color="#A855F7" />
+            <Text style={styles.availableHeaderLabel}>
+              AVAILABLE STEPS • TAP TO PLACE NEXT ({availableSteps.length})
+            </Text>
+          </View>
 
-      {!isCompleted ? (
+          <View style={styles.availableList}>
+            {availableSteps.map((step) => (
+              <TouchableOpacity
+                key={`av-${step.id}`}
+                style={styles.availableCard}
+                onPress={() => handleSelect(step)}
+                activeOpacity={0.75}
+              >
+                <View style={styles.availableCardInner}>
+                  <View style={styles.addIconCircle}>
+                    <MaterialCommunityIcons name="plus" size={14} color="#A855F7" />
+                  </View>
+                  <Text style={styles.availableText}>{step.text}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Submit / Completed Action */}
+      {isCompleted ? (
+        <View style={styles.completedNotice}>
+          <MaterialCommunityIcons name="check-circle" size={18} color="#10B981" />
+          <Text style={styles.completedNoticeText}>
+            Drill Completed • {initialSteps.length} steps verified in sequence (+{earnedXp || 0} XP)
+          </Text>
+        </View>
+      ) : (
         <TouchableOpacity
           style={[
             styles.submitBtn,
-            orderedSteps.length < steps.length && styles.submitBtnDisabled,
-            isError && styles.submitBtnError,
+            !isAllPlaced && styles.submitBtnDisabled,
           ]}
-          disabled={orderedSteps.length < steps.length || isError}
+          disabled={!isAllPlaced}
           onPress={handleSubmit}
-          activeOpacity={0.8}
+          activeOpacity={0.82}
         >
-          <Text style={styles.submitBtnText}>
-            {isError ? "Incorrect Sequence! Try Again." : "Verify Sequence"}
+          <MaterialCommunityIcons
+            name={isAllPlaced ? "shield-check" : "lock-clock"}
+            size={18}
+            color={isAllPlaced ? "#FFFFFF" : "#64748B"}
+          />
+          <Text
+            style={[
+              styles.submitBtnText,
+              !isAllPlaced && styles.submitBtnTextDisabled,
+            ]}
+          >
+            {isAllPlaced
+              ? "Verify Sequence"
+              : `Place All Steps (${placedCount}/${totalCount})`}
           </Text>
         </TouchableOpacity>
-      ) : (
-        <View style={styles.successBanner}>
-          <MaterialCommunityIcons name="check-circle" size={20} color={GC.success} />
-          <Text style={styles.successText}>
-            Successfully Completed! (+{earnedXp || 0} XP)
-          </Text>
-        </View>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    paddingBottom: 40,
-    gap: 24,
+    paddingBottom: 24,
+    gap: 16,
   },
-  orderedContainer: {
-    backgroundColor: GC.surface,
-    padding: 16,
+
+  // Empty Card
+  emptyCard: {
+    backgroundColor: "#252532",
     borderRadius: 16,
+    padding: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
     borderWidth: 1,
-    borderColor: GC.border,
-    minHeight: 150,
+    borderColor: "rgba(255, 255, 255, 0.08)",
   },
-  sectionTitle: {
-    color: GC.textMuted,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 1,
-    marginBottom: 16,
-  },
-  placeholderText: {
-    color: GC.textMuted,
-    fontStyle: "italic",
+  emptyCardText: {
+    color: "#94A3B8",
+    fontSize: 14,
     textAlign: "center",
-    marginTop: 20,
   },
-  orderedItem: {
-    backgroundColor: "#4F46E5",
-    padding: 16,
-    borderRadius: 12,
+
+  // Progress Card
+  progressCard: {
+    backgroundColor: "#242430",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    gap: 10,
+  },
+  progressHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    justifyContent: "space-between",
   },
-  completedItem: {
-    backgroundColor: GC.success,
-    opacity: 0.9,
+  progressTitleGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+    flexShrink: 1,
+    marginRight: 8,
   },
-  orderedIndex: {
-    color: "rgba(255,255,255,0.5)",
+  progressLabel: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  progressRightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 0,
+  },
+  resetBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4.5,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  resetBtnText: {
+    color: "#CBD5E1",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  progressCounterPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(168, 85, 247, 0.12)",
+    paddingHorizontal: 8,
+    paddingVertical: 4.5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(168, 85, 247, 0.28)",
+  },
+  progressCounterPillCompleted: {
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    borderColor: "rgba(16, 185, 129, 0.3)",
+  },
+  progressCounterText: {
+    color: "#A855F7",
+    fontSize: 12,
     fontWeight: "900",
-    marginRight: 12,
+  },
+  progressCounterTextCompleted: {
+    color: "#10B981",
+  },
+  hintText: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "500",
+    lineHeight: 16,
+  },
+  hintTextError: {
+    color: "#F87171",
+  },
+
+  // Sequence Card (Target dropzone)
+  sequenceCard: {
+    backgroundColor: "#242430",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    gap: 12,
+    minHeight: 140,
+  },
+  sequenceCardError: {
+    borderColor: "#EF4444",
+    backgroundColor: "rgba(239, 68, 68, 0.08)",
+  },
+  sequenceHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  sequenceHeaderLabel: {
+    color: "#94A3B8",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+  },
+
+  // Empty Placeholder State
+  placeholderBox: {
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderStyle: "dashed",
+    borderRadius: 12,
+    paddingVertical: 28,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  placeholderTitle: {
+    color: "#CBD5E1",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  placeholderSubtitle: {
+    color: "#64748B",
+    fontSize: 11.5,
+    textAlign: "center",
+  },
+
+  // Ordered List & Rows
+  orderedList: {
+    gap: 8,
+  },
+  orderedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#2E1F47",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(168, 85, 247, 0.35)",
+    gap: 10,
+  },
+  orderedRowCompleted: {
+    backgroundColor: "rgba(16, 185, 129, 0.08)",
+    borderColor: "rgba(16, 185, 129, 0.3)",
+  },
+  stepBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#A855F7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepBadgeCompleted: {
+    backgroundColor: "#10B981",
+  },
+  stepBadgeNumber: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "900",
   },
   orderedText: {
     color: "#FFFFFF",
+    fontSize: 13,
     fontWeight: "600",
-    fontSize: 14,
+    lineHeight: 18,
     flex: 1,
   },
-  availableContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
+  orderedTextCompleted: {
+    color: "#E2E8F0",
   },
-  availableItem: {
-    backgroundColor: GC.bg,
-    borderWidth: 2,
-    borderColor: GC.border,
-    padding: 16,
+  removeIconCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // Available Section
+  availableSection: {
+    gap: 10,
+  },
+  availableHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 2,
+  },
+  availableHeaderLabel: {
+    color: "#94A3B8",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+  },
+  availableList: {
+    gap: 8,
+  },
+  availableCard: {
+    backgroundColor: "#242430",
     borderRadius: 12,
-    width: "100%",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  availableCardInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  addIconCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(168, 85, 247, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(168, 85, 247, 0.28)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   availableText: {
-    color: GC.textPrimary,
+    color: "#E2E8F0",
+    fontSize: 13,
     fontWeight: "600",
-    fontSize: 14,
+    lineHeight: 18,
+    flex: 1,
   },
+
+  // Submit Button
   submitBtn: {
-    backgroundColor: "#4F46E5",
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  submitBtnDisabled: {
-    backgroundColor: GC.border,
-  },
-  submitBtnError: {
-    backgroundColor: GC.danger,
-  },
-  submitBtnText: {
-    color: GC.bg,
-    fontWeight: "800",
-    fontSize: 15,
-  },
-  successBanner: {
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
-    borderColor: GC.success,
-    borderWidth: 1,
-    padding: 16,
-    borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
+    backgroundColor: "#A855F7",
+    borderRadius: 14,
+    paddingVertical: 15,
+    shadowColor: "#A855F7",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
   },
-  successText: {
-    color: GC.success,
-    fontWeight: "800",
+  submitBtnDisabled: {
+    backgroundColor: "#242430",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  submitBtnText: {
+    color: "#FFFFFF",
     fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  submitBtnTextDisabled: {
+    color: "#64748B",
+  },
+
+  // Completed Banner
+  completedNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.25)",
+  },
+  completedNoticeText: {
+    color: "#10B981",
+    fontSize: 13,
+    fontWeight: "700",
   },
 });

@@ -9,6 +9,8 @@ import {
   Dimensions,
   Modal,
   BackHandler,
+  Platform,
+  ToastAndroid,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -48,6 +50,8 @@ export default function GamificationHubScreen() {
 
   const showExitModalRef = useRef(showExitModal);
   showExitModalRef.current = showExitModal;
+
+  const lastBackPressedRef = useRef<number>(0);
 
   // --- Entry animation ---
   const entryOpacity = useRef(new Animated.Value(0)).current;
@@ -118,7 +122,7 @@ export default function GamificationHubScreen() {
       // Intercept Android hardware back button:
       // - If exit modal is open, dismiss it
       // - If on another tab (ranks/badges/profile), return to sprints tab
-      // - If already on sprints tab, prevent exit from the arena (exiting is only via Profile tab)
+      // - If on sprints tab: double-press back to exit the Arena!
       const onHardwareBackPress = () => {
         if (showExitModalRef.current) {
           setShowExitModal(false);
@@ -130,7 +134,18 @@ export default function GamificationHubScreen() {
           return true;
         }
 
-        // Keep user inside arena on sprints tab
+        // On sprints tab: check if pressed twice within 2 seconds
+        const now = Date.now();
+        if (now - lastBackPressedRef.current < 2000) {
+          // Double press confirmed -> exit arena!
+          navigation.goBack();
+          return true;
+        }
+
+        lastBackPressedRef.current = now;
+        if (Platform.OS === "android") {
+          ToastAndroid.show("Press back again to exit Arena", ToastAndroid.SHORT);
+        }
         return true;
       };
 

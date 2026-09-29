@@ -10,12 +10,13 @@ import {
   Dimensions,
   StatusBar,
   Platform,
+  Easing,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { GC } from "./drills/GamificationColors";
-import { useSubmitDrillProgress } from "../../../api/gamification/Hooks";
+import { useSubmitDrillProgress, useGamificationProfile } from "../../../api/gamification/Hooks";
 import { GamificationDrill, GamificationProfile } from "../../../api/gamification/Request";
 import VibeCheckDrill from "./drills/VibeCheckDrill";
 import RiskRizzDrill from "./drills/RiskRizzDrill";
@@ -50,14 +51,31 @@ export default function DrillPlayerScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { drill, sprintId, isCompleted, earnedXp } =
+  const { drill, sprintId, isCompleted, earnedXp, profile: passedProfile } =
     route.params as DrillPlayerParams;
+
+  const { data: profileData, fetch: fetchProfile } = useGamificationProfile();
+  const activeProfile = profileData || passedProfile;
+  const [sessionEarnedXp, setSessionEarnedXp] = useState<number | null>(null);
+
+  const profileCompletedDrill = activeProfile?.completed_drills?.find(
+    (d) => d.drill_id === drill.drill_id
+  );
+  const isDrillCompleted = isCompleted || sessionEarnedXp !== null || !!profileCompletedDrill;
+
+  const actualDrillXp =
+    sessionEarnedXp ??
+    earnedXp ??
+    profileCompletedDrill?.earned_xp ??
+    drill.base_xp;
+
+  const totalUserXp = activeProfile?.total_xp ?? 0;
 
   const { submit, isSubmitting } = useSubmitDrillProgress();
 
-  // Card flip animation
-  const flipAnim = useRef(new Animated.Value(0)).current;
-  const [flipDone, setFlipDone] = useState(false);
+  // Fluid entrance animation (clean fade + spring slide, zero jitter)
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(18)).current;
 
   // XP celebration
   const [celebVisible, setCelebVisible] = useState(false);
@@ -67,40 +85,67 @@ export default function DrillPlayerScreen() {
   const celebScale = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Trigger card flip on mount
-    setTimeout(() => {
-      Animated.timing(flipAnim, {
+    fetchProfile(true);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 450,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
-      }).start(() => setFlipDone(true));
-    }, 100);
-  }, []);
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 65,
+        friction: 9,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fetchProfile]);
 
-  const frontRotate = flipAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "90deg"],
-  });
-  const backRotate = flipAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["-90deg", "0deg"],
-  });
+  const handleDrillComplete = (wrong_attempts: number, completion_time_seconds: number) => {
+    // Exact XP logic matching Backend GamificationService:
+    // streak multiplier = min(1.0 + (streak_days // 3) * 0.1, 1.5)
+    // penalty = wrong_attempts * 25
+    // earned_xp = int(max(base_xp - penalty, 50) * multiplier)
+    const streakDays = activeProfile?.current_streak_days ?? 0;
+    const streakMultiplier = Math.min(1.0 + Math.floor(streakDays / 3) * 0.1, 1.5);
+    const penalty = wrong_attempts * 25;
+    const baseXp = drill.base_xp || 50;
+    const expectedXp = Math.floor(Math.max(baseXp - penalty, 50) * streakMultiplier);
 
-  const handleDrillComplete = async (wrong_attempts: number, completion_time_seconds: number) => {
-    const res = await submit({
+    setSessionEarnedXp(expectedXp);
+    setFinalXp(expectedXp);
+    showCelebration(expectedXp);
+
+    // Emit completion event immediately
+    eventBus.emit("drill_completed", {
+      drillId: drill.drill_id,
+      result: { earned_xp: expectedXp },
+    });
+
+    // Run backend submission concurrently in the background
+    submit({
       sprint_id: sprintId,
       drill_id: drill.drill_id,
       completed: true,
       wrong_attempts,
       completion_time_seconds,
-    });
-
-    if (res) {
-      setFinalXp(res.earned_xp);
-      setNewBadges(res.new_badges || []);
-      eventBus.emit("drill_completed", { drillId: drill.drill_id, result: res });
-      showCelebration(res.earned_xp);
-    }
+    })
+      .then((res) => {
+        if (res) {
+          const serverXp = res.earned_xp !== undefined ? res.earned_xp : expectedXp;
+          setSessionEarnedXp(serverXp);
+          if (res.earned_xp !== undefined && res.earned_xp !== expectedXp) {
+            setFinalXp(res.earned_xp);
+          }
+          if (res.new_badges && res.new_badges.length > 0) {
+            setNewBadges(res.new_badges);
+          }
+          eventBus.emit("drill_completed", { drillId: drill.drill_id, result: res });
+          fetchProfile(true);
+        }
+      })
+      .catch(() => {});
   };
 
   const showCelebration = (xp: number) => {
@@ -152,25 +197,47 @@ export default function DrillPlayerScreen() {
           style={styles.backBtn}
           activeOpacity={0.8}
         >
-          <MaterialCommunityIcons name="arrow-left" size={22} color={GC.textPrimary} />
+          <MaterialCommunityIcons name="arrow-left" size={20} color="#FFFFFF" />
         </TouchableOpacity>
-        <View style={styles.drillMeta}>
-          <View style={[styles.drillTypeChip, { borderColor: drillMeta.color }]}>
-            <MaterialCommunityIcons
-              name={drillMeta.icon as any}
-              size={12}
-              color={drillMeta.color}
-            />
-            <Text style={[styles.drillTypeLabel, { color: drillMeta.color }]}>
-              {drillMeta.label}
+
+        {/* Drill Name: Clean, simple text, no badge box, no colors */}
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerDrillName} numberOfLines={1}>
+            {drillMeta.label}
+          </Text>
+        </View>
+
+        {/* Right side: Total XP + Drill XP */}
+        <View style={styles.headerRight}>
+          {/* Total user XP */}
+          <View style={styles.totalXpPill}>
+            <MaterialCommunityIcons name="star-four-points" size={11} color="#C084FC" />
+            <Text style={styles.totalXpText}>
+              {totalUserXp.toLocaleString()} XP
             </Text>
           </View>
-        </View>
-        <View style={styles.xpPill}>
-          <MaterialCommunityIcons name="star-four-points" size={12} color={GC.gold} />
-          <Text style={styles.xpPillText}>
-            {isCompleted ? (earnedXp || 0) : drill.base_xp} XP
-          </Text>
+
+          {/* Drill XP: Actual earned if completed, or base XP */}
+          <View
+            style={[
+              styles.drillXpPill,
+              isDrillCompleted && styles.drillXpPillCompleted,
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={isDrillCompleted ? "check-decagram" : "star-four-points"}
+              size={11}
+              color={isDrillCompleted ? "#10B981" : "#FCD34D"}
+            />
+            <Text
+              style={[
+                styles.drillXpText,
+                isDrillCompleted && styles.drillXpTextCompleted,
+              ]}
+            >
+              +{actualDrillXp} XP
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -181,44 +248,27 @@ export default function DrillPlayerScreen() {
         {/* Drill title */}
         <Text style={styles.drillTitle}>{drill.title}</Text>
 
-        {/* Card flip reveal */}
-        {!flipDone ? (
-          <>
-            {/* Front face (loading card) */}
-            <Animated.View
-              style={[
-                styles.flipCard,
-                { transform: [{ rotateY: frontRotate }] },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={drillMeta.icon as any}
-                size={48}
-                color={drillMeta.color}
-              />
-              <Text style={styles.flipCardLabel}>{drillMeta.label}</Text>
-            </Animated.View>
-          </>
-        ) : (
-          <Animated.View
-            style={[
-              styles.drillContainer,
-              { transform: [{ rotateY: backRotate }] },
-              flipDone && { transform: [] },
-            ]}
-          >
-            {renderDrill()}
-          </Animated.View>
-        )}
+        {/* Fluid entrance container (smooth fade + spring glide) */}
+        <Animated.View
+          style={[
+            styles.drillContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          {renderDrill()}
+        </Animated.View>
 
-        {isCompleted && (
+        {/* {isCompleted && (
           <View style={styles.completedBanner}>
             <MaterialCommunityIcons name="check-circle" size={18} color={GC.success} />
             <Text style={styles.completedBannerText}>
               Already completed! Earned {earnedXp || 0} XP
             </Text>
           </View>
-        )}
+        )} */}
       </ScrollView>
 
       {/* XP Celebration Modal */}
@@ -235,7 +285,7 @@ export default function DrillPlayerScreen() {
               { transform: [{ scale: celebScale }] },
             ]}
           >
-            <Text style={styles.celebEmoji}>?</Text>
+            <Text style={styles.celebEmoji}>🎉</Text>
             <Text style={styles.celebTitle}>DRILL COMPLETE!</Text>
             <Animated.Text style={styles.celebXp}>
               +{finalXp} XP
@@ -243,7 +293,7 @@ export default function DrillPlayerScreen() {
 
             {newBadges.length > 0 && (
               <View style={styles.newBadgesSection}>
-                <Text style={styles.newBadgesLabel}>?? NEW BADGE{newBadges.length > 1 ? "S" : ""} UNLOCKED!</Text>
+                <Text style={styles.newBadgesLabel}>✨ NEW BADGE{newBadges.length > 1 ? "S" : ""} UNLOCKED!</Text>
                 {newBadges.map((b, i) => (
                   <Text key={i} style={styles.badgeName}>
                     {b.badge_title || b.badge_key}
@@ -275,15 +325,16 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: GC.border,
-    gap: 12,
+    gap: 8,
   },
   backBtn: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: 12,
     backgroundColor: GC.card,
     borderWidth: 1,
@@ -291,54 +342,67 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  drillMeta: { flex: 1 },
-  drillTypeChip: {
+  headerCenter: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  headerDrillName: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    alignSelf: "flex-start",
-    backgroundColor: GC.card,
+    gap: 6,
   },
-  drillTypeLabel: { fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
-  xpPill: {
+  totalXpPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "#1C1200",
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: 3,
+    backgroundColor: "rgba(168, 85, 247, 0.12)",
     borderWidth: 1,
-    borderColor: GC.gold,
+    borderColor: "rgba(168, 85, 247, 0.25)",
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
   },
-  xpPillText: { color: GC.gold, fontSize: 12, fontWeight: "900" },
+  totalXpText: {
+    color: "#E9D5FF",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  drillXpPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "rgba(252, 211, 77, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(252, 211, 77, 0.28)",
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+  },
+  drillXpPillCompleted: {
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    borderColor: "rgba(16, 185, 129, 0.28)",
+  },
+  drillXpText: {
+    color: "#FCD34D",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  drillXpTextCompleted: {
+    color: "#10B981",
+  },
   scrollContent: { padding: 20, gap: 20 },
   drillTitle: {
     color: GC.textPrimary,
     fontSize: 20,
     fontWeight: "900",
     lineHeight: 28,
-  },
-  flipCard: {
-    height: 200,
-    backgroundColor: GC.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: GC.primaryBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 16,
-    backfaceVisibility: "hidden",
-  },
-  flipCardLabel: {
-    color: GC.textSecondary,
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 1,
   },
   drillContainer: { gap: 16 },
   completedBanner: {

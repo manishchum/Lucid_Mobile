@@ -47,6 +47,7 @@ import RoleplaySessionScreen from "../screens/home/roleplay/RoleplaySessionScree
 import RoleplayReportScreen from "../screens/home/roleplay/RoleplayReportScreen";
 import GamificationHubScreen from "../screens/home/gamification/GamificationHubScreen";
 import DrillPlayerScreen from "../screens/home/gamification/DrillPlayerScreen";
+import SprintDetailScreen from "../screens/home/gamification/SprintDetailScreen";
 
 // Components
 import AppHeader from "../components/navigation/AppHeader";
@@ -394,6 +395,15 @@ function AppNavigatorContent() {
               options={{
                 presentation: "card",
                 animation: "slide_from_bottom",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.GAMIFICATION_SPRINT_DETAIL}
+              component={SprintDetailScreen}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
                 headerShown: false,
               }}
             />
