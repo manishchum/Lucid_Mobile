@@ -294,6 +294,33 @@ export const useGetProcessedModules = (
 };
 
 // ==================== PROCESSED MODULE BY ID HOOK ====================
+export const memoryProcessedModuleCache = new Map<string, any>();
+
+export const prefetchProcessedModule = async (
+  processedModuleId: string,
+  userId: string,
+): Promise<void> => {
+  if (!processedModuleId || !userId) return;
+  if (memoryProcessedModuleCache.has(processedModuleId)) return;
+  try {
+    const cacheKey = `@processed_module_${processedModuleId}`;
+    const cachedJson = await AsyncStorage.getItem(cacheKey);
+    if (cachedJson) {
+      const data = JSON.parse(cachedJson);
+      memoryProcessedModuleCache.set(processedModuleId, data);
+      return;
+    }
+    const response = await getProcessedModuleById(processedModuleId, userId);
+    const data = response?.data ?? null;
+    if (data) {
+      memoryProcessedModuleCache.set(processedModuleId, data);
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
+    }
+  } catch (err) {
+    logger.debug("[prefetchProcessedModule] background prefetch error:", err);
+  }
+};
+
 interface UseGetProcessedModuleByIdReturn {
   module: any | null;
   isLoading: boolean;
@@ -305,8 +332,14 @@ export const useGetProcessedModuleById = (
   processedModuleId: string | null,
   userId: string | null,
 ): UseGetProcessedModuleByIdReturn => {
-  const [module, setModule] = useState<any | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [module, setModule] = useState<any | null>(() => {
+    if (!processedModuleId) return null;
+    return memoryProcessedModuleCache.get(processedModuleId) ?? null;
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    if (!processedModuleId || !userId) return false;
+    return !memoryProcessedModuleCache.has(processedModuleId);
+  });
   const [error, setError] = useState<Error | null>(null);
 
   const fetchModuleData = async (showSpinner: boolean) => {
@@ -317,6 +350,7 @@ export const useGetProcessedModuleById = (
       const response = await getProcessedModuleById(processedModuleId, userId);
       const data = response?.data ?? null;
       if (!data) throw new Error("API returned empty data field");
+      memoryProcessedModuleCache.set(processedModuleId, data);
       setModule(data);
 
       const cacheKey = `@processed_module_${processedModuleId}`;
@@ -341,17 +375,28 @@ export const useGetProcessedModuleById = (
         return;
       }
 
+      // If already in memory cache, keep loading false and do a silent background revalidation
+      if (memoryProcessedModuleCache.has(processedModuleId)) {
+        setModule(memoryProcessedModuleCache.get(processedModuleId));
+        setIsLoading(false);
+        try {
+          await fetchModuleData(false);
+        } catch {}
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
 
       let hasCache = false;
 
-      // 1. Try to load from cache first
+      // 1. Try to load from AsyncStorage
       try {
         const cacheKey = `@processed_module_${processedModuleId}`;
         const cachedJson = await AsyncStorage.getItem(cacheKey);
         if (cachedJson) {
           const cachedData = JSON.parse(cachedJson);
+          memoryProcessedModuleCache.set(processedModuleId, cachedData);
           setModule(cachedData);
           logger.debug(
             "[Hook] ✅ Loaded processed module from cache:",
@@ -1589,6 +1634,7 @@ interface UseModuleProgressReturn {
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
+  refreshSilent: () => Promise<void>;
 }
 
 export const useModuleProgress = (
@@ -1789,6 +1835,9 @@ export const useModuleProgress = (
     error,
     refetch: useCallback(async () => {
       await fetchProgressData(true);
+    }, [fetchProgressData]),
+    refreshSilent: useCallback(async () => {
+      await fetchProgressData(false, true);
     }, [fetchProgressData]),
   };
 };

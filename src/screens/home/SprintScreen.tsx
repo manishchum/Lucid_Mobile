@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import {
 	View,
 	Text,
@@ -13,6 +13,7 @@ import {
 	Alert,
 	Linking,
 	Animated,
+	Easing,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,7 +22,7 @@ import { STACK_ROUTES, APP_ROUTES } from "../../navigations/Routes";
 import { useAuth } from "../../contex/AuthContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
-import { useModuleProgress, useGetTrainingPlan, useGetUserByPhone, useGetDashboardSummary } from "../../api/users/Hooks";
+import { useModuleProgress, useGetTrainingPlan, useGetUserByPhone, useGetDashboardSummary, prefetchProcessedModule } from "../../api/users/Hooks";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 import { useActiveSprint } from "../../contex/ActiveSprintContext";
 import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
@@ -36,6 +37,56 @@ if (
 ) {
 	UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+
+const AnimatedModuleCard = ({
+	children,
+	index,
+	style,
+}: {
+	children: React.ReactNode;
+	index: number;
+	style?: any;
+}) => {
+	const animFade = useRef(new Animated.Value(0)).current;
+	const animTranslateY = useRef(new Animated.Value(14)).current;
+
+	useEffect(() => {
+		animFade.setValue(0);
+		animTranslateY.setValue(14);
+		const delay = Math.min(index * 35, 220);
+		const timer = setTimeout(() => {
+			Animated.parallel([
+				Animated.timing(animFade, {
+					toValue: 1,
+					duration: 260,
+					easing: Easing.out(Easing.cubic),
+					useNativeDriver: true,
+				}),
+				Animated.timing(animTranslateY, {
+					toValue: 0,
+					duration: 260,
+					easing: Easing.out(Easing.cubic),
+					useNativeDriver: true,
+				}),
+			]).start();
+		}, delay);
+		return () => clearTimeout(timer);
+	}, [index]);
+
+	return (
+		<Animated.View
+			style={[
+				style,
+				{
+					opacity: animFade,
+					transform: [{ translateY: animTranslateY }],
+				},
+			]}
+		>
+			{children}
+		</Animated.View>
+	);
+};
 
 export default function SprintScreen({
 	navigation,
@@ -112,6 +163,28 @@ export default function SprintScreen({
 	const [tipsExpanded, setTipsExpanded] = useState(false);
 	const [showNoInternet, setShowNoInternet] = useState(false);
 	const [refreshing, setRefreshing] = useState(false);
+
+	const screenFade = useRef(new Animated.Value(0)).current;
+	const screenTranslateY = useRef(new Animated.Value(10)).current;
+
+	useEffect(() => {
+		screenFade.setValue(0);
+		screenTranslateY.setValue(10);
+		Animated.parallel([
+			Animated.timing(screenFade, {
+				toValue: 1,
+				duration: 240,
+				easing: Easing.out(Easing.cubic),
+				useNativeDriver: true,
+			}),
+			Animated.timing(screenTranslateY, {
+				toValue: 0,
+				duration: 240,
+				easing: Easing.out(Easing.cubic),
+				useNativeDriver: true,
+			}),
+		]).start();
+	}, [moduleId, activeSprint?.planId]);
 
 	const isOnline = useNetworkStatus();
 
@@ -260,15 +333,22 @@ export default function SprintScreen({
 
 	// Sprint progress: live count of how many of THIS sprint's modules have a
 	// module-progress record
-	const { progress: moduleProgressEntries, refetch: refetchModuleProgress, isLoading: isProgressLoading } =
+	const { progress: moduleProgressEntries, refetch: refetchModuleProgress, refreshSilent, isLoading: isProgressLoading } =
 		useModuleProgress(cachedUser?.userId ?? null);
 
 	useFocusEffect(
 		useCallback(() => {
-			refetchModuleProgress();
-			// eslint-disable-next-line react-hooks/exhaustive-deps
-		}, [cachedUser?.userId]),
+			refreshSilent();
+		}, [refreshSilent]),
 	);
+
+	// Background prefetch the first 3 modules of active sprint for instant opening in StudioScreen
+	React.useEffect(() => {
+		if (!userId || processedModuleIds.length === 0) return;
+		processedModuleIds.slice(0, 3).forEach((pId) => {
+			if (pId) prefetchProcessedModule(pId, userId);
+		});
+	}, [processedModuleIds, userId]);
 
 	React.useEffect(() => {
 		const handleRefresh = () => {
@@ -522,9 +602,10 @@ export default function SprintScreen({
 	}, [isPlanLoading, isProgressLoading, skeletonOpacity]);
 
 	// ── 1. Empty state: Tab opened directly without selecting a sprint ──────────
-	const hasRequestedSprint = !!(activeSprint || paramSprintId || paramAssignmentTitle);
+	const hasSprintData = Boolean(activeSprint && (activeSprint.modules?.length ?? 0) > 0);
+	const hasRequestedSprint = Boolean(activeSprint || paramSprintId || paramAssignmentTitle);
 
-	if (!hasRequestedSprint || (resolvedPlanCards && resolvedPlanCards.length === 0)) {
+	if (!hasRequestedSprint || (!hasSprintData && resolvedPlanCards && resolvedPlanCards.length === 0)) {
 		return (
 			<View style={[styles.centered, { paddingTop: 20 }]}>
 				<View style={styles.emptyIconWrap}>
@@ -549,8 +630,8 @@ export default function SprintScreen({
 		);
 	}
 
-	// ── 2. Loading state: A sprint was requested, show skeleton loader while fetching ──
-	if (isDashboardLoading || (!!moduleId && (isPlanLoading || isProgressLoading) && !trainingPlan)) {
+	// ── 2. Loading state: Only show skeleton if we have NO sprint data in memory and are still fetching ──
+	if (!hasSprintData && (isDashboardLoading || (!!moduleId && isPlanLoading && !trainingPlan))) {
 		return (
 			<View style={styles.container}>
 				<StatusBar barStyle="dark-content" />
@@ -603,6 +684,7 @@ export default function SprintScreen({
 				refreshControl={
 					RefreshSpinner(refreshing, onRefresh)
 				}>
+				<Animated.View style={{ flex: 1, opacity: screenFade, transform: [{ translateY: screenTranslateY }] }}>
 				{/* ── Header ──────────────────────────────────────────────────────── */}
 				<View style={[styles.header, { paddingBottom: 0 }]}>
 					<TouchableOpacity
@@ -769,8 +851,9 @@ export default function SprintScreen({
 								!!pid && quizPassedProcessedModuleIds.has(pid);
 
 							return (
-								<View
+								<AnimatedModuleCard
 									key={`${moduleId}-module-${index}`}
+									index={index}
 									style={[
 										styles.moduleCard,
 										isDone && styles.moduleCardDone,
@@ -864,11 +947,12 @@ export default function SprintScreen({
 											</Text>
 										</TouchableOpacity>
 									</View>
-								</View>
+								</AnimatedModuleCard>
 							);
 						})
 					)}
 				</View>
+				</Animated.View>
 			</ScrollView>
 
 			<NoInternetModal

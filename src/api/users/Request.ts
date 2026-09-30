@@ -147,6 +147,8 @@ export const postModuleChat = async (
   const result = await apiFetch<PostModuleChatResponseDto>(MODULE_CHAT_URL, {
     method: "POST",
     userId: data.user_id,
+    companyId: data.company_id,
+    timeoutMs: 60_000,
     body: JSON.stringify(payload),
   });
 

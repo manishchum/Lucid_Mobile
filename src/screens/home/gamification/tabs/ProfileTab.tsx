@@ -307,7 +307,7 @@ export default function ProfileTab({ profile, isLoading, activeDates, onExitPres
         </View>
 
         {/* Exit Arena Card */}
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={styles.exitCard}
           activeOpacity={0.8}
           onPress={onExitPress || (() => navigation.goBack())}
@@ -322,7 +322,7 @@ export default function ProfileTab({ profile, isLoading, activeDates, onExitPres
           <View style={styles.exitActionBadge}>
             <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
           </View>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </View>
     </ScrollView>
   );
