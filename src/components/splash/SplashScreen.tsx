@@ -346,7 +346,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
         <Text style={styles.title}>Lucid</Text>
 
         {/* Subtitle / Tagline */}
-        <Text style={styles.subtitle}>Empower Your Learning</Text>
+        {/* <Text style={styles.subtitle}>Empower Your Learning</Text> */}
       </Animated.View>
 
       {/* Bottom Sleek Dynamic Progress Loader */}
