@@ -16,8 +16,10 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useIsFocused } from "@react-navigation/native";
 import { useTenant } from "../../contex/TenantContext";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import { mediaCoordinator } from "../../utils/mediaCoordinator";
 
 // ─── Language Types ────────────────────────────────────────────────────────────
 
@@ -178,7 +180,11 @@ export default function VideoSection({
     });
 
     const playingSub = player.addListener("playingChange", (evt: any) => {
-      setIsPlaying(evt?.isPlaying ?? evt);
+      const playing = evt?.isPlaying ?? evt;
+      setIsPlaying(playing);
+      if (playing) {
+        mediaCoordinator.notifyVideoStarted();
+      }
     });
 
     const endSub = player.addListener("playToEnd", () => {
@@ -195,6 +201,29 @@ export default function VideoSection({
   }, [player]);
 
   const displayPosition = isScrubbing ? scrubPosition : positionMs;
+
+  const isFocused = useIsFocused();
+
+  // Pause video if user navigates away from the Studio screen; keeps timestamp preserved
+  useEffect(() => {
+    if (!isFocused && player && isPlaying) {
+      try {
+        player.pause();
+      } catch {}
+    }
+  }, [isFocused, player, isPlaying]);
+
+  // Pause video if any audio player begins playing anywhere in the app
+  useEffect(() => {
+    const unsub = mediaCoordinator.onPauseVideo(() => {
+      if (player && isPlaying) {
+        try {
+          player.pause();
+        } catch {}
+      }
+    });
+    return unsub;
+  }, [player, isPlaying]);
 
   // Keep screen awake while video is playing
   useEffect(() => {

@@ -34,11 +34,11 @@ const PodiumBlock3D = ({ width, height, rank, dy = 3, leftInset = 12, rightInset
       <Svg width={width} height={height + dy}>
         <Defs>
           <SvgLinearGradient id={`frontGrad${rank}`} x1="10%" y1="100%" x2="0%" y2="0%">
-            <Stop offset="10%" stopColor="#2A2A2A" />
-            <Stop offset="100%" stopColor="#A3A3A3" />
+            <Stop offset="10%" stopColor="#CBD5E1" />
+            <Stop offset="100%" stopColor="#E2E8F0" />
           </SvgLinearGradient>
           <SvgLinearGradient id={`topGrad${rank}`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <Stop offset="10%" stopColor="#C4C4C4" />
+            <Stop offset="10%" stopColor="#E2E8F0" />
             <Stop offset="100%" stopColor="#FFFFFF" />
           </SvgLinearGradient>
         </Defs>
@@ -70,7 +70,7 @@ const PodiumBlock3D = ({ width, height, rank, dy = 3, leftInset = 12, rightInset
       </Svg>
 
       <View style={{ position: "absolute", left: 0, top: dy, width: width, height: height, justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ fontSize: 64, fontWeight: "900", color: "#F5F5F5", opacity: 0.9 }}>{rank}</Text>
+        <Text style={{ fontSize: 64, fontWeight: "900", color: "#94A3B8", opacity: 0.9 }}>{rank}</Text>
       </View>
     </View>
   );
@@ -100,9 +100,9 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
 
   return (
     <View style={styles.wrapper}>
-      {/* Background Gradient matching Image 2 */}
+      {/* Background Gradient matching light theme */}
       <LinearGradient
-        colors={["#1A0B2E", "#35155D"]}
+        colors={["#F8FAFC", "#EEF2FF"]}
         style={StyleSheet.absoluteFill}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
@@ -218,17 +218,17 @@ export default function LeaderboardTab({ data, isLoading, onRefresh }: Props) {
 }
 
 const styles = StyleSheet.create({
-  wrapper: { flex: 1 },
+  wrapper: { flex: 1, backgroundColor: "#F8FAFC" },
   container: { paddingBottom: 20 },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     padding: 32,
-    backgroundColor: "#1A0B2E",
+    backgroundColor: "#F8FAFC",
   },
-  emptyTitle: { color: "#FFF", fontSize: 18, fontWeight: "800", marginTop: 16 },
-  emptySubtitle: { color: "#94A3B8", fontSize: 14, textAlign: "center", marginTop: 8 },
+  emptyTitle: { color: "#0F172A", fontSize: 18, fontWeight: "800", marginTop: 16 },
+  emptySubtitle: { color: "#64748B", fontSize: 14, textAlign: "center", marginTop: 8 },
   podiumSection: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: "#3B82F6",
+    backgroundColor: "#7C3AED",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
     width: 76,
     height: 76,
     borderRadius: 38,
-    backgroundColor: "#EF4444",
+    backgroundColor: "#6366F1",
   },
   podiumAvatarText: {
     color: "#FFF",
@@ -277,17 +277,17 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: -6,
     right: -6,
-    backgroundColor: "#94A3B8", // silver for 2
+    backgroundColor: "#94A3B8",
     width: 22,
     height: 22,
     borderRadius: 11,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#1A0B2E",
+    borderColor: "#FFF",
   },
   rankBadgeFirst: {
-    backgroundColor: "#F59E0B", // gold for 1
+    backgroundColor: "#F59E0B",
     width: 26,
     height: 26,
     borderRadius: 13,
@@ -305,13 +305,13 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   podiumName: {
-    color: "#FFF",
+    color: "#0F172A",
     fontSize: 14,
     fontWeight: "800",
     textAlign: "center",
   },
   podiumNameFirst: {
-    color: "#EF4444", // Red name for 1st place in image 2
+    color: "#4F46E5",
     fontSize: 16,
   },
   xpRow: {
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   podiumXp: {
-    color: "#FFF",
+    color: "#64748B",
     fontSize: 12,
     fontWeight: "800",
   },
@@ -331,26 +331,31 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingTop: 20,
     marginTop: 0,
-    zIndex:10,
-    backgroundColor: "#1A1A24",
+    zIndex: 10,
+    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     minHeight: 400,
     paddingBottom: 800,
     marginBottom: -800,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
   },
   row: {
-    backgroundColor: "#2C2C35",
+    backgroundColor: "#F8FAFC",
     borderRadius: 20,
     padding: 16,
     flexDirection: "row",
     alignItems: "center",
     position: "relative",
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   rowCurrent: {
-    borderWidth: 1,
-    borderColor: "#A855F7",
+    borderWidth: 1.5,
+    borderColor: "#7C3AED",
+    backgroundColor: "#FAF5FF",
   },
   hugeRankContainer: {
     position: "absolute",
@@ -362,19 +367,19 @@ const styles = StyleSheet.create({
   hugeRankText: {
     fontSize: 64,
     fontWeight: "900",
-    color: "rgba(255, 255, 255, 0.05)",
+    color: "rgba(15, 23, 42, 0.05)",
   },
   rowContent: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
-    marginLeft: 30, // push past the huge number
+    marginLeft: 30,
   },
   listAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#3B82F6",
+    backgroundColor: "#7C3AED",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 16,
@@ -389,13 +394,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   rowName: {
-    color: "#FFF",
+    color: "#0F172A",
     fontSize: 16,
     fontWeight: "800",
     marginBottom: 2,
   },
   rowXp: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 13,
     fontWeight: "700",
   },

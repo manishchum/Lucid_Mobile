@@ -142,7 +142,7 @@ export default function ProfileTab({ profile, isLoading, activeDates, onExitPres
               L 0,80
               Z
             `}
-            fill="#1A1A24"
+            fill="#F8FAFC"
           />
         </Svg>
       </View>
@@ -329,9 +329,9 @@ export default function ProfileTab({ profile, isLoading, activeDates, onExitPres
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#1A1A24" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F8FAFC" },
   container: {
-    backgroundColor: "#1A1A24",
+    backgroundColor: "#F8FAFC",
     paddingBottom: 20,
     minHeight: "100%",
   },
@@ -349,7 +349,7 @@ const styles = StyleSheet.create({
   profileSection: {
     paddingHorizontal: 20,
     alignItems: "center",
-    marginTop: -110, // aligns avatar center with the cradle baseline
+    marginTop: -110,
   },
   avatarWrapper: {
     width: 96,
@@ -363,26 +363,26 @@ const styles = StyleSheet.create({
     width: 78,
     height: 78,
     borderRadius: 39,
-    backgroundColor: "#2C2C35",
+    backgroundColor: "#FFFFFF",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#3E3E4B",
+    borderColor: "#E2E8F0",
   },
   avatarInitials: {
-    color: "#FFF",
+    color: "#7C3AED",
     fontSize: 28,
     fontWeight: "900",
   },
   nameText: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 24,
     fontWeight: "900",
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   usernameText: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 14,
     fontWeight: "600",
     marginBottom: 24,
@@ -390,28 +390,28 @@ const styles = StyleSheet.create({
   xpCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#2C2C35",
+    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     paddingHorizontal: 20,
     paddingVertical: 10,
     gap: 8,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
   },
   xpCardText: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 16,
     fontWeight: "800",
   },
   streakCard: {
     width: "100%",
-    backgroundColor: "#2C2C35",
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 16,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
   },
   streakCardHeader: {
     flexDirection: "row",
@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   streakTitle: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 16,
     fontWeight: "800",
   },
@@ -449,7 +449,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(245, 158, 11, 0.25)",
   },
   streakTimerText: {
-    color: "#F59E0B",
+    color: "#D97706",
     fontSize: 12,
     fontWeight: "700",
   },
@@ -465,12 +465,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   streakNumber: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 32,
     fontWeight: "900",
   },
   streakNumberUnit: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 14,
     fontWeight: "600",
   },
@@ -478,18 +478,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(168, 85, 247, 0.12)",
+    backgroundColor: "rgba(124, 58, 237, 0.08)",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
   streakBestText: {
-    color: "#C084FC",
+    color: "#7C3AED",
     fontSize: 12,
     fontWeight: "700",
   },
   streakCallout: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 12,
     fontWeight: "500",
     marginBottom: 14,
@@ -500,7 +500,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingTop: 14,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.06)",
+    borderTopColor: "#E2E8F0",
   },
   dayCol: {
     alignItems: "center",
@@ -518,11 +518,11 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
   },
   dayBubbleCompleted: {
     backgroundColor: "#EA580C",
@@ -534,12 +534,12 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(249, 115, 22, 0.1)",
   },
   dayNumberText: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 12,
     fontWeight: "700",
   },
   dayNumberPast: {
-    color: "#475569",
+    color: "#94A3B8",
   },
   statsGrid: {
     flexDirection: "row",
@@ -550,12 +550,14 @@ const styles = StyleSheet.create({
   },
   statCard: {
     width: "47.5%",
-    backgroundColor: "#2C2C35",
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 16,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   iconCircle: {
     width: 44,
@@ -565,24 +567,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   statLabel: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 12,
     fontWeight: "600",
     marginBottom: 2,
   },
   statValue: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 18,
     fontWeight: "800",
   },
   exitCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#2C2C35",
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.25)",
+    borderColor: "#FCA5A5",
     marginTop: 16,
     width: "100%",
     gap: 14,
@@ -591,23 +593,23 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.25)",
+    borderColor: "rgba(239, 68, 68, 0.2)",
   },
   exitContent: {
     flex: 1,
     gap: 2,
   },
   exitTitle: {
-    color: "#FFFFFF",
+    color: "#EF4444",
     fontSize: 15,
     fontWeight: "800",
   },
   exitSubtitle: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 12,
     fontWeight: "500",
   },
@@ -615,7 +617,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    backgroundColor: "#FEF2F2",
     justifyContent: "center",
     alignItems: "center",
   },

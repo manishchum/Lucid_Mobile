@@ -75,6 +75,7 @@ interface TranscriptEntry {
 }
 
 interface PodcastSectionProps {
+  moduleId?: string;
   title?: string;
   isExpanded: boolean;
   onToggle: () => void;
@@ -98,6 +99,16 @@ interface PodcastSectionProps {
   audioUrlHinglish?: string | null;
   podcastTimelineHinglish?: string | null;
 }
+
+import { ALL_LANGUAGES as GLOBAL_LANGUAGES } from "../../../components/content/ModuleLanguageSelector";
+
+const getLanguageName = (code?: string): string => {
+  if (!code) return "selected language";
+  const found = GLOBAL_LANGUAGES.find((l) => l.code.toLowerCase() === code.toLowerCase());
+  if (found) return found.englishName || found.label;
+  const localFound = ALL_LANGUAGES.find((l) => l.code.toLowerCase() === code.toLowerCase());
+  return localFound?.label || code;
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -141,6 +152,7 @@ function speakerColors(speaker: string) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PodcastSection({
+  moduleId,
   title,
   isExpanded,
   onToggle,
@@ -182,6 +194,24 @@ export default function PodcastSection({
     audioUrlBengali,
   ]);
 
+  const isAudioAvailableInSelectedLang = useMemo(() => {
+    if (!lang || lang === "en") return true;
+    if (lang === "hi") return !!(audioUrlHindi || audioUrlHinglish);
+    if (lang === "ta") return !!audioUrlTamil;
+    if (lang === "te") return !!audioUrlTelugu;
+    if (lang === "mr") return !!audioUrlMarathi;
+    if (lang === "bn") return !!audioUrlBengali;
+    return false;
+  }, [
+    lang,
+    audioUrlHindi,
+    audioUrlHinglish,
+    audioUrlTamil,
+    audioUrlTelugu,
+    audioUrlMarathi,
+    audioUrlBengali,
+  ]);
+
   const rawTimeline = useMemo(() => {
     if (lang === "hi" && (podcastTimelineHindi || podcastTimelineHinglish))
       return podcastTimelineHindi ?? podcastTimelineHinglish;
@@ -205,6 +235,7 @@ export default function PodcastSection({
     podcastTimelineMarathi,
     podcastTimelineBengali,
   ]);
+
   const {
     activeTrackInfo,
     isPlaying,
@@ -212,15 +243,45 @@ export default function PodcastSection({
     positionMillis,
     durationMillis,
     playPodcast,
+    switchTrackAudio,
     togglePlayPause,
     seekTo,
     setAccordionExpanded,
   } = usePodcastPlayer();
 
-  const isCurrentTrackActive =
-    activeTrackInfo !== null &&
-    activeAudioUrl !== null &&
-    activeTrackInfo.audioUrl === activeAudioUrl;
+  const isCurrentTrackActive = useMemo(() => {
+    if (!activeTrackInfo) return false;
+    if (moduleId && activeTrackInfo.moduleId && activeTrackInfo.moduleId === moduleId) {
+      return true;
+    }
+    if (activeAudioUrl && activeTrackInfo.audioUrl === activeAudioUrl) {
+      return true;
+    }
+    const allUrls = [
+      audioUrl,
+      audioUrlHindi,
+      audioUrlHinglish,
+      audioUrlTamil,
+      audioUrlTelugu,
+      audioUrlMarathi,
+      audioUrlBengali,
+    ].filter(Boolean);
+    if (allUrls.includes(activeTrackInfo.audioUrl)) {
+      return true;
+    }
+    return false;
+  }, [
+    activeTrackInfo,
+    activeAudioUrl,
+    moduleId,
+    audioUrl,
+    audioUrlHindi,
+    audioUrlHinglish,
+    audioUrlTamil,
+    audioUrlTelugu,
+    audioUrlMarathi,
+    audioUrlBengali,
+  ]);
 
   const isThisPlaying = isCurrentTrackActive && isPlaying;
   const isThisLoading = isCurrentTrackActive && isLoading;
@@ -235,8 +296,9 @@ export default function PodcastSection({
 
   const isFocused = useIsFocused();
 
+  // Keep miniplayer hidden whenever this podcast accordion is open and focused
   useEffect(() => {
-    if (isCurrentTrackActive && isFocused && isExpanded) {
+    if (isFocused && isExpanded && isCurrentTrackActive) {
       setAccordionExpanded(true);
     } else {
       setAccordionExpanded(false);
@@ -245,6 +307,53 @@ export default function PodcastSection({
       setAccordionExpanded(false);
     };
   }, [isExpanded, isCurrentTrackActive, isFocused, setAccordionExpanded]);
+
+  // Seamless Language Switch Listener
+  const prevLangRef = useRef(lang);
+  const prevAudioUrlRef = useRef(activeAudioUrl);
+
+  useEffect(() => {
+    if (isCurrentTrackActive && activeTrackInfo) {
+      const langChanged = lang !== prevLangRef.current;
+      const urlChanged = activeAudioUrl !== prevAudioUrlRef.current;
+
+      if ((langChanged || urlChanged) && activeAudioUrl) {
+        prevLangRef.current = lang;
+        prevAudioUrlRef.current = activeAudioUrl;
+
+        const isFallback = !isAudioAvailableInSelectedLang;
+        const langName = getLanguageName(lang);
+        const fallbackNotice = isFallback
+          ? `Podcast is not available in ${langName}. Playing in English.`
+          : null;
+
+        switchTrackAudio({
+          moduleId,
+          audioUrl: activeAudioUrl,
+          title: title ?? "Podcast Lesson",
+          rawTimeline,
+          transcript,
+          lang,
+          isFallbackLang: isFallback,
+          fallbackNotice,
+        });
+      }
+    } else {
+      prevLangRef.current = lang;
+      prevAudioUrlRef.current = activeAudioUrl;
+    }
+  }, [
+    lang,
+    activeAudioUrl,
+    isCurrentTrackActive,
+    activeTrackInfo,
+    moduleId,
+    title,
+    rawTimeline,
+    transcript,
+    isAudioAvailableInSelectedLang,
+    switchTrackAudio,
+  ]);
 
   const [showTranscript, setShowTranscript] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -283,13 +392,22 @@ export default function PodcastSection({
 
   const handlePlayPause = async () => {
     if (!activeAudioUrl) return;
-    if (!isCurrentTrackActive) {
+    if (!isCurrentTrackActive || activeTrackInfo?.audioUrl !== activeAudioUrl) {
+      const isFallback = !isAudioAvailableInSelectedLang;
+      const langName = getLanguageName(lang);
+      const fallbackNotice = isFallback
+        ? `Podcast is not available in ${langName}. Playing in English.`
+        : null;
+
       await playPodcast({
+        moduleId,
         audioUrl: activeAudioUrl,
         title: title ?? "Podcast Lesson",
         rawTimeline,
         transcript,
         lang,
+        isFallbackLang: isFallback,
+        fallbackNotice,
       });
     } else {
       await togglePlayPause();
@@ -319,13 +437,22 @@ export default function PodcastSection({
   const handleTranscriptTap = async (entry: TranscriptEntry, idx: number) => {
     setActiveIndex(idx);
     if (!activeAudioUrl) return;
-    if (!isCurrentTrackActive) {
+    if (!isCurrentTrackActive || activeTrackInfo?.audioUrl !== activeAudioUrl) {
+      const isFallback = !isAudioAvailableInSelectedLang;
+      const langName = getLanguageName(lang);
+      const fallbackNotice = isFallback
+        ? `Podcast is not available in ${langName}. Playing in English.`
+        : null;
+
       await playPodcast({
+        moduleId,
         audioUrl: activeAudioUrl,
         title: title ?? "Podcast Lesson",
         rawTimeline,
         transcript,
         lang,
+        isFallbackLang: isFallback,
+        fallbackNotice,
       });
     }
     await seekTo(entry.startSec);
@@ -367,6 +494,20 @@ export default function PodcastSection({
             </View>
           ) : (
             <>
+              {/* Fallback Notice Banner when language has no recording */}
+              {!isAudioAvailableInSelectedLang && activeAudioUrl && (
+                <View style={styles.fallbackNotice}>
+                  <MaterialCommunityIcons
+                    name="information-outline"
+                    size={16}
+                    color="#D97706"
+                  />
+                  <Text style={styles.fallbackNoticeText}>
+                    Podcast audio is not available in {getLanguageName(lang)}. Playing in English.
+                  </Text>
+                </View>
+              )}
+
               {/* Player card */}
               <View style={styles.playerCard}>
                 <View
@@ -734,5 +875,24 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
+  },
+  fallbackNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  fallbackNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#92400E",
+    fontWeight: "500",
+    lineHeight: 16,
   },
 });

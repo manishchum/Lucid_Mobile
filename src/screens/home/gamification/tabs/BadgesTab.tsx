@@ -185,7 +185,7 @@ const getDarkenedColor = (color: string) => {
     case "#10B981":
       return "#064E3B";
     default:
-      return "#1A1A24";
+      return "#E2E8F0";
   }
 };
 
@@ -757,10 +757,10 @@ export default function BadgesTab({ profile, isLoading }: Props) {
 const styles = StyleSheet.create({
   screenWrapper: {
     flex: 1,
-    backgroundColor: "#1A1A24",
+    backgroundColor: "#F8FAFC",
   },
   container: {
-    backgroundColor: "#1A1A24",
+    backgroundColor: "#F8FAFC",
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 20,
@@ -769,7 +769,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#1A1A24",
+    backgroundColor: "#F8FAFC",
   },
   header: {
     alignItems: "center",
@@ -783,19 +783,19 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   headerTitle: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 22,
     fontWeight: "900",
     letterSpacing: 0.5,
   },
   headerCount: {
-    color: "#F5D061",
+    color: "#D97706",
     fontSize: 28,
     fontWeight: "900",
     marginLeft: 4,
   },
   headerSubtitle: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 13,
     fontWeight: "600",
   },
@@ -815,7 +815,7 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   badgeName: {
-    color: "#E2E8F0",
+    color: "#1E293B",
     fontSize: 12,
     fontWeight: "700",
     textAlign: "center",
@@ -824,7 +824,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   badgeNameLocked: {
-    color: "#64748B",
+    color: "#94A3B8",
   },
   lockedCenterBadge: {
     flex: 1,
@@ -835,22 +835,22 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "rgba(26, 26, 36, 0.85)",
+    backgroundColor: "rgba(241, 245, 249, 0.9)",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderColor: "#CBD5E1",
     justifyContent: "center",
     alignItems: "center",
   },
   glowEffect: {
-    shadowColor: "#F5D061",
+    shadowColor: "#D97706",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 8,
-    elevation: 6,
+    elevation: 4,
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(10, 10, 16, 0.88)",
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
@@ -858,23 +858,24 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     maxWidth: 336,
-    backgroundColor: "#20202C",
+    backgroundColor: "#FFFFFF",
     borderRadius: 28,
     padding: 24,
     alignItems: "center",
     borderWidth: 1,
+    borderColor: "#E2E8F0",
     position: "relative",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.6,
+    shadowOpacity: 0.15,
     shadowRadius: 24,
     elevation: 12,
   },
   modalCardUnlocked: {
-    borderColor: "rgba(245, 208, 97, 0.35)",
+    borderColor: "rgba(217, 119, 6, 0.35)",
   },
   modalCardLocked: {
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "#E2E8F0",
   },
   modalCloseBtn: {
     position: "absolute",
@@ -883,7 +884,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
     zIndex: 10,
@@ -901,7 +902,7 @@ const styles = StyleSheet.create({
     borderRadius: 78,
   },
   modalHaloUnlocked: {
-    backgroundColor: "rgba(245, 208, 97, 0.14)",
+    backgroundColor: "rgba(245, 208, 97, 0.2)",
   },
   modalHaloLocked: {
     backgroundColor: "rgba(100, 116, 139, 0.08)",
@@ -920,7 +921,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   modalTitle: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 20,
     fontWeight: "900",
     textAlign: "center",
@@ -928,12 +929,12 @@ const styles = StyleSheet.create({
   },
   objectiveCard: {
     width: "100%",
-    backgroundColor: "#171722",
+    backgroundColor: "#F8FAFC",
     borderRadius: 16,
     padding: 14,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.06)",
+    borderColor: "#E2E8F0",
   },
   objectiveHeaderRow: {
     flexDirection: "row",
@@ -942,13 +943,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   objectiveHeaderTitle: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1,
   },
   modalDesc: {
-    color: "#E2E8F0",
+    color: "#334155",
     fontSize: 13,
     fontWeight: "500",
     lineHeight: 18,
@@ -978,18 +979,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    backgroundColor: "#F1F5F9",
     borderRadius: 16,
     padding: 12,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     marginBottom: 18,
   },
   lockedIconCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "#E2E8F0",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1002,30 +1003,28 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   unlockedBannerSub: {
-    color: "#6EE7B7",
+    color: "#059669",
     fontSize: 11,
     fontWeight: "500",
     marginTop: 1,
   },
   lockedBannerTitle: {
-    color: "#E2E8F0",
+    color: "#0F172A",
     fontSize: 13,
     fontWeight: "800",
   },
   lockedBannerSub: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 11,
     fontWeight: "500",
     marginTop: 1,
   },
   modalDoneBtn: {
     width: "100%",
-    backgroundColor: "#2C2C38",
+    backgroundColor: "#7C3AED",
     borderRadius: 16,
     paddingVertical: 13,
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.12)",
   },
   modalDoneBtnText: {
     color: "#FFFFFF",

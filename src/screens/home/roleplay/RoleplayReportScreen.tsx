@@ -11,10 +11,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { StackActions } from "@react-navigation/native";
 import Svg, { Circle } from "react-native-svg";
 import { RoleplayAssessment, RoleplaySession } from "../../../api/roleplay";
 import { STACK_ROUTES, APP_ROUTES } from "../../../navigations/Routes";
 import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
+import { eventBus } from "../../../utils/EventBus";
 
 // ── Clean SVG Circular Score Progress Ring ──────────────────────────────────────
 const ScoreRing = ({
@@ -122,11 +124,13 @@ export default function RoleplayReportScreen({
   };
 
   const handleBackToRoleplay = useCallback(() => {
+    eventBus.emit("refresh_roleplay");
+
     const routes = navigation.getState?.()?.routes || [];
     const hasRoleplay = routes.some((r: any) => r.name === STACK_ROUTES.ROLEPLAY);
 
-    if (hasRoleplay && typeof (navigation as any).popTo === "function") {
-      (navigation as any).popTo(STACK_ROUTES.ROLEPLAY);
+    if (hasRoleplay) {
+      navigation.dispatch(StackActions.popTo(STACK_ROUTES.ROLEPLAY));
     } else if (navigation.canGoBack()) {
       navigation.goBack();
     } else {

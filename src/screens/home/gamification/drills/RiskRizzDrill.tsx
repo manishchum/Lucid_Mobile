@@ -190,7 +190,7 @@ export default function RiskRizzDrill({
             {isMatched ? (
               <MaterialCommunityIcons name="check-circle" size={16} color="#10B981" />
             ) : isSelected ? (
-              <MaterialCommunityIcons name="radiobox-marked" size={16} color="#A855F7" />
+              <MaterialCommunityIcons name="radiobox-marked" size={16} color="#7C3AED" />
             ) : (
               <View style={styles.iconPlaceholder} />
             )}
@@ -209,7 +209,7 @@ export default function RiskRizzDrill({
             <MaterialCommunityIcons
               name="link-variant"
               size={16}
-              color={isAllMatched ? "#10B981" : "#A855F7"}
+              color={isAllMatched ? "#10B981" : "#7C3AED"}
             />
             <Text style={styles.progressLabel}>
               {isAllMatched ? "All Pairs Matched!" : "Match Risk & Mitigation"}
@@ -225,7 +225,7 @@ export default function RiskRizzDrill({
             <MaterialCommunityIcons
               name={isAllMatched ? "check-circle" : "checkbox-marked-circle-outline"}
               size={13}
-              color={isAllMatched ? "#10B981" : "#A855F7"}
+              color={isAllMatched ? "#10B981" : "#7C3AED"}
             />
             <Text
               style={[
@@ -270,7 +270,7 @@ export default function RiskRizzDrill({
         {/* Column Headers Row */}
         <View style={styles.columnHeaderRow}>
           <View style={styles.columnHeader}>
-            <MaterialCommunityIcons name="shield-alert-outline" size={13} color="#A855F7" />
+            <MaterialCommunityIcons name="shield-alert-outline" size={13} color="#7C3AED" />
             <Text style={styles.columnTitle}>RISK / SCENARIO</Text>
           </View>
           <View style={styles.columnHeader}>
@@ -314,29 +314,34 @@ const styles = StyleSheet.create({
 
   // Empty State Card
   emptyCard: {
-    backgroundColor: "#252532",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
   },
   emptyCardText: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 14,
     textAlign: "center",
   },
 
   // Progress Card
   progressCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 10,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   progressHeader: {
     flexDirection: "row",
@@ -349,7 +354,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   progressLabel: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -357,47 +362,47 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(168, 85, 247, 0.12)",
+    backgroundColor: "#FAF5FF",
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.28)",
+    borderColor: "#E9D5FF",
   },
   progressCounterPillCompleted: {
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
   },
   progressCounterText: {
-    color: "#A855F7",
+    color: "#7C3AED",
     fontSize: 12,
     fontWeight: "900",
   },
   progressCounterTextCompleted: {
-    color: "#10B981",
+    color: "#059669",
   },
   progressBarTrack: {
     height: 6,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "#E2E8F0",
     borderRadius: 3,
     overflow: "hidden",
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: "#A855F7",
+    backgroundColor: "#7C3AED",
     borderRadius: 3,
   },
   progressBarFillCompleted: {
     backgroundColor: "#10B981",
   },
   hintText: {
-    color: "#94A3B8",
+    color: "#475569",
     fontSize: 12,
     fontWeight: "500",
     lineHeight: 16,
   },
   hintTextError: {
-    color: "#F87171",
+    color: "#DC2626",
   },
 
   // Grid Layout
@@ -417,7 +422,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   columnTitle: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1.1,
@@ -431,15 +436,20 @@ const styles = StyleSheet.create({
   // Card Structure & Sizing (Uniform across Left & Right)
   itemCard: {
     flex: 1, // Exactly 50% width each (minus gap)
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     minHeight: 88, // Consistent uniform baseline height
     justifyContent: "center",
     overflow: "hidden",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
   itemCardDummy: {
     flex: 1,
@@ -452,7 +462,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   itemText: {
-    color: "#E2E8F0",
+    color: "#1E293B",
     fontSize: 12.5,
     fontWeight: "600",
     lineHeight: 17,
@@ -468,39 +478,39 @@ const styles = StyleSheet.create({
     height: 16,
   },
 
-  // Active Selected State (Clean Purple Accent without Android elevation artifact)
+  // Active Selected State
   itemCardSelected: {
-    backgroundColor: "#2E1F47",
-    borderColor: "#A855F7",
+    backgroundColor: "#FAF5FF",
+    borderColor: "#7C3AED",
     borderWidth: 2,
   },
   itemTextSelected: {
-    color: "#FFFFFF",
+    color: "#7C3AED",
     fontWeight: "700",
   },
 
   // Ready To Match State
   itemCardReadyToMatch: {
-    borderColor: "rgba(168, 85, 247, 0.28)",
+    borderColor: "#DDD6FE",
   },
 
   // Matched State (Subtle Emerald + Dimmed)
   itemCardMatched: {
-    backgroundColor: "rgba(16, 185, 129, 0.08)",
-    borderColor: "rgba(16, 185, 129, 0.3)",
-    opacity: 0.72,
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+    opacity: 0.8,
   },
   itemTextMatched: {
-    color: "#94A3B8",
+    color: "#059669",
   },
 
   // Error State (Red feedback)
   itemCardError: {
-    backgroundColor: "rgba(239, 68, 68, 0.16)",
+    backgroundColor: "#FEF2F2",
     borderColor: "#EF4444",
   },
   itemTextError: {
-    color: "#FCA5A5",
+    color: "#DC2626",
   },
 
   // Completed Notice
@@ -509,16 +519,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    backgroundColor: "#ECFDF5",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.25)",
+    borderColor: "#A7F3D0",
     marginTop: 2,
   },
   completedNoticeText: {
-    color: "#10B981",
+    color: "#059669",
     fontSize: 12,
     fontWeight: "700",
   },

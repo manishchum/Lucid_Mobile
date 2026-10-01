@@ -16,8 +16,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useIsFocused } from "@react-navigation/native";
+import { useIsFocused, StackActions } from "@react-navigation/native";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { LinearGradient } from "expo-linear-gradient";
 
 import {
   useAudioStream,
@@ -48,13 +49,30 @@ import { logger } from "../../../utils/UnifiedLogger";
 const EXPO_API_URL =
   process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
 
-// ── Mini Animated Wave Bars Component ──────────────────────────────────────────
-const AnimatedWaveBars = () => {
-  const bar1 = useRef(new Animated.Value(6)).current;
-  const bar2 = useRef(new Animated.Value(14)).current;
-  const bar3 = useRef(new Animated.Value(8)).current;
+// ── Dynamic 4-Bar Audio Waveform Visualizer ─────────────────────────────────
+const AnimatedWaveBars = ({
+  color = "#FFFFFF",
+  isAnimating = false,
+}: {
+  color?: string;
+  isAnimating?: boolean;
+}) => {
+  const bar1 = useRef(new Animated.Value(4)).current;
+  const bar2 = useRef(new Animated.Value(6)).current;
+  const bar3 = useRef(new Animated.Value(4)).current;
+  const bar4 = useRef(new Animated.Value(5)).current;
 
   useEffect(() => {
+    if (!isAnimating) {
+      Animated.parallel([
+        Animated.timing(bar1, { toValue: 4, duration: 180, useNativeDriver: false }),
+        Animated.timing(bar2, { toValue: 6, duration: 180, useNativeDriver: false }),
+        Animated.timing(bar3, { toValue: 4, duration: 180, useNativeDriver: false }),
+        Animated.timing(bar4, { toValue: 5, duration: 180, useNativeDriver: false }),
+      ]).start();
+      return;
+    }
+
     const createAnim = (val: Animated.Value, min: number, max: number, duration: number) => {
       return Animated.loop(
         Animated.sequence([
@@ -64,9 +82,81 @@ const AnimatedWaveBars = () => {
       );
     };
 
-    const a1 = createAnim(bar1, 4, 18, 300);
-    const a2 = createAnim(bar2, 6, 22, 380);
-    const a3 = createAnim(bar3, 4, 16, 340);
+    const a1 = createAnim(bar1, 4, 16, 260);
+    const a2 = createAnim(bar2, 6, 20, 340);
+    const a3 = createAnim(bar3, 4, 18, 300);
+    const a4 = createAnim(bar4, 5, 15, 380);
+
+    a1.start();
+    a2.start();
+    a3.start();
+    a4.start();
+
+    return () => {
+      a1.stop();
+      a2.stop();
+      a3.stop();
+      a4.stop();
+    };
+  }, [isAnimating]);
+
+  return (
+    <View style={waveStyles.container}>
+      <Animated.View style={[waveStyles.bar, { height: bar1, backgroundColor: color }]} />
+      <Animated.View style={[waveStyles.bar, { height: bar2, backgroundColor: color }]} />
+      <Animated.View style={[waveStyles.bar, { height: bar3, backgroundColor: color }]} />
+      <Animated.View style={[waveStyles.bar, { height: bar4, backgroundColor: color }]} />
+    </View>
+  );
+};
+
+// ── Multi-Layer Pulsing Ripple Rings for Avatar ──────────────────────────────
+const AvatarRippleRings = ({
+  isSpeaking,
+  isListening,
+  color,
+  children,
+}: {
+  isSpeaking: boolean;
+  isListening: boolean;
+  color: string;
+  children: React.ReactNode;
+}) => {
+  const pulse1 = useRef(new Animated.Value(0)).current;
+  const pulse2 = useRef(new Animated.Value(0)).current;
+  const pulse3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!isSpeaking && !isListening) {
+      pulse1.setValue(0);
+      pulse2.setValue(0);
+      pulse3.setValue(0);
+      return;
+    }
+
+    const duration = isSpeaking ? 1200 : 1800;
+
+    const createPulseLoop = (val: Animated.Value, delay: number) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(val, {
+            toValue: 1,
+            duration,
+            useNativeDriver: true,
+          }),
+          Animated.timing(val, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+    };
+
+    const a1 = createPulseLoop(pulse1, 0);
+    const a2 = createPulseLoop(pulse2, duration * 0.33);
+    const a3 = createPulseLoop(pulse3, duration * 0.66);
 
     a1.start();
     a2.start();
@@ -77,13 +167,50 @@ const AnimatedWaveBars = () => {
       a2.stop();
       a3.stop();
     };
-  }, []);
+  }, [isSpeaking, isListening]);
+
+  const ringStyle = (anim: Animated.Value, maxScale: number) => ({
+    transform: [
+      {
+        scale: anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, maxScale],
+        }),
+      },
+    ],
+    opacity: anim.interpolate({
+      inputRange: [0, 0.4, 1],
+      outputRange: [0.65, 0.35, 0],
+    }),
+  });
 
   return (
-    <View style={waveStyles.container}>
-      <Animated.View style={[waveStyles.bar, { height: bar1 }]} />
-      <Animated.View style={[waveStyles.bar, { height: bar2 }]} />
-      <Animated.View style={[waveStyles.bar, { height: bar3 }]} />
+    <View style={rippleStyles.wrapper}>
+      {/* Outer Pulse Ring 3 */}
+      <Animated.View
+        style={[
+          rippleStyles.ring,
+          { borderColor: color, backgroundColor: color },
+          ringStyle(pulse3, 1.45),
+        ]}
+      />
+      {/* Mid Pulse Ring 2 */}
+      <Animated.View
+        style={[
+          rippleStyles.ring,
+          { borderColor: color, backgroundColor: color },
+          ringStyle(pulse2, 1.3),
+        ]}
+      />
+      {/* Inner Pulse Ring 1 */}
+      <Animated.View
+        style={[
+          rippleStyles.ring,
+          { borderColor: color, backgroundColor: color },
+          ringStyle(pulse1, 1.15),
+        ]}
+      />
+      {children}
     </View>
   );
 };
@@ -93,13 +220,27 @@ const waveStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    marginRight: 6,
-    height: 22,
+    marginRight: 7,
+    height: 20,
   },
   bar: {
     width: 3,
-    backgroundColor: "#FFFFFF",
     borderRadius: 2,
+  },
+});
+
+const rippleStyles = StyleSheet.create({
+  wrapper: {
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  ring: {
+    position: "absolute",
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 1.5,
   },
 });
 
@@ -155,6 +296,7 @@ export default function RoleplaySessionScreen({
   const spokenTextsRef = useRef<Set<string>>(new Set());
   const soundRef = useRef<AudioPlayer | null>(null);
   const botAudioChunksRef = useRef<string[]>([]);
+  const userSpeakingTimerRef = useRef<any>(null);
 
   // Synchronize state to refs for high-frequency stream callbacks
   const isSessionActiveRef = useRef(false);
@@ -333,6 +475,12 @@ export default function RoleplaySessionScreen({
         const rms = Math.sqrt(sumSq / pcm16.length);
         if (rms < 0.005) {
           pcm16.fill(0);
+        } else if (rms >= 0.012 && !isBotSpeakingRef.current && isMicOnRef.current) {
+          setIsUserSpeaking(true);
+          if (userSpeakingTimerRef.current) clearTimeout(userSpeakingTimerRef.current);
+          userSpeakingTimerRef.current = setTimeout(() => {
+            setIsUserSpeaking(false);
+          }, 1200);
         }
 
         const uint8 = new Uint8Array(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
@@ -387,8 +535,8 @@ export default function RoleplaySessionScreen({
     };
   }, [isSessionActive, isFocused, stream]);
 
-  // ── Cancel Modal / Exit Before Starting ────────────────────────────────────
-  const handleCancelPrompt = useCallback(() => {
+  // ── Clean Up All Session Resources ─────────────────────────────────────────
+  const cleanupSessionResources = useCallback(() => {
     isEndingSessionRef.current = true;
     setIsSessionActive(false);
     setIsCameraOn(false);
@@ -411,9 +559,34 @@ export default function RoleplaySessionScreen({
       } catch {}
       soundRef.current = null;
     }
+    if (userSpeakingTimerRef.current) {
+      clearTimeout(userSpeakingTimerRef.current);
+      userSpeakingTimerRef.current = null;
+    }
+    setIsUserSpeaking(false);
+  }, [stream]);
+
+  // ── Navigate Safely Back to Roleplay Screen ─────────────────────────────────
+  const navigateBackToRoleplay = useCallback(() => {
+    cleanupSessionResources();
     setIsReadyPromptVisible(false);
-    navigation.navigate(STACK_ROUTES.ROLEPLAY as never);
-  }, [navigation, stream]);
+
+    const routes = navigation.getState?.()?.routes || [];
+    const hasRoleplay = routes.some((r: any) => r.name === STACK_ROUTES.ROLEPLAY);
+
+    if (hasRoleplay) {
+      navigation.dispatch(StackActions.popTo(STACK_ROUTES.ROLEPLAY));
+    } else if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate(STACK_ROUTES.ROLEPLAY as never);
+    }
+  }, [navigation, cleanupSessionResources]);
+
+  // ── Cancel Modal / Exit Before Starting ────────────────────────────────────
+  const handleCancelPrompt = useCallback(() => {
+    navigateBackToRoleplay();
+  }, [navigateBackToRoleplay]);
 
   // ── Hardware Back & Navigation Listeners ───────────────────────────────────
   const triggerDoublePressExit = useCallback(() => {
@@ -436,7 +609,7 @@ export default function RoleplaySessionScreen({
     const unsubscribeBeforeRemove = navigation.addListener("beforeRemove", (e: any) => {
       if (isEndingSessionRef.current) return;
       if (isReadyPromptVisible) {
-        handleCancelPrompt();
+        cleanupSessionResources();
         return;
       }
       e.preventDefault();
@@ -447,7 +620,7 @@ export default function RoleplaySessionScreen({
       backHandler.remove();
       unsubscribeBeforeRemove();
     };
-  }, [navigation, triggerDoublePressExit, isReadyPromptVisible, handleCancelPrompt]);
+  }, [navigation, triggerDoublePressExit, isReadyPromptVisible, handleCancelPrompt, cleanupSessionResources]);
 
   // ── Start Session & Initialize WebSocket (triggered by "Ready to Start?" modal) ──
   const handleStartSession = async () => {
@@ -752,13 +925,13 @@ export default function RoleplaySessionScreen({
       } else {
         setIsGeneratingAssessment(false);
         setIsEndModalVisible(false);
-        navigation.navigate(STACK_ROUTES.ROLEPLAY as never);
+        navigateBackToRoleplay();
       }
     } catch (err) {
       logger.error("[RoleplaySession] End session error:", err);
       setIsGeneratingAssessment(false);
       setIsEndModalVisible(false);
-      navigation.navigate(STACK_ROUTES.ROLEPLAY as never);
+      navigateBackToRoleplay();
     }
   };
 
@@ -770,6 +943,105 @@ export default function RoleplaySessionScreen({
 
   // Determine avatar initial letter
   const avatarLetter = (scenario?.role || "Vendor").trim().charAt(0).toUpperCase() || "L";
+
+  // ── Dynamic State Configuration for Immersive Agent Atmosphere ──────────────
+  const getAgentCardConfig = () => {
+    if (isBotSpeaking) {
+      return {
+        gradient: ["#3B1873", "#6D28D9", "#4338CA"] as const,
+        borderColor: "rgba(196, 181, 253, 0.5)",
+        accentColor: "#C4B5FD",
+        rippleColor: "rgba(167, 139, 250, 0.35)",
+        pillBg: "rgba(30, 15, 60, 0.7)",
+        pillBorder: "rgba(196, 181, 253, 0.4)",
+        pillText: "#EDE9FE",
+        avatarLetterColor: "#6D28D9",
+        statusLabel: "AI Speaking...",
+        statusBadgeText: "AI Talking",
+        statusBadgeIcon: "volume-high" as const,
+        isSpeaking: true,
+        isListening: false,
+        isAudioDetected: true,
+      };
+    }
+
+    if (isUserSpeaking) {
+      return {
+        gradient: ["#064E3B", "#047857", "#0D9488"] as const,
+        borderColor: "rgba(110, 231, 183, 0.55)",
+        accentColor: "#6EE7B7",
+        rippleColor: "rgba(52, 211, 153, 0.35)",
+        pillBg: "rgba(6, 40, 30, 0.7)",
+        pillBorder: "rgba(110, 231, 183, 0.45)",
+        pillText: "#D1FAE5",
+        avatarLetterColor: "#059669",
+        statusLabel: "Listening to you...",
+        statusBadgeText: "AI Listening",
+        statusBadgeIcon: "microphone" as const,
+        isSpeaking: false,
+        isListening: true,
+        isAudioDetected: true,
+      };
+    }
+
+    if (isSessionActive && !isConnecting && !isReadyPromptVisible) {
+      return {
+        gradient: ["#0F172A", "#134E4A", "#064E3B"] as const,
+        borderColor: "rgba(45, 212, 191, 0.35)",
+        accentColor: "#2DD4BF",
+        rippleColor: "rgba(45, 212, 191, 0.2)",
+        pillBg: "rgba(15, 23, 42, 0.7)",
+        pillBorder: "rgba(45, 212, 191, 0.35)",
+        pillText: "#CCFBF1",
+        avatarLetterColor: "#0F766E",
+        statusLabel: "Your turn • Listening",
+        statusBadgeText: "AI Listening",
+        statusBadgeIcon: "ear-hearing" as const,
+        isSpeaking: false,
+        isListening: true,
+        isAudioDetected: false,
+      };
+    }
+
+    if (isConnecting) {
+      return {
+        gradient: ["#1E1B4B", "#312E81", "#1E293B"] as const,
+        borderColor: "rgba(165, 180, 252, 0.3)",
+        accentColor: "#818CF8",
+        rippleColor: "rgba(129, 140, 248, 0.15)",
+        pillBg: "rgba(17, 24, 39, 0.7)",
+        pillBorder: "rgba(165, 180, 252, 0.25)",
+        pillText: "#E0E7FF",
+        avatarLetterColor: "#4F46E5",
+        statusLabel: "Connecting...",
+        statusBadgeText: "Connecting",
+        statusBadgeIcon: "robot-outline" as const,
+        isSpeaking: false,
+        isListening: false,
+        isAudioDetected: false,
+      };
+    }
+
+    // Standby / Waiting to start
+    return {
+      gradient: ["#0F172A", "#1E293B", "#111827"] as const,
+      borderColor: "rgba(255, 255, 255, 0.12)",
+      accentColor: "#94A3B8",
+      rippleColor: "transparent",
+      pillBg: "rgba(15, 23, 42, 0.7)",
+      pillBorder: "rgba(255, 255, 255, 0.15)",
+      pillText: "#94A3B8",
+      avatarLetterColor: "#475569",
+      statusLabel: "Waiting to start",
+      statusBadgeText: "AI Counterpart",
+      statusBadgeIcon: "robot-outline" as const,
+      isSpeaking: false,
+      isListening: false,
+      isAudioDetected: false,
+    };
+  };
+
+  const agentConfig = getAgentCardConfig();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -783,12 +1055,12 @@ export default function RoleplaySessionScreen({
               styles.statusDot,
               {
                 backgroundColor: isBotSpeaking
-                  ? "#F59E0B"
+                  ? "#8B5CF6"
                   : isUserSpeaking
-                  ? "#EF4444"
+                  ? "#10B981"
                   : isConnecting
                   ? "#3B82F6"
-                  : "#10B981",
+                  : "#64748B",
               },
             ]}
           />
@@ -800,59 +1072,108 @@ export default function RoleplaySessionScreen({
 
       {/* ── Main Two-Card Video Call Area (Image 4) ───────────────────────────── */}
       <View style={styles.mainArea}>
-        {/* Top Card: AI / Bot side */}
-        <View style={styles.botCard}>
+        {/* Top Card: AI / Bot side with Dynamic Adaptive Atmosphere */}
+        <LinearGradient
+          colors={agentConfig.gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.botCard, { borderColor: agentConfig.borderColor }]}
+        >
           {/* Floating Call Duration Badge in Top Right Corner */}
           <View style={styles.botCardTimerBadge}>
             <MaterialCommunityIcons name="timer-outline" size={13} color="#E0E7FF" />
             <Text style={styles.botCardTimerText}>{formatTimer(elapsedSeconds)}</Text>
           </View>
 
-          {/* Subtle background ambient rings */}
+          {/* Floating Live AI Persona / State Badge in Top Left Corner */}
+          <View style={styles.botCardRoleBadge}>
+            <MaterialCommunityIcons
+              name={agentConfig.statusBadgeIcon}
+              size={13}
+              color={agentConfig.accentColor}
+            />
+            <Text style={[styles.botCardRoleBadgeText, { color: agentConfig.accentColor }]}>
+              {agentConfig.statusBadgeText}
+            </Text>
+          </View>
+
+          {/* Central AI Avatar with Multi-Layer Ripple Rings */}
           <View style={styles.botContent}>
-            <Animated.View
+            <AvatarRippleRings
+              isSpeaking={isBotSpeaking}
+              isListening={isUserSpeaking}
+              color={agentConfig.rippleColor}
+            >
+              <View
+                style={[
+                  styles.avatarContainer,
+                  { borderColor: agentConfig.accentColor },
+                ]}
+              >
+                <View style={styles.avatarInner}>
+                  <Text style={[styles.avatarLetter, { color: agentConfig.avatarLetterColor }]}>
+                    {avatarLetter}
+                  </Text>
+                </View>
+              </View>
+            </AvatarRippleRings>
+
+            <Text style={styles.botRoleName} numberOfLines={2}>
+              {scenario?.role || "AI Evaluator"}
+            </Text>
+
+            {/* Elevated Dynamic Status Pill */}
+            <View
               style={[
-                styles.avatarContainer,
-                { transform: [{ scale: pulseAnim }] },
-                isBotSpeaking && styles.avatarSpeakingRing,
+                styles.speakingStatusPill,
+                {
+                  backgroundColor: agentConfig.pillBg,
+                  borderColor: agentConfig.pillBorder,
+                },
               ]}
             >
-              <View style={styles.avatarInner}>
-                <Text style={styles.avatarLetter}>{avatarLetter}</Text>
-              </View>
-            </Animated.View>
-
-            <Text style={styles.botRoleName}>{scenario?.role || "Vendor"}</Text>
-
-            {/* Speaking / Listening Status Row */}
-            <View style={styles.speakingStatusRow}>
-              {isBotSpeaking ? (
+              {agentConfig.isSpeaking ? (
                 <>
-                  <AnimatedWaveBars />
-                  <Text style={styles.speakingStatusText}>Speaking...</Text>
+                  <AnimatedWaveBars
+                    color="#FFFFFF"
+                    isAnimating={agentConfig.isAudioDetected}
+                  />
+                  <Text style={[styles.speakingStatusText, { color: agentConfig.pillText }]}>
+                    {agentConfig.statusLabel}
+                  </Text>
                 </>
-              ) : isUserSpeaking ? (
+              ) : agentConfig.isListening ? (
                 <>
-                  <View style={styles.userSpeakingDot} />
-                  <Text style={[styles.speakingStatusText, { color: "#FCA5A5" }]}>Listening...</Text>
+                  <AnimatedWaveBars
+                    color={agentConfig.accentColor}
+                    isAnimating={agentConfig.isAudioDetected}
+                  />
+                  <Text style={[styles.speakingStatusText, { color: agentConfig.pillText }]}>
+                    {agentConfig.statusLabel}
+                  </Text>
                 </>
               ) : isConnecting ? (
                 <>
                   <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.speakingStatusText}>Connecting...</Text>
+                  <Text style={[styles.speakingStatusText, { color: agentConfig.pillText }]}>
+                    {agentConfig.statusLabel}
+                  </Text>
                 </>
-              ) : !isReadyPromptVisible ? (
-                <Text style={styles.speakingStatusText}>Ready</Text>
               ) : (
-                <Text style={styles.speakingStatusText}>Waiting to start</Text>
+                <>
+                  <View style={[styles.standbyDot, { backgroundColor: agentConfig.accentColor }]} />
+                  <Text style={[styles.speakingStatusText, { color: agentConfig.pillText }]}>
+                    {agentConfig.statusLabel}
+                  </Text>
+                </>
               )}
             </View>
 
             <Text style={styles.botMetaText}>
-              {scenario?.difficulty || "Easy"} Difficulty • {scenario?.tone || "Friendly"} Tone
+              {scenario?.difficulty || "Medium"} Difficulty • {scenario?.tone || "Professional"} Tone
             </Text>
           </View>
-        </View>
+        </LinearGradient>
 
         {/* Bottom Card: User Camera preview side */}
         <View style={styles.userCard}>
@@ -932,7 +1253,7 @@ export default function RoleplaySessionScreen({
         </TouchableOpacity>
       </View>
 
-      {/* ── Ready to Start? Prompt Modal (Image 3) ────────────────────────────── */}
+      {/* ── Ready to Start? Prompt Modal ───────────────── */}
       <Modal
         visible={isReadyPromptVisible && !isGeneratingAssessment}
         transparent
@@ -942,49 +1263,87 @@ export default function RoleplaySessionScreen({
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.promptCard}>
-            {/* Top Purple Mic Badge */}
-            <View style={styles.promptIconCircle}>
-              <MaterialCommunityIcons name="microphone" size={32} color="#7C3AED" />
+
+            {/* Glowing Hero Icon Badge */}
+            <View style={styles.promptIconOuterRing}>
+              <View style={styles.promptIconCircle}>
+                <MaterialCommunityIcons name="account-voice" size={30} color="#FFFFFF" />
+              </View>
+            </View>
+
+            {/* Status Pill */}
+            <View style={styles.promptStatusPill}>
+              <View style={styles.promptStatusDot} />
+              <Text style={styles.promptStatusText}>AI Audio Ready</Text>
             </View>
 
             {/* Title */}
-            <Text style={styles.promptTitle}>Ready to Start?</Text>
+            <Text style={styles.promptTitle}>Ready to Practice?</Text>
 
-            {/* Subtitle */}
-            <Text style={styles.promptBody}>
-              Click the button to begin your speech-to-speech role-play. The bot will speak first, then listen to you!
+            {/* Scenario Subtitle */}
+            <Text style={styles.promptScenarioTitle} numberOfLines={1}>
+              {scenario?.title || "Sales & Communication Roleplay"}
             </Text>
 
-            {/* Button Actions: Cancel & Start */}
-            <View style={styles.promptButtonRow}>
-              <TouchableOpacity
-                style={styles.promptCancelBtn}
-                onPress={handleCancelPrompt}
-                activeOpacity={0.7}
-                disabled={isStartingSession}
-              >
-                <Text style={styles.promptCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
+            {/* Flow Description */}
+            <Text style={styles.promptBody}>
+              The AI will greet you first. Once they finish speaking, respond naturally just like a real phone or video call.
+            </Text>
 
-              <TouchableOpacity
-                style={styles.promptActionBtn}
-                onPress={handleStartSession}
-                activeOpacity={0.85}
-                disabled={isStartingSession}
-              >
-                {isStartingSession ? (
-                  <View style={styles.startingRow}>
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                    <Text style={styles.promptActionBtnText}>Starting...</Text>
-                  </View>
-                ) : (
-                  <View style={styles.startingRow}>
-                    <MaterialCommunityIcons name="microphone" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.promptActionBtnText}>Start</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
+            {/* Pre-Flight Environment Checklist */}
+            <View style={styles.promptChecklistCard}>
+              <View style={styles.checkItem}>
+                <View style={styles.checkIconBox}>
+                  <MaterialCommunityIcons name="wifi-check" size={16} color="#4F46E5" />
+                </View>
+                <View style={styles.checkTextBox}>
+                  <Text style={styles.checkTitle}>High-Speed Internet Zone</Text>
+                  <Text style={styles.checkSub}>Fast, stable network for zero speech lag</Text>
+                </View>
+              </View>
+
+              <View style={styles.checkDivider} />
+
+              <View style={styles.checkItem}>
+                <View style={styles.checkIconBox}>
+                  <MaterialCommunityIcons name="volume-off" size={16} color="#4F46E5" />
+                </View>
+                <View style={styles.checkTextBox}>
+                  <Text style={styles.checkTitle}>Quiet & Closed Space</Text>
+                  <Text style={styles.checkSub}>Low ambient noise so the AI captures your voice</Text>
+                </View>
+              </View>
             </View>
+
+            {/* Start Button */}
+            <TouchableOpacity
+              style={[styles.promptActionBtn, isStartingSession && styles.promptActionBtnDisabled]}
+              onPress={handleStartSession}
+              activeOpacity={0.85}
+              disabled={isStartingSession}
+            >
+              {isStartingSession ? (
+                <View style={styles.startingRow}>
+                  <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.promptActionBtnText}>Connecting to AI...</Text>
+                </View>
+              ) : (
+                <View style={styles.startingRow}>
+                  <MaterialCommunityIcons name="play-circle" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.promptActionBtnText}>Start Conversation</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Subtle Cancel / Go Back */}
+            <TouchableOpacity
+              style={styles.promptSecondaryBtn}
+              onPress={handleCancelPrompt}
+              activeOpacity={0.7}
+              disabled={isStartingSession}
+            >
+              <Text style={styles.promptSecondaryBtnText}>Not now, go back</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1161,32 +1520,55 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
-  // Top Card: Bot side (Purple Gradient Feel)
+  // Top Card: Bot side with Dynamic Adaptive Atmosphere
   botCard: {
     flex: 1,
-    backgroundColor: "#7C3AED",
-    borderRadius: 16,
+    borderRadius: 20,
+    borderWidth: 1.5,
     overflow: "hidden",
     justifyContent: "center",
     alignItems: "center",
     padding: 16,
+    position: "relative",
+  },
+  botCardRoleBadge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    gap: 5,
+    zIndex: 10,
+  },
+  botCardRoleBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
   botContent: {
     alignItems: "center",
     justifyContent: "center",
+    width: "100%",
   },
   avatarContainer: {
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    backgroundColor: "rgba(255, 255, 255, 0.22)",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
-  },
-  avatarSpeakingRing: {
-    borderWidth: 4,
-    borderColor: "rgba(255, 255, 255, 0.6)",
+    borderWidth: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
   },
   avatarInner: {
     width: 82,
@@ -1201,38 +1583,50 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   avatarLetter: {
-    fontSize: 42,
+    fontSize: 40,
     fontWeight: "800",
-    color: "#7C3AED",
   },
   botRoleName: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 19,
+    fontWeight: "800",
     color: "#FFFFFF",
-    marginBottom: 4,
+    marginBottom: 6,
+    textAlign: "center",
+    maxWidth: "88%",
+    letterSpacing: -0.2,
   },
-  speakingStatusRow: {
+  speakingStatusPill: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 6,
-    height: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 8,
+    marginTop: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
   speakingStatusText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#F3E8FF",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
-  userSpeakingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#EF4444",
+  standbyDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
     marginRight: 6,
   },
   botMetaText: {
     fontSize: 12,
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "rgba(255, 255, 255, 0.75)",
+    fontWeight: "500",
+    marginTop: 2,
   },
 
   // Bottom Card: User Camera side
@@ -1320,76 +1714,166 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  // ── Ready to Start? Prompt Modal (Image 3) ──────────────────────────────────
+  // ── Ready to Start? Prompt Modal ───────────────────────────────────────────
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.65)",
+    backgroundColor: "rgba(15, 23, 42, 0.72)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
+    padding: 20,
   },
   promptCard: {
     width: "100%",
     maxWidth: 360,
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
-    padding: 24,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 14,
     alignItems: "center",
+    position: "relative",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  promptCloseBtn: {
+    position: "absolute",
+    top: 14,
+    right: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
+  },
+  promptIconOuterRing: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
   },
   promptIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#EDE9FE",
-    justifyContent: "center",
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#4F46E5",
     alignItems: "center",
-    marginBottom: 16,
+    justifyContent: "center",
+    shadowColor: "#4F46E5",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  promptTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginBottom: 10,
-    textAlign: "center",
-  },
-  promptBody: {
-    fontSize: 14,
-    color: "#64748B",
-    textAlign: "center",
-    lineHeight: 21,
-    marginBottom: 24,
-  },
-  promptButtonRow: {
+  promptStatusPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    width: "100%",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    gap: 6,
+    marginBottom: 8,
   },
-  promptCancelBtn: {
-    flex: 1,
-    height: 50,
-    backgroundColor: "#EF4444",
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
+  promptStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#10B981",
   },
-  promptCancelBtnText: {
-    color: "#FFFFFF",
-    fontSize: 15,
+  promptStatusText: {
+    fontSize: 11.5,
     fontWeight: "700",
+    color: "#059669",
+  },
+  promptTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0F172A",
+    textAlign: "center",
+    marginBottom: 2,
+  },
+  promptScenarioTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#4F46E5",
+    textAlign: "center",
+    marginBottom: 8,
+    paddingHorizontal: 8,
+  },
+  promptBody: {
+    fontSize: 12.5,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 14,
+    paddingHorizontal: 4,
+  },
+  promptChecklistCard: {
+    width: "100%",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 12,
+    marginBottom: 16,
+    gap: 8,
+  },
+  checkItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  checkIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkTextBox: {
+    flex: 1,
+  },
+  checkTitle: {
+    fontSize: 12.5,
+    fontWeight: "700",
+    color: "#1E293B",
+  },
+  checkSub: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 1,
+  },
+  checkDivider: {
+    height: 1,
+    backgroundColor: "#EDF2F7",
   },
   promptActionBtn: {
-    flex: 1.4,
-    height: 50,
+    width: "100%",
+    height: 48,
     backgroundColor: "#4F46E5",
     borderRadius: 14,
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#4F46E5",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+    marginBottom: 4,
+  },
+  promptActionBtnDisabled: {
+    opacity: 0.75,
   },
   promptActionBtnText: {
     color: "#FFFFFF",
@@ -1400,6 +1884,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+  },
+  promptSecondaryBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  promptSecondaryBtnText: {
+    color: "#64748B",
+    fontSize: 12.5,
+    fontWeight: "600",
   },
 
   // ── End Session Confirmation Modal (Themed replacement for Image 2) ────────

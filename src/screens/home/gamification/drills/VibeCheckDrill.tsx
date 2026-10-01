@@ -86,16 +86,16 @@ export default function VibeCheckDrill({
         ]}
       >
         <View style={styles.scenarioHeader}>
-          <MaterialCommunityIcons name="format-quote-open" size={24} color="#A855F7" />
+          <MaterialCommunityIcons name="format-quote-open" size={24} color="#7C3AED" />
           <Text style={styles.scenarioHeaderLabel}>SCENARIO</Text>
         </View>
 
         <Text style={styles.scenarioText}>{scenario}</Text>
 
-        {/* Error Feedback Message (Dark theme, gentle warning) */}
+        {/* Error Feedback Message (Light theme warning) */}
         {errorMessage ? (
           <View style={styles.errorNotice}>
-            <MaterialCommunityIcons name="alert-circle-outline" size={15} color="#EF4444" />
+            <MaterialCommunityIcons name="alert-circle-outline" size={15} color="#DC2626" />
             <Text style={styles.errorNoticeText}>{errorMessage}</Text>
           </View>
         ) : null}
@@ -191,39 +191,44 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(168, 85, 247, 0.14)",
+    backgroundColor: "#FAF5FF",
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.3)",
+    borderColor: "#E9D5FF",
   },
   formatTagText: {
-    color: "#C084FC",
+    color: "#7C3AED",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.8,
   },
   objectiveText: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 11,
     fontWeight: "500",
   },
 
   // Scenario Card
   scenarioCard: {
-    backgroundColor: "#252532",
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 12,
     minHeight: 160,
     justifyContent: "center",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   scenarioCardError: {
     borderColor: "#EF4444",
-    backgroundColor: "rgba(239, 68, 68, 0.08)",
+    backgroundColor: "#FEF2F2",
   },
   scenarioHeader: {
     flexDirection: "row",
@@ -231,13 +236,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   scenarioHeaderLabel: {
-    color: "#A855F7",
+    color: "#7C3AED",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 1.2,
   },
   scenarioText: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 17,
     fontWeight: "600",
     lineHeight: 26,
@@ -247,14 +252,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    backgroundColor: "#FEF2F2",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FECACA",
     marginTop: 4,
   },
   errorNoticeText: {
-    color: "#FCA5A5",
+    color: "#DC2626",
     fontSize: 12,
     fontWeight: "600",
     flex: 1,
@@ -267,7 +274,7 @@ const styles = StyleSheet.create({
   },
   choiceCard: {
     flex: 1,
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 18,
     paddingVertical: 22,
     paddingHorizontal: 16,
@@ -275,15 +282,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
 
   // TRUE Styling
   choiceCardTrue: {
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    borderColor: "#A7F3D0",
   },
   choiceCardTrueSelected: {
-    backgroundColor: "rgba(16, 185, 129, 0.18)",
+    backgroundColor: "#ECFDF5",
     borderColor: "#10B981",
   },
   choiceIconCircle: {
@@ -294,7 +306,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   choiceIconCircleTrue: {
-    backgroundColor: "rgba(16, 185, 129, 0.14)",
+    backgroundColor: "#ECFDF5",
   },
   choiceIconCircleTrueSelected: {
     backgroundColor: "#10B981",
@@ -302,14 +314,14 @@ const styles = StyleSheet.create({
 
   // FALSE Styling
   choiceCardFalse: {
-    borderColor: "rgba(244, 63, 94, 0.3)",
+    borderColor: "#FECDD3",
   },
   choiceCardFalseSelected: {
-    backgroundColor: "rgba(244, 63, 94, 0.18)",
+    backgroundColor: "#FFF1F2",
     borderColor: "#F43F5E",
   },
   choiceIconCircleFalse: {
-    backgroundColor: "rgba(244, 63, 94, 0.14)",
+    backgroundColor: "#FFF1F2",
   },
   choiceIconCircleFalseSelected: {
     backgroundColor: "#F43F5E",
@@ -322,13 +334,13 @@ const styles = StyleSheet.create({
 
   // Typography
   choiceTitle: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 16,
     fontWeight: "900",
     letterSpacing: 1,
   },
   choiceSubtitle: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 11,
     fontWeight: "600",
   },
@@ -339,15 +351,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    backgroundColor: "#ECFDF5",
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.25)",
+    borderColor: "#A7F3D0",
   },
   completedNoticeText: {
-    color: "#10B981",
+    color: "#059669",
     fontSize: 12,
     fontWeight: "700",
   },

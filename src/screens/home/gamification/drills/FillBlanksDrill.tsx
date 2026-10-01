@@ -212,7 +212,7 @@ export default function FillBlanksDrill({
             <MaterialCommunityIcons
               name="text-box-edit-outline"
               size={16}
-              color={isCompleted ? "#10B981" : "#A855F7"}
+              color={isCompleted ? "#10B981" : "#7C3AED"}
             />
             <Text style={styles.progressLabel}>
               {isCompleted ? "Drill Completed" : "Fill In The Blanks"}
@@ -228,7 +228,7 @@ export default function FillBlanksDrill({
             <MaterialCommunityIcons
               name={isAllFilled ? "check-circle" : "circle-edit-outline"}
               size={13}
-              color={isAllFilled ? "#10B981" : "#A855F7"}
+              color={isAllFilled ? "#10B981" : "#7C3AED"}
             />
             <Text
               style={[
@@ -261,7 +261,7 @@ export default function FillBlanksDrill({
         ]}
       >
         <View style={styles.passageHeaderRow}>
-          <MaterialCommunityIcons name="format-quote-open" size={20} color="#A855F7" />
+          <MaterialCommunityIcons name="format-quote-open" size={20} color="#7C3AED" />
           <Text style={styles.passageHeaderLabel}>STATEMENT / PASSAGE</Text>
         </View>
 
@@ -317,7 +317,7 @@ export default function FillBlanksDrill({
       {!isCompleted && options.length > 0 && (
         <View style={styles.wordBankSection}>
           <View style={styles.wordBankHeader}>
-            <MaterialCommunityIcons name="format-list-bulleted-type" size={14} color="#A855F7" />
+            <MaterialCommunityIcons name="format-list-bulleted-type" size={14} color="#7C3AED" />
             <Text style={styles.wordBankTitle}>WORD BANK</Text>
             <Text style={styles.wordBankSub}>
               (Tap word to place into Blank {activeBlankIndex + 1})
@@ -389,7 +389,7 @@ export default function FillBlanksDrill({
           <MaterialCommunityIcons
             name={isAllFilled ? "check-bold" : "dots-horizontal"}
             size={18}
-            color={isAllFilled ? "#FFFFFF" : "#64748B"}
+            color={isAllFilled ? "#FFFFFF" : "#94A3B8"}
           />
           <Text
             style={[
@@ -413,29 +413,34 @@ const styles = StyleSheet.create({
 
   // Empty Card
   emptyCard: {
-    backgroundColor: "#252532",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
   },
   emptyCardText: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 14,
     textAlign: "center",
   },
 
   // Progress Card
   progressCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 10,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   progressHeader: {
     flexDirection: "row",
@@ -448,7 +453,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   progressLabel: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -456,47 +461,52 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(168, 85, 247, 0.12)",
+    backgroundColor: "#FAF5FF",
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.28)",
+    borderColor: "#E9D5FF",
   },
   progressCounterPillCompleted: {
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
   },
   progressCounterText: {
-    color: "#A855F7",
+    color: "#7C3AED",
     fontSize: 12,
     fontWeight: "900",
   },
   progressCounterTextCompleted: {
-    color: "#10B981",
+    color: "#059669",
   },
   hintText: {
-    color: "#94A3B8",
+    color: "#475569",
     fontSize: 12,
     fontWeight: "500",
     lineHeight: 16,
   },
   hintTextError: {
-    color: "#F87171",
+    color: "#DC2626",
   },
 
   // Main Passage Card
   passageCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 18,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 14,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   passageCardError: {
     borderColor: "#EF4444",
-    backgroundColor: "rgba(239, 68, 68, 0.08)",
+    backgroundColor: "#FEF2F2",
   },
   passageHeaderRow: {
     flexDirection: "row",
@@ -504,7 +514,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   passageHeaderLabel: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 10,
     fontWeight: "900",
     letterSpacing: 1.2,
@@ -513,36 +523,36 @@ const styles = StyleSheet.create({
     lineHeight: 32,
   },
   normalText: {
-    color: "#E2E8F0",
+    color: "#0F172A",
     fontSize: 15,
     fontWeight: "500",
   },
 
   // Blank Interactive Slots
   blankSlot: {
-    color: "#A855F7",
+    color: "#7C3AED",
     fontSize: 14.5,
     fontWeight: "700",
-    backgroundColor: "rgba(168, 85, 247, 0.10)",
+    backgroundColor: "#FAF5FF",
     borderWidth: 1.5,
-    borderColor: "rgba(168, 85, 247, 0.35)",
+    borderColor: "#DDD6FE",
     borderRadius: 8,
     overflow: "hidden",
   },
   blankSlotActive: {
     color: "#FFFFFF",
-    backgroundColor: "#2E1F47",
-    borderColor: "#A855F7",
+    backgroundColor: "#7C3AED",
+    borderColor: "#6D28D9",
     fontWeight: "800",
   },
   blankSlotFilled: {
-    color: "#10B981",
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    borderColor: "rgba(16, 185, 129, 0.4)",
+    color: "#059669",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
     fontWeight: "700",
   },
   blankSlotCompleted: {
-    color: "#10B981",
+    color: "#059669",
     borderColor: "#10B981",
   },
 
@@ -551,21 +561,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    backgroundColor: "#F8FAFC",
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.06)",
+    borderColor: "#E2E8F0",
   },
   clearBarLabel: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 12,
     fontWeight: "500",
     flex: 1,
   },
   clearBarAnswer: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontWeight: "700",
   },
   clearBtn: {
@@ -575,10 +585,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    backgroundColor: "#FEE2E2",
   },
   clearBtnText: {
-    color: "#FCA5A5",
+    color: "#DC2626",
     fontSize: 11,
     fontWeight: "700",
   },
@@ -594,13 +604,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   wordBankTitle: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1.1,
   },
   wordBankSub: {
-    color: "#64748B",
+    color: "#94A3B8",
     fontSize: 11,
     fontWeight: "500",
   },
@@ -613,42 +623,49 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
   optionChipActive: {
-    backgroundColor: "#2E1F47",
-    borderColor: "#A855F7",
+    backgroundColor: "#FAF5FF",
+    borderColor: "#7C3AED",
   },
   optionChipUsed: {
-    backgroundColor: "rgba(36, 36, 48, 0.6)",
-    borderColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: "#F8FAFC",
+    borderColor: "#E2E8F0",
     opacity: 0.6,
   },
   optionChipText: {
-    color: "#E2E8F0",
+    color: "#1E293B",
     fontSize: 13,
     fontWeight: "700",
   },
   optionChipTextActive: {
-    color: "#FFFFFF",
+    color: "#7C3AED",
     fontWeight: "800",
   },
   optionChipTextUsed: {
     color: "#94A3B8",
   },
   usedBadge: {
-    backgroundColor: "rgba(168, 85, 247, 0.2)",
+    backgroundColor: "#FAF5FF",
+    borderWidth: 1,
+    borderColor: "#E9D5FF",
     paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: 5,
   },
   usedBadgeText: {
-    color: "#C084FC",
+    color: "#7C3AED",
     fontSize: 9,
     fontWeight: "800",
   },
@@ -659,18 +676,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: "#A855F7",
+    backgroundColor: "#7C3AED",
     borderRadius: 14,
     paddingVertical: 15,
-    shadowColor: "#A855F7",
+    shadowColor: "#7C3AED",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 8,
+    elevation: 3,
   },
   submitBtnDisabled: {
-    backgroundColor: "#242430",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     shadowOpacity: 0,
     elevation: 0,
   },
@@ -681,7 +699,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   submitBtnTextDisabled: {
-    color: "#64748B",
+    color: "#94A3B8",
   },
 
   // Completed Banner
@@ -690,15 +708,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    backgroundColor: "#ECFDF5",
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.25)",
+    borderColor: "#A7F3D0",
   },
   completedNoticeText: {
-    color: "#10B981",
+    color: "#059669",
     fontSize: 13,
     fontWeight: "700",
   },

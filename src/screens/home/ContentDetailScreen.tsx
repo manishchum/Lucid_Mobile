@@ -212,14 +212,33 @@ export default function ContentDetailScreen({ route, navigation }: any) {
             />
 
             <PodcastSection
+              moduleId={primaryModule?.processed_module_id || primaryModule?.original_module_id || originalModuleId}
               title={primaryModule?.title ?? moduleTitle ?? "Podcast Lesson"}
               isExpanded={expanded === 'podcast'}
               onToggle={() => toggle('podcast')}
               lang={lang}
               audioUrl={primaryModule?.audio_url ?? null}
+              audioUrlHindi={
+                primaryModule?.audio_url_hindi ??
+                primaryModule?.audio_url_hinglish ??
+                null
+              }
               audioUrlHinglish={primaryModule?.audio_url_hinglish ?? null}
+              audioUrlTamil={primaryModule?.audio_url_tamil ?? null}
+              audioUrlTelugu={primaryModule?.audio_url_telugu ?? null}
+              audioUrlMarathi={primaryModule?.audio_url_marathi ?? null}
+              audioUrlBengali={primaryModule?.audio_url_bengali ?? null}
               podcastTimeline={primaryModule?.podcast_timeline ?? null}
+              podcastTimelineHindi={
+                primaryModule?.podcast_timeline_hindi ??
+                primaryModule?.podcast_timeline_hinglish ??
+                null
+              }
               podcastTimelineHinglish={primaryModule?.podcast_timeline_hinglish ?? null}
+              podcastTimelineTamil={primaryModule?.podcast_timeline_tamil ?? null}
+              podcastTimelineTelugu={primaryModule?.podcast_timeline_telugu ?? null}
+              podcastTimelineMarathi={primaryModule?.podcast_timeline_marathi ?? null}
+              podcastTimelineBengali={primaryModule?.podcast_timeline_bengali ?? null}
               transcript={primaryModule?.podcast_transcript ?? null}
             />
 

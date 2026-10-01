@@ -204,7 +204,7 @@ export default function GamificationHubScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={GC.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor={GC.surface} />
 
       {/* Animated entry wrapper */}
       <Animated.View
@@ -221,7 +221,7 @@ export default function GamificationHubScreen() {
           {/* Left: ARENA Branding */}
           <View style={styles.headerLeft}>
             <View style={styles.arenaIconBadge}>
-              <MaterialCommunityIcons name="gamepad-variant" size={18} color="#A855F7" />
+              <MaterialCommunityIcons name="gamepad-variant" size={18} color="#7C3AED" />
             </View>
             <Text style={styles.headerTitle}>ARENA</Text>
           </View>
@@ -366,7 +366,7 @@ export default function GamificationHubScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#1A1A24",
+    backgroundColor: GC.bg,
   },
   contentWrapper: {
     flex: 1,
@@ -377,9 +377,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingBottom: 12,
-    backgroundColor: "#1A1A24",
+    backgroundColor: GC.surface,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    borderBottomColor: GC.border,
   },
   headerLeft: {
     flexDirection: "row",
@@ -390,14 +390,14 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 9,
-    backgroundColor: "rgba(168, 85, 247, 0.14)",
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.28)",
+    borderColor: "rgba(124, 58, 237, 0.2)",
     justifyContent: "center",
     alignItems: "center",
   },
   headerTitle: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 15,
     fontWeight: "900",
     letterSpacing: 2.5,
@@ -411,15 +411,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#2C2C35",
+    backgroundColor: "#FFF7ED",
     borderRadius: 20,
     paddingHorizontal: 9,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#FFEDD5",
   },
   streakPillText: {
-    color: "#FFFFFF",
+    color: "#C2410C",
     fontSize: 12,
     fontWeight: "800",
   },
@@ -430,15 +430,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#2C2C35",
+    backgroundColor: "#FAF5FF",
     borderRadius: 20,
     paddingHorizontal: 9,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#F3E8FF",
   },
   xpPillText: {
-    color: "#FFFFFF",
+    color: "#7C3AED",
     fontSize: 12,
     fontWeight: "800",
   },
@@ -446,8 +446,8 @@ const styles = StyleSheet.create({
   bottomNav: {
     flexDirection: "row",
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.08)",
-    backgroundColor: "#1A1A24",
+    borderTopColor: GC.border,
+    backgroundColor: GC.surface,
     paddingTop: 8,
     paddingHorizontal: 8,
   },
@@ -466,7 +466,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   tabIconWrapActive: {
-    backgroundColor: "rgba(168, 85, 247, 0.16)",
+    backgroundColor: "rgba(124, 58, 237, 0.12)",
   },
   tabLabel: {
     fontSize: 11,
@@ -475,12 +475,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   tabLabelActive: {
-    color: "#A855F7",
+    color: "#7C3AED",
     fontWeight: "800",
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(10, 10, 16, 0.78)",
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 24,
@@ -488,38 +488,38 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     maxWidth: 340,
-    backgroundColor: "#22222E",
+    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: GC.border,
     padding: 24,
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.6,
-    shadowRadius: 28,
-    elevation: 24,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 12,
   },
   modalIconWrap: {
     width: 60,
     height: 60,
     borderRadius: 20,
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
     borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.25)",
+    borderColor: "rgba(239, 68, 68, 0.2)",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
   },
   modalTitle: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 20,
     fontWeight: "900",
     letterSpacing: 0.4,
     textAlign: "center",
   },
   modalDesc: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 13,
     lineHeight: 20,
     textAlign: "center",
@@ -537,14 +537,14 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 46,
     borderRadius: 14,
-    backgroundColor: "#2C2C35",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     justifyContent: "center",
     alignItems: "center",
   },
   modalStayText: {
-    color: "#CBD5E1",
+    color: "#334155",
     fontSize: 14,
     fontWeight: "700",
   },
@@ -558,7 +558,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     shadowColor: "#EF4444",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 4,
   },

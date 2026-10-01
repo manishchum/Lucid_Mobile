@@ -137,7 +137,7 @@ export default function SpeedRunDrill({
             <MaterialCommunityIcons
               name="lightning-bolt"
               size={16}
-              color={isCompleted ? "#10B981" : "#F59E0B"}
+              color={isCompleted ? "#10B981" : "#D97706"}
             />
             <Text style={styles.timerTitle} numberOfLines={1}>
               {isCompleted ? "Speed Run Cleared!" : "Speed Run Challenge"}
@@ -188,7 +188,7 @@ export default function SpeedRunDrill({
         ]}
       >
         <View style={styles.questionHeaderRow}>
-          <MaterialCommunityIcons name="help-circle-outline" size={16} color="#A855F7" />
+          <MaterialCommunityIcons name="help-circle-outline" size={16} color="#7C3AED" />
           <Text style={styles.questionHeaderLabel}>QUESTION / SCENARIO</Text>
         </View>
 
@@ -296,29 +296,34 @@ const styles = StyleSheet.create({
 
   // Empty Card
   emptyCard: {
-    backgroundColor: "#252532",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
   },
   emptyCardText: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 14,
     textAlign: "center",
   },
 
   // Timer Card
   timerCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 10,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   timerHeader: {
     flexDirection: "row",
@@ -334,7 +339,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   timerTitle: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -342,12 +347,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "#F8FAFC",
     paddingHorizontal: 8,
     paddingVertical: 4.5,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "#E2E8F0",
     flexShrink: 0,
   },
   timerBadgeText: {
@@ -356,7 +361,7 @@ const styles = StyleSheet.create({
   },
   progressBarTrack: {
     height: 6,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "#E2E8F0",
     borderRadius: 3,
     overflow: "hidden",
   },
@@ -365,29 +370,34 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   hintText: {
-    color: "#94A3B8",
+    color: "#475569",
     fontSize: 12,
     fontWeight: "500",
     lineHeight: 16,
   },
   hintTextError: {
-    color: "#F87171",
+    color: "#DC2626",
   },
 
   // Question Card
   questionCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 18,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 12,
     minHeight: 110,
     justifyContent: "center",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   questionCardError: {
     borderColor: "#EF4444",
-    backgroundColor: "rgba(239, 68, 68, 0.08)",
+    backgroundColor: "#FEF2F2",
   },
   questionHeaderRow: {
     flexDirection: "row",
@@ -395,13 +405,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   questionHeaderLabel: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 10,
     fontWeight: "900",
     letterSpacing: 1.2,
   },
   questionText: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 15.5,
     fontWeight: "700",
     lineHeight: 23,
@@ -412,21 +422,26 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   optionCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 13,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     minHeight: 58,
     justifyContent: "center",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
   optionCardCorrect: {
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    backgroundColor: "#ECFDF5",
     borderColor: "#10B981",
   },
   optionCardWrong: {
-    backgroundColor: "rgba(239, 68, 68, 0.16)",
+    backgroundColor: "#FEF2F2",
     borderColor: "#EF4444",
   },
   optionCardDimmed: {
@@ -441,47 +456,47 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderColor: "#E2E8F0",
     alignItems: "center",
     justifyContent: "center",
   },
   letterBadgeCorrect: {
-    backgroundColor: "rgba(16, 185, 129, 0.2)",
+    backgroundColor: "#D1FAE5",
     borderColor: "#10B981",
   },
   letterBadgeWrong: {
-    backgroundColor: "rgba(239, 68, 68, 0.2)",
+    backgroundColor: "#FEE2E2",
     borderColor: "#EF4444",
   },
   letterBadgeText: {
-    color: "#CBD5E1",
+    color: "#475569",
     fontSize: 11.5,
     fontWeight: "800",
   },
   letterBadgeTextCorrect: {
-    color: "#10B981",
+    color: "#059669",
   },
   letterBadgeTextWrong: {
-    color: "#EF4444",
+    color: "#DC2626",
   },
   optionText: {
-    color: "#E2E8F0",
+    color: "#1E293B",
     fontSize: 13.5,
     fontWeight: "600",
     lineHeight: 19,
     flex: 1,
   },
   optionTextCorrect: {
-    color: "#FFFFFF",
+    color: "#059669",
     fontWeight: "700",
   },
   optionTextWrong: {
-    color: "#FCA5A5",
+    color: "#DC2626",
   },
   optionTextDimmed: {
-    color: "#64748B",
+    color: "#94A3B8",
   },
   statusBox: {
     width: 20,
@@ -495,16 +510,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    backgroundColor: "#ECFDF5",
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.25)",
+    borderColor: "#A7F3D0",
     marginTop: 2,
   },
   completedNoticeText: {
-    color: "#10B981",
+    color: "#059669",
     fontSize: 13,
     fontWeight: "700",
   },

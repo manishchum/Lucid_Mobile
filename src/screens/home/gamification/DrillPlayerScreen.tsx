@@ -188,7 +188,7 @@ export default function DrillPlayerScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor={GC.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor={GC.bg} />
 
       {/* Header */}
       <View style={styles.header}>
@@ -197,7 +197,7 @@ export default function DrillPlayerScreen() {
           style={styles.backBtn}
           activeOpacity={0.8}
         >
-          <MaterialCommunityIcons name="arrow-left" size={20} color="#FFFFFF" />
+          <MaterialCommunityIcons name="arrow-left" size={20} color="#0F172A" />
         </TouchableOpacity>
 
         {/* Drill Name: Clean, simple text, no badge box, no colors */}
@@ -211,7 +211,7 @@ export default function DrillPlayerScreen() {
         <View style={styles.headerRight}>
           {/* Total user XP */}
           <View style={styles.totalXpPill}>
-            <MaterialCommunityIcons name="star-four-points" size={11} color="#C084FC" />
+            <MaterialCommunityIcons name="star-four-points" size={11} color="#7C3AED" />
             <Text style={styles.totalXpText}>
               {totalUserXp.toLocaleString()} XP
             </Text>
@@ -227,7 +227,7 @@ export default function DrillPlayerScreen() {
             <MaterialCommunityIcons
               name={isDrillCompleted ? "check-decagram" : "star-four-points"}
               size={11}
-              color={isDrillCompleted ? "#10B981" : "#FCD34D"}
+              color={isDrillCompleted ? "#10B981" : "#D97706"}
             />
             <Text
               style={[
@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   headerDrillName: {
-    color: "#FFFFFF",
+    color: GC.textPrimary,
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.2,
@@ -362,15 +362,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    backgroundColor: "rgba(168, 85, 247, 0.12)",
+    backgroundColor: "#FAF5FF",
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.25)",
+    borderColor: "#E9D5FF",
     borderRadius: 10,
     paddingHorizontal: 7,
     paddingVertical: 5,
   },
   totalXpText: {
-    color: "#E9D5FF",
+    color: "#7C3AED",
     fontSize: 11,
     fontWeight: "800",
   },
@@ -378,24 +378,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    backgroundColor: "rgba(252, 211, 77, 0.12)",
+    backgroundColor: "#FFFBEB",
     borderWidth: 1,
-    borderColor: "rgba(252, 211, 77, 0.28)",
+    borderColor: "#FDE68A",
     borderRadius: 10,
     paddingHorizontal: 7,
     paddingVertical: 5,
   },
   drillXpPillCompleted: {
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    borderColor: "rgba(16, 185, 129, 0.28)",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
   },
   drillXpText: {
-    color: "#FCD34D",
+    color: "#D97706",
     fontSize: 11,
     fontWeight: "800",
   },
   drillXpTextCompleted: {
-    color: "#10B981",
+    color: "#059669",
   },
   scrollContent: { padding: 20, gap: 20 },
   drillTitle: {
@@ -409,7 +409,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: "#052E16",
+    backgroundColor: "#ECFDF5",
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
@@ -423,7 +423,7 @@ const styles = StyleSheet.create({
   },
   celebOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.85)",
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
     justifyContent: "center",
     alignItems: "center",
     padding: 32,
@@ -431,16 +431,16 @@ const styles = StyleSheet.create({
   celebCard: {
     backgroundColor: GC.surface,
     borderRadius: 28,
-    borderWidth: 2,
-    borderColor: GC.primary,
+    borderWidth: 1,
+    borderColor: GC.border,
     padding: 32,
     alignItems: "center",
     gap: 16,
     width: "100%",
-    shadowColor: GC.primaryGlow,
-    shadowOpacity: 0.6,
-    shadowRadius: 30,
-    shadowOffset: { width: 0, height: 0 },
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
     elevation: 20,
   },
   celebEmoji: { fontSize: 52 },
@@ -459,15 +459,15 @@ const styles = StyleSheet.create({
   newBadgesSection: {
     alignItems: "center",
     gap: 6,
-    backgroundColor: "#1C1200",
+    backgroundColor: "#FFFBEB",
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: GC.gold,
+    borderColor: "#FDE68A",
     width: "100%",
   },
   newBadgesLabel: {
-    color: GC.gold,
+    color: "#B45309",
     fontSize: 13,
     fontWeight: "900",
     letterSpacing: 1,
@@ -490,7 +490,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   continueBtnText: {
-    color: GC.bg,
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "900",
     letterSpacing: 2,

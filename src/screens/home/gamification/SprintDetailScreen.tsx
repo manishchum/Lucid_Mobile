@@ -173,7 +173,7 @@ export default function SprintDetailScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#1A1A24" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -182,7 +182,7 @@ export default function SprintDetailScreen() {
           style={styles.backBtn}
           activeOpacity={0.8}
         >
-          <MaterialCommunityIcons name="arrow-left" size={20} color="#FFFFFF" />
+          <MaterialCommunityIcons name="arrow-left" size={20} color="#0F172A" />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
@@ -224,7 +224,7 @@ export default function SprintDetailScreen() {
                 <MaterialCommunityIcons
                   name="lock"
                   size={12}
-                  color="#94A3B8"
+                  color="#64748B"
                 />
                 <Text style={styles.statusChipTextLocked}>LOCKED</Text>
               </View>
@@ -242,7 +242,7 @@ export default function SprintDetailScreen() {
                 <MaterialCommunityIcons
                   name="lightning-bolt"
                   size={13}
-                  color="#A855F7"
+                  color="#7C3AED"
                 />
                 <Text style={styles.statusChipTextActive}>IN PROGRESS</Text>
               </View>
@@ -257,7 +257,7 @@ export default function SprintDetailScreen() {
               <MaterialCommunityIcons
                 name="star-four-points"
                 size={12}
-                color={isLocked ? "#94A3B8" : isCompleted ? "#10B981" : "#A855F7"}
+                color={isLocked ? "#94A3B8" : isCompleted ? "#10B981" : "#D97706"}
               />
               <Text
                 style={[
@@ -427,7 +427,7 @@ export default function SprintDetailScreen() {
                       <MaterialCommunityIcons
                         name="lock"
                         size={12}
-                        color="#64748B"
+                        color="#94A3B8"
                       />
                     ) : (
                       <Text style={styles.timelineNodeNumber}>{idx + 1}</Text>
@@ -445,7 +445,7 @@ export default function SprintDetailScreen() {
                   />
                 </View>
 
-                {/* Timeline Right: Drill Card (Maintains dark card background) */}
+                {/* Timeline Right: Drill Card */}
                 <TouchableOpacity
                   style={[
                     styles.drillCard,
@@ -461,7 +461,7 @@ export default function SprintDetailScreen() {
                       <MaterialCommunityIcons
                         name={drillIcon as any}
                         size={12}
-                        color={isCurrent ? "#C084FC" : isLocked ? "#64748B" : "#CBD5E1"}
+                        color={isCurrent ? "#7C3AED" : isLocked ? "#94A3B8" : "#475569"}
                       />
                       <Text
                         style={[
@@ -485,7 +485,7 @@ export default function SprintDetailScreen() {
                       <MaterialCommunityIcons
                         name={isDrillDone ? "check-decagram" : "star-four-points"}
                         size={11}
-                        color={isLocked ? "#64748B" : isDrillDone ? "#10B981" : "#FCD34D"}
+                        color={isLocked ? "#94A3B8" : isDrillDone ? "#10B981" : "#D97706"}
                       />
                       <Text
                         style={[
@@ -545,7 +545,7 @@ export default function SprintDetailScreen() {
                         <MaterialCommunityIcons
                           name="lock"
                           size={12}
-                          color="#64748B"
+                          color="#94A3B8"
                         />
                         <Text style={styles.drillActionTextLocked}>Locked</Text>
                       </View>
@@ -555,7 +555,7 @@ export default function SprintDetailScreen() {
                         <MaterialCommunityIcons
                           name="chevron-right"
                           size={14}
-                          color="#CBD5E1"
+                          color="#64748B"
                         />
                       </View>
                     )}
@@ -573,7 +573,7 @@ export default function SprintDetailScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#1A1A24",
+    backgroundColor: "#F8FAFC",
   },
   header: {
     flexDirection: "row",
@@ -581,17 +581,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingBottom: 12,
-    backgroundColor: "#1A1A24",
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    borderBottomColor: "#E2E8F0",
   },
   backBtn: {
     width: 38,
     height: 38,
     borderRadius: 11,
-    backgroundColor: "#2C2C35",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -599,7 +599,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 14,
     fontWeight: "900",
     letterSpacing: 2.5,
@@ -614,18 +614,23 @@ const styles = StyleSheet.create({
     gap: 16,
   },
 
-  // Hero Card (Clean dark surface)
+  // Hero Card (Clean light surface)
   heroCard: {
-    backgroundColor: "#252532",
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 18,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 12,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   heroCardLocked: {
     opacity: 0.9,
-    backgroundColor: "#21212B",
+    backgroundColor: "#F8FAFC",
   },
   heroTopRow: {
     flexDirection: "row",
@@ -642,12 +647,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4.5,
     borderRadius: 8,
-    backgroundColor: "rgba(168, 85, 247, 0.16)",
+    backgroundColor: "#FAF5FF",
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.35)",
+    borderColor: "#E9D5FF",
   },
   statusChipTextActive: {
-    color: "#C084FC",
+    color: "#7C3AED",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.8,
@@ -659,12 +664,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4.5,
     borderRadius: 8,
-    backgroundColor: "rgba(16, 185, 129, 0.14)",
+    backgroundColor: "#ECFDF5",
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    borderColor: "#A7F3D0",
   },
   statusChipTextCompleted: {
-    color: "#10B981",
+    color: "#059669",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.8,
@@ -676,12 +681,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4.5,
     borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "#E2E8F0",
   },
   statusChipTextLocked: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.8,
@@ -692,18 +697,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "#2C2C38",
+    backgroundColor: "#FFFBEB",
     borderRadius: 20,
     paddingHorizontal: 9,
     paddingVertical: 4.5,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#FDE68A",
   },
   heroXpPillLocked: {
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
   },
   heroXpText: {
-    color: "#E9D5FF",
+    color: "#B45309",
     fontSize: 12,
     fontWeight: "800",
   },
@@ -718,7 +724,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   heroTitle: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 21,
     fontWeight: "900",
     lineHeight: 27,
@@ -729,7 +735,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   heroDesc: {
-    color: "#94A3B8",
+    color: "#475569",
     fontSize: 13,
     lineHeight: 20,
     fontWeight: "400",
@@ -741,7 +747,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.06)",
+    borderTopColor: "#F1F5F9",
   },
   heroProgressHeader: {
     flexDirection: "row",
@@ -749,24 +755,24 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   heroProgressLabel: {
-    color: "#CBD5E1",
+    color: "#475569",
     fontSize: 12,
     fontWeight: "600",
   },
   heroProgressPct: {
-    color: "#CBD5E1",
+    color: "#0F172A",
     fontSize: 13,
     fontWeight: "800",
   },
   heroProgressBarTrack: {
     height: 6,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "#E2E8F0",
     borderRadius: 3,
     overflow: "hidden",
   },
   heroProgressBarFill: {
     height: "100%",
-    backgroundColor: "#A855F7",
+    backgroundColor: "#7C3AED",
     borderRadius: 3,
   },
   heroProgressBarFillCompleted: {
@@ -780,10 +786,10 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.06)",
+    borderTopColor: "#F1F5F9",
   },
   heroLockedText: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 12,
     fontWeight: "500",
     flex: 1,
@@ -800,10 +806,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: "rgba(216, 180, 254, 0.4)",
+    borderColor: "#6D28D9",
     shadowColor: "#7C3AED",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 4,
   },
@@ -866,21 +872,21 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   drillsSectionTitle: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 13,
     fontWeight: "900",
     letterSpacing: 1.2,
   },
   drillCountPill: {
-    backgroundColor: "#2C2C38",
+    backgroundColor: "#F1F5F9",
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
   },
   drillCountText: {
-    color: "#CBD5E1",
+    color: "#475569",
     fontSize: 11,
     fontWeight: "900",
   },
@@ -907,13 +913,13 @@ const styles = StyleSheet.create({
   timelineLine: {
     width: 2,
     flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "#E2E8F0",
   },
   timelineLineInvisible: {
     backgroundColor: "transparent",
   },
   timelineLineActive: {
-    backgroundColor: "rgba(168, 85, 247, 0.4)",
+    backgroundColor: "#DDD6FE",
   },
   timelineLineCompleted: {
     backgroundColor: "#10B981",
@@ -922,19 +928,19 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "#272733",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderColor: "#CBD5E1",
     justifyContent: "center",
     alignItems: "center",
     marginVertical: 4,
   },
   timelineNodeCurrent: {
     backgroundColor: "#7C3AED",
-    borderColor: "#C084FC",
-    shadowColor: "#A855F7",
+    borderColor: "#A78BFA",
+    shadowColor: "#7C3AED",
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
+    shadowOpacity: 0.4,
     shadowRadius: 6,
     elevation: 4,
   },
@@ -943,34 +949,39 @@ const styles = StyleSheet.create({
     borderColor: "#10B981",
   },
   timelineNodeLocked: {
-    backgroundColor: "#1E1E26",
-    borderColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
   },
   timelineNodeNumber: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 11,
     fontWeight: "900",
   },
 
-  // Drill Card (Clean Dark Card Theme)
+  // Drill Card (Clean Light Card Theme)
   drillCard: {
     flex: 1,
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 8,
     marginBottom: 12,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   drillCardCurrent: {
-    borderColor: "#A855F7",
-    backgroundColor: "#282336",
+    borderColor: "#7C3AED",
+    backgroundColor: "#FAF5FF",
   },
   drillCardLocked: {
-    opacity: 0.6,
-    backgroundColor: "#1E1E26",
-    borderColor: "rgba(255, 255, 255, 0.05)",
+    opacity: 0.75,
+    backgroundColor: "#F8FAFC",
+    borderColor: "#E2E8F0",
   },
 
   // Drill Card Header
@@ -987,21 +998,21 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
   },
   drillFormatText: {
     fontSize: 10,
     fontWeight: "900",
     letterSpacing: 0.8,
     textTransform: "uppercase",
-    color: "#CBD5E1",
+    color: "#475569",
   },
   drillFormatTextCurrent: {
-    color: "#C084FC",
+    color: "#7C3AED",
   },
   drillFormatTextLocked: {
-    color: "#64748B",
+    color: "#94A3B8",
   },
 
   // XP Chip
@@ -1012,42 +1023,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 8,
-    backgroundColor: "rgba(252, 211, 77, 0.12)",
+    backgroundColor: "#FFFBEB",
     borderWidth: 1,
-    borderColor: "rgba(252, 211, 77, 0.28)",
+    borderColor: "#FDE68A",
   },
   drillXpChipCompleted: {
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    borderColor: "rgba(16, 185, 129, 0.28)",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
   },
   drillXpChipLocked: {
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    borderColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
   },
   drillXpText: {
-    color: "#FCD34D",
+    color: "#D97706",
     fontSize: 11,
     fontWeight: "900",
   },
   drillXpTextCompleted: {
-    color: "#10B981",
+    color: "#059669",
   },
   drillXpTextLocked: {
-    color: "#64748B",
+    color: "#94A3B8",
   },
 
   // Drill Title & Subtitle
   drillTitle: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 14,
     fontWeight: "800",
     lineHeight: 19,
   },
   drillTitleLocked: {
-    color: "#64748B",
+    color: "#94A3B8",
   },
   drillSubtitle: {
-    color: "#94A3B8",
+    color: "#475569",
     fontSize: 11,
     fontWeight: "500",
   },
@@ -1059,7 +1070,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.05)",
+    borderTopColor: "#F1F5F9",
   },
   drillStepText: {
     color: "#64748B",
@@ -1095,15 +1106,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 2,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "#F1F5F9",
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
   },
   drillActionTextUpcoming: {
-    color: "#CBD5E1",
+    color: "#334155",
     fontSize: 11,
     fontWeight: "700",
   },
@@ -1113,14 +1124,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    backgroundColor: "#F1F5F9",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
   drillActionTextLocked: {
-    color: "#64748B",
+    color: "#94A3B8",
     fontSize: 11,
     fontWeight: "600",
   },
 });
+

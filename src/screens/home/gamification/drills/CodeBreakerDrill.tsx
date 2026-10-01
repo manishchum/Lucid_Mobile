@@ -144,7 +144,7 @@ export default function CodeBreakerDrill({
             <MaterialCommunityIcons
               name="lock-open-variant-outline"
               size={16}
-              color={isCompleted ? "#10B981" : "#A855F7"}
+              color={isCompleted ? "#10B981" : "#7C3AED"}
             />
             <Text style={styles.progressLabel} numberOfLines={1}>
               {isCompleted ? "Sequence Verified" : "Reconstruct Sequence"}
@@ -158,7 +158,7 @@ export default function CodeBreakerDrill({
                 style={styles.resetBtn}
                 activeOpacity={0.7}
               >
-                <MaterialCommunityIcons name="restart" size={13} color="#CBD5E1" />
+                <MaterialCommunityIcons name="restart" size={13} color="#64748B" />
                 <Text style={styles.resetBtnText}>Reset</Text>
               </TouchableOpacity>
             )}
@@ -172,7 +172,7 @@ export default function CodeBreakerDrill({
               <MaterialCommunityIcons
                 name={isAllPlaced ? "check-circle" : "order-numeric-ascending"}
                 size={13}
-                color={isAllPlaced ? "#10B981" : "#A855F7"}
+                color={isAllPlaced ? "#10B981" : "#7C3AED"}
               />
               <Text
                 style={[
@@ -209,7 +209,7 @@ export default function CodeBreakerDrill({
           <MaterialCommunityIcons
             name="format-list-numbered"
             size={18}
-            color={isCompleted ? "#10B981" : "#A855F7"}
+            color={isCompleted ? "#10B981" : "#7C3AED"}
           />
           <Text style={styles.sequenceHeaderLabel}>YOUR SEQUENCE ORDER</Text>
         </View>
@@ -219,7 +219,7 @@ export default function CodeBreakerDrill({
             <MaterialCommunityIcons
               name="gesture-tap"
               size={28}
-              color="rgba(168, 85, 247, 0.4)"
+              color="rgba(124, 58, 237, 0.4)"
             />
             <Text style={styles.placeholderTitle}>Sequence is empty</Text>
             <Text style={styles.placeholderSubtitle}>
@@ -265,7 +265,7 @@ export default function CodeBreakerDrill({
                     <MaterialCommunityIcons
                       name="close"
                       size={13}
-                      color="#94A3B8"
+                      color="#64748B"
                     />
                   </View>
                 )}
@@ -286,7 +286,7 @@ export default function CodeBreakerDrill({
       {!isCompleted && availableSteps.length > 0 && (
         <View style={styles.availableSection}>
           <View style={styles.availableHeaderRow}>
-            <MaterialCommunityIcons name="layers-outline" size={14} color="#A855F7" />
+            <MaterialCommunityIcons name="layers-outline" size={14} color="#7C3AED" />
             <Text style={styles.availableHeaderLabel}>
               AVAILABLE STEPS • TAP TO PLACE NEXT ({availableSteps.length})
             </Text>
@@ -302,7 +302,7 @@ export default function CodeBreakerDrill({
               >
                 <View style={styles.availableCardInner}>
                   <View style={styles.addIconCircle}>
-                    <MaterialCommunityIcons name="plus" size={14} color="#A855F7" />
+                    <MaterialCommunityIcons name="plus" size={14} color="#7C3AED" />
                   </View>
                   <Text style={styles.availableText}>{step.text}</Text>
                 </View>
@@ -333,7 +333,7 @@ export default function CodeBreakerDrill({
           <MaterialCommunityIcons
             name={isAllPlaced ? "shield-check" : "lock-clock"}
             size={18}
-            color={isAllPlaced ? "#FFFFFF" : "#64748B"}
+            color={isAllPlaced ? "#FFFFFF" : "#94A3B8"}
           />
           <Text
             style={[
@@ -359,29 +359,34 @@ const styles = StyleSheet.create({
 
   // Empty Card
   emptyCard: {
-    backgroundColor: "#252532",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
   },
   emptyCardText: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 14,
     textAlign: "center",
   },
 
   // Progress Card
   progressCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 10,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   progressHeader: {
     flexDirection: "row",
@@ -397,7 +402,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   progressLabel: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -414,12 +419,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4.5,
     borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "#E2E8F0",
   },
   resetBtnText: {
-    color: "#CBD5E1",
+    color: "#475569",
     fontSize: 11,
     fontWeight: "700",
   },
@@ -427,48 +432,53 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(168, 85, 247, 0.12)",
+    backgroundColor: "#FAF5FF",
     paddingHorizontal: 8,
     paddingVertical: 4.5,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.28)",
+    borderColor: "#E9D5FF",
   },
   progressCounterPillCompleted: {
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
   },
   progressCounterText: {
-    color: "#A855F7",
+    color: "#7C3AED",
     fontSize: 12,
     fontWeight: "900",
   },
   progressCounterTextCompleted: {
-    color: "#10B981",
+    color: "#059669",
   },
   hintText: {
-    color: "#94A3B8",
+    color: "#475569",
     fontSize: 12,
     fontWeight: "500",
     lineHeight: 16,
   },
   hintTextError: {
-    color: "#F87171",
+    color: "#DC2626",
   },
 
   // Sequence Card (Target dropzone)
   sequenceCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 16,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 12,
     minHeight: 140,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   sequenceCardError: {
     borderColor: "#EF4444",
-    backgroundColor: "rgba(239, 68, 68, 0.08)",
+    backgroundColor: "#FEF2F2",
   },
   sequenceHeaderRow: {
     flexDirection: "row",
@@ -476,7 +486,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   sequenceHeaderLabel: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 10,
     fontWeight: "900",
     letterSpacing: 1.2,
@@ -485,7 +495,7 @@ const styles = StyleSheet.create({
   // Empty Placeholder State
   placeholderBox: {
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "#CBD5E1",
     borderStyle: "dashed",
     borderRadius: 12,
     paddingVertical: 28,
@@ -493,9 +503,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
+    backgroundColor: "#F8FAFC",
   },
   placeholderTitle: {
-    color: "#CBD5E1",
+    color: "#334155",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -512,23 +523,28 @@ const styles = StyleSheet.create({
   orderedRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#2E1F47",
+    backgroundColor: "#FAF5FF",
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderWidth: 1.5,
-    borderColor: "rgba(168, 85, 247, 0.35)",
+    borderColor: "#DDD6FE",
     gap: 10,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
   orderedRowCompleted: {
-    backgroundColor: "rgba(16, 185, 129, 0.08)",
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
   },
   stepBadge: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: "#A855F7",
+    backgroundColor: "#7C3AED",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -541,20 +557,20 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   orderedText: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 13,
     fontWeight: "600",
     lineHeight: 18,
     flex: 1,
   },
   orderedTextCompleted: {
-    color: "#E2E8F0",
+    color: "#059669",
   },
   removeIconCircle: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "#E2E8F0",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -570,7 +586,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   availableHeaderLabel: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1.1,
@@ -579,12 +595,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   availableCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
   availableCardInner: {
     flexDirection: "row",
@@ -595,14 +616,14 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: "rgba(168, 85, 247, 0.12)",
+    backgroundColor: "#FAF5FF",
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.28)",
+    borderColor: "#E9D5FF",
     alignItems: "center",
     justifyContent: "center",
   },
   availableText: {
-    color: "#E2E8F0",
+    color: "#1E293B",
     fontSize: 13,
     fontWeight: "600",
     lineHeight: 18,
@@ -615,18 +636,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: "#A855F7",
+    backgroundColor: "#7C3AED",
     borderRadius: 14,
     paddingVertical: 15,
-    shadowColor: "#A855F7",
+    shadowColor: "#7C3AED",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 8,
+    elevation: 3,
   },
   submitBtnDisabled: {
-    backgroundColor: "#242430",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     shadowOpacity: 0,
     elevation: 0,
   },
@@ -637,7 +659,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   submitBtnTextDisabled: {
-    color: "#64748B",
+    color: "#94A3B8",
   },
 
   // Completed Banner
@@ -646,15 +668,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    backgroundColor: "#ECFDF5",
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.25)",
+    borderColor: "#A7F3D0",
   },
   completedNoticeText: {
-    color: "#10B981",
+    color: "#059669",
     fontSize: 13,
     fontWeight: "700",
   },

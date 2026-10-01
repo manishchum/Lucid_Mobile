@@ -514,16 +514,35 @@ export default function StudioScreen({ navigation, route }: any) {
           {showPodcast && (
             <AnimatedSectionWrapper index={2}>
               <PodcastSection
+                moduleId={processedModuleId}
                 title={processedModule?.title ?? moduleTitle ?? "Podcast Lesson"}
                 isExpanded={expanded === "podcast"}
                 onToggle={() => toggle("podcast")}
                 lang={lang}
                 audioUrl={processedModule?.audio_url ?? null}
+                audioUrlHindi={
+                  processedModule?.audio_url_hindi ??
+                  processedModule?.audio_url_hinglish ??
+                  null
+                }
                 audioUrlHinglish={processedModule?.audio_url_hinglish ?? null}
+                audioUrlTamil={processedModule?.audio_url_tamil ?? null}
+                audioUrlTelugu={processedModule?.audio_url_telugu ?? null}
+                audioUrlMarathi={processedModule?.audio_url_marathi ?? null}
+                audioUrlBengali={processedModule?.audio_url_bengali ?? null}
                 podcastTimeline={processedModule?.podcast_timeline ?? null}
+                podcastTimelineHindi={
+                  processedModule?.podcast_timeline_hindi ??
+                  processedModule?.podcast_timeline_hinglish ??
+                  null
+                }
                 podcastTimelineHinglish={
                   processedModule?.podcast_timeline_hinglish ?? null
                 }
+                podcastTimelineTamil={processedModule?.podcast_timeline_tamil ?? null}
+                podcastTimelineTelugu={processedModule?.podcast_timeline_telugu ?? null}
+                podcastTimelineMarathi={processedModule?.podcast_timeline_marathi ?? null}
+                podcastTimelineBengali={processedModule?.podcast_timeline_bengali ?? null}
                 transcript={processedModule?.podcast_transcript ?? null}
               />
             </AnimatedSectionWrapper>

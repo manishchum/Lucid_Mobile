@@ -192,7 +192,7 @@ export default function AuditSpotterDrill({
                 style={styles.clearBtn}
                 activeOpacity={0.7}
               >
-                <MaterialCommunityIcons name="restart" size={13} color="#CBD5E1" />
+                <MaterialCommunityIcons name="restart" size={13} color="#64748B" />
                 <Text style={styles.clearBtnText}>Clear</Text>
               </TouchableOpacity>
             )}
@@ -240,7 +240,7 @@ export default function AuditSpotterDrill({
         ]}
       >
         <View style={styles.documentHeaderRow}>
-          <MaterialCommunityIcons name="shield-search" size={16} color="#A855F7" />
+          <MaterialCommunityIcons name="shield-search" size={16} color="#DC2626" />
           <Text style={styles.documentHeaderTitle}>DOCUMENT AUDIT SAMPLE</Text>
         </View>
 
@@ -291,7 +291,7 @@ export default function AuditSpotterDrill({
           <MaterialCommunityIcons
             name={selectedCount > 0 ? "flag" : "flag-outline"}
             size={18}
-            color={selectedCount > 0 ? "#FFFFFF" : "#64748B"}
+            color={selectedCount > 0 ? "#FFFFFF" : "#94A3B8"}
           />
           <Text
             style={[
@@ -317,29 +317,34 @@ const styles = StyleSheet.create({
 
   // Empty Card
   emptyCard: {
-    backgroundColor: "#252532",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
   },
   emptyCardText: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 14,
     textAlign: "center",
   },
 
   // Progress Card
   progressCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 10,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   progressHeader: {
     flexDirection: "row",
@@ -355,7 +360,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   progressLabel: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -372,12 +377,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4.5,
     borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "#E2E8F0",
   },
   clearBtnText: {
-    color: "#CBD5E1",
+    color: "#475569",
     fontSize: 11,
     fontWeight: "700",
   },
@@ -385,48 +390,53 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    backgroundColor: "#FEF2F2",
     paddingHorizontal: 8,
     paddingVertical: 4.5,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.28)",
+    borderColor: "#FECACA",
   },
   progressCounterPillCompleted: {
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
   },
   progressCounterText: {
-    color: "#EF4444",
+    color: "#DC2626",
     fontSize: 12,
     fontWeight: "900",
   },
   progressCounterTextCompleted: {
-    color: "#10B981",
+    color: "#059669",
   },
   hintText: {
-    color: "#94A3B8",
+    color: "#475569",
     fontSize: 12,
     fontWeight: "500",
     lineHeight: 16,
   },
   hintTextError: {
-    color: "#F87171",
+    color: "#DC2626",
   },
 
   // Document Card
   documentCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 18,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 14,
     minHeight: 180,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   documentCardError: {
     borderColor: "#EF4444",
-    backgroundColor: "rgba(239, 68, 68, 0.08)",
+    backgroundColor: "#FEF2F2",
   },
   documentHeaderRow: {
     flexDirection: "row",
@@ -434,7 +444,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   documentHeaderTitle: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 10,
     fontWeight: "900",
     letterSpacing: 1.2,
@@ -442,7 +452,7 @@ const styles = StyleSheet.create({
   documentBodyText: {
     fontSize: 15.5,
     lineHeight: 30,
-    color: "#E2E8F0",
+    color: "#0F172A",
   },
 
   // Interactive Words
@@ -452,15 +462,15 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   wordSelected: {
-    backgroundColor: "rgba(239, 68, 68, 0.22)",
-    color: "#FCA5A5",
+    backgroundColor: "#FEE2E2",
+    color: "#DC2626",
     fontWeight: "700",
     borderBottomWidth: 2,
     borderBottomColor: "#EF4444",
   },
   wordCompleted: {
-    backgroundColor: "rgba(16, 185, 129, 0.2)",
-    color: "#6EE7B7",
+    backgroundColor: "#ECFDF5",
+    color: "#059669",
     fontWeight: "700",
     borderBottomWidth: 2,
     borderBottomColor: "#10B981",
@@ -472,18 +482,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: "#EF4444",
+    backgroundColor: "#DC2626",
     borderRadius: 14,
     paddingVertical: 15,
-    shadowColor: "#EF4444",
+    shadowColor: "#DC2626",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 8,
+    elevation: 3,
   },
   submitBtnDisabled: {
-    backgroundColor: "#242430",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     shadowOpacity: 0,
     elevation: 0,
   },
@@ -494,7 +505,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   submitBtnTextDisabled: {
-    color: "#64748B",
+    color: "#94A3B8",
   },
 
   // Completed Banner
@@ -503,15 +514,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    backgroundColor: "#ECFDF5",
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.25)",
+    borderColor: "#A7F3D0",
   },
   completedNoticeText: {
-    color: "#10B981",
+    color: "#059669",
     fontSize: 13,
     fontWeight: "700",
   },

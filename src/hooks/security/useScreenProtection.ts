@@ -31,11 +31,16 @@ export function useScreenProtection(
     let subscription: { remove: () => void } | null = null;
 
     const activate = async () => {
+      // In development mode, allow screenshots and screen recordings for testing/debugging
+      if (__DEV__) {
+        await ScreenCapture.allowScreenCaptureAsync(tag).catch(() => {});
+        return;
+      }
+
       try {
         await ScreenCapture.preventScreenCaptureAsync(tag);
       } catch (e) {
-        // Device/simulator may not support it — fail silently in dev.
-        if (__DEV__) console.warn("[ScreenProtection] preventScreenCaptureAsync failed:", e);
+        // Device/simulator may not support it — fail silently.
       }
 
       // iOS-only: listen for screen-recording status changes.

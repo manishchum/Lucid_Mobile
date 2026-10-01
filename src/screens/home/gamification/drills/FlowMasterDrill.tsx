@@ -147,7 +147,7 @@ export default function FlowMasterDrill({
             <MaterialCommunityIcons
               name="sitemap"
               size={16}
-              color={isCompleted ? "#10B981" : "#06B6D4"}
+              color={isCompleted ? "#10B981" : "#0284C7"}
             />
             <Text style={styles.progressLabel} numberOfLines={1}>
               {isCompleted ? "Flow Verified" : "Build Process Flow"}
@@ -161,7 +161,7 @@ export default function FlowMasterDrill({
                 style={styles.resetBtn}
                 activeOpacity={0.7}
               >
-                <MaterialCommunityIcons name="restart" size={13} color="#CBD5E1" />
+                <MaterialCommunityIcons name="restart" size={13} color="#64748B" />
                 <Text style={styles.resetBtnText}>Reset</Text>
               </TouchableOpacity>
             )}
@@ -175,7 +175,7 @@ export default function FlowMasterDrill({
               <MaterialCommunityIcons
                 name={isAllPlaced ? "check-circle" : "source-branch"}
                 size={13}
-                color={isAllPlaced ? "#10B981" : "#06B6D4"}
+                color={isAllPlaced ? "#10B981" : "#0284C7"}
               />
               <Text
                 style={[
@@ -212,7 +212,7 @@ export default function FlowMasterDrill({
           <MaterialCommunityIcons
             name="transit-connection-variant"
             size={16}
-            color={isCompleted ? "#10B981" : "#06B6D4"}
+            color={isCompleted ? "#10B981" : "#0284C7"}
           />
           <Text style={styles.flowHeaderLabel}>PROCESS PIPELINE</Text>
         </View>
@@ -222,7 +222,7 @@ export default function FlowMasterDrill({
             <MaterialCommunityIcons
               name="sitemap-outline"
               size={28}
-              color="rgba(6, 182, 212, 0.4)"
+              color="rgba(2, 132, 199, 0.4)"
             />
             <Text style={styles.placeholderTitle}>Pipeline is empty</Text>
             <Text style={styles.placeholderSubtitle}>
@@ -272,7 +272,7 @@ export default function FlowMasterDrill({
                         <MaterialCommunityIcons
                           name="close"
                           size={13}
-                          color="#94A3B8"
+                          color="#64748B"
                         />
                       </View>
                     )}
@@ -298,7 +298,7 @@ export default function FlowMasterDrill({
                         <MaterialCommunityIcons
                           name="chevron-down"
                           size={15}
-                          color={isCompleted ? "#10B981" : "#06B6D4"}
+                          color={isCompleted ? "#10B981" : "#0284C7"}
                         />
                       </View>
                       <View style={styles.connectorLine} />
@@ -315,7 +315,7 @@ export default function FlowMasterDrill({
       {!isCompleted && availableSteps.length > 0 && (
         <View style={styles.availableSection}>
           <View style={styles.availableHeaderRow}>
-            <MaterialCommunityIcons name="layers-outline" size={14} color="#06B6D4" />
+            <MaterialCommunityIcons name="layers-outline" size={14} color="#0284C7" />
             <Text style={styles.availableHeaderLabel}>
               AVAILABLE STEPS • TAP TO ADD ({availableSteps.length})
             </Text>
@@ -331,7 +331,7 @@ export default function FlowMasterDrill({
               >
                 <View style={styles.availableCardInner}>
                   <View style={styles.addIconCircle}>
-                    <MaterialCommunityIcons name="plus" size={14} color="#06B6D4" />
+                    <MaterialCommunityIcons name="plus" size={14} color="#0284C7" />
                   </View>
                   <Text style={styles.availableText}>{step.text}</Text>
                 </View>
@@ -362,7 +362,7 @@ export default function FlowMasterDrill({
           <MaterialCommunityIcons
             name={isAllPlaced ? "check-network-outline" : "lock-clock"}
             size={18}
-            color={isAllPlaced ? "#FFFFFF" : "#64748B"}
+            color={isAllPlaced ? "#FFFFFF" : "#94A3B8"}
           />
           <Text
             style={[
@@ -388,29 +388,34 @@ const styles = StyleSheet.create({
 
   // Empty Card
   emptyCard: {
-    backgroundColor: "#252532",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
   },
   emptyCardText: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 14,
     textAlign: "center",
   },
 
   // Progress Card
   progressCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 10,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   progressHeader: {
     flexDirection: "row",
@@ -426,7 +431,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   progressLabel: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -443,12 +448,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4.5,
     borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "#E2E8F0",
   },
   resetBtnText: {
-    color: "#CBD5E1",
+    color: "#475569",
     fontSize: 11,
     fontWeight: "700",
   },
@@ -456,48 +461,53 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(6, 182, 212, 0.12)",
+    backgroundColor: "#F0F9FF",
     paddingHorizontal: 8,
     paddingVertical: 4.5,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(6, 182, 212, 0.28)",
+    borderColor: "#BAE6FD",
   },
   progressCounterPillCompleted: {
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
   },
   progressCounterText: {
-    color: "#06B6D4",
+    color: "#0284C7",
     fontSize: 12,
     fontWeight: "900",
   },
   progressCounterTextCompleted: {
-    color: "#10B981",
+    color: "#059669",
   },
   hintText: {
-    color: "#94A3B8",
+    color: "#475569",
     fontSize: 12,
     fontWeight: "500",
     lineHeight: 16,
   },
   hintTextError: {
-    color: "#F87171",
+    color: "#DC2626",
   },
 
   // Flowchart Pipeline Card
   flowCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 16,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     gap: 12,
     minHeight: 140,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   flowCardError: {
     borderColor: "#EF4444",
-    backgroundColor: "rgba(239, 68, 68, 0.08)",
+    backgroundColor: "#FEF2F2",
   },
   flowHeaderRow: {
     flexDirection: "row",
@@ -505,7 +515,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   flowHeaderLabel: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 10,
     fontWeight: "900",
     letterSpacing: 1.2,
@@ -514,7 +524,7 @@ const styles = StyleSheet.create({
   // Empty State Placeholder
   placeholderBox: {
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "#CBD5E1",
     borderStyle: "dashed",
     borderRadius: 12,
     paddingVertical: 28,
@@ -522,9 +532,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
+    backgroundColor: "#F8FAFC",
   },
   placeholderTitle: {
-    color: "#CBD5E1",
+    color: "#334155",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -545,23 +556,28 @@ const styles = StyleSheet.create({
     width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#16333D",
+    backgroundColor: "#F0F9FF",
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderWidth: 1.5,
-    borderColor: "rgba(6, 182, 212, 0.35)",
+    borderColor: "#BAE6FD",
     gap: 10,
+    shadowColor: "#0284C7",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
   flowNodeCompleted: {
-    backgroundColor: "rgba(16, 185, 129, 0.08)",
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
   },
   nodeBadge: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: "#06B6D4",
+    backgroundColor: "#0284C7",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -574,20 +590,20 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   flowText: {
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontSize: 13,
     fontWeight: "600",
     lineHeight: 18,
     flex: 1,
   },
   flowTextCompleted: {
-    color: "#E2E8F0",
+    color: "#059669",
   },
   removeCircle: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "#E2E8F0",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -601,21 +617,21 @@ const styles = StyleSheet.create({
   connectorLine: {
     width: 2,
     height: 6,
-    backgroundColor: "rgba(6, 182, 212, 0.3)",
+    backgroundColor: "#BAE6FD",
   },
   connectorArrowCircle: {
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: "rgba(6, 182, 212, 0.12)",
+    backgroundColor: "#F0F9FF",
     borderWidth: 1,
-    borderColor: "rgba(6, 182, 212, 0.3)",
+    borderColor: "#BAE6FD",
     alignItems: "center",
     justifyContent: "center",
   },
   connectorArrowCircleCompleted: {
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
   },
 
   // Available Section
@@ -629,7 +645,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   availableHeaderLabel: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1.1,
@@ -638,12 +654,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   availableCard: {
-    backgroundColor: "#242430",
+    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
   availableCardInner: {
     flexDirection: "row",
@@ -654,14 +675,14 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: "rgba(6, 182, 212, 0.12)",
+    backgroundColor: "#F0F9FF",
     borderWidth: 1,
-    borderColor: "rgba(6, 182, 212, 0.28)",
+    borderColor: "#BAE6FD",
     alignItems: "center",
     justifyContent: "center",
   },
   availableText: {
-    color: "#E2E8F0",
+    color: "#1E293B",
     fontSize: 13,
     fontWeight: "600",
     lineHeight: 18,
@@ -674,18 +695,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: "#0891B2",
+    backgroundColor: "#0284C7",
     borderRadius: 14,
     paddingVertical: 15,
-    shadowColor: "#0891B2",
+    shadowColor: "#0284C7",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 8,
+    elevation: 3,
   },
   submitBtnDisabled: {
-    backgroundColor: "#242430",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "#E2E8F0",
     shadowOpacity: 0,
     elevation: 0,
   },
@@ -696,7 +718,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   submitBtnTextDisabled: {
-    color: "#64748B",
+    color: "#94A3B8",
   },
 
   // Completed Banner
@@ -705,15 +727,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    backgroundColor: "#ECFDF5",
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.25)",
+    borderColor: "#A7F3D0",
   },
   completedNoticeText: {
-    color: "#10B981",
+    color: "#059669",
     fontSize: 13,
     fontWeight: "700",
   },

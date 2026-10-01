@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Animated,
   Easing,
+  Image,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -112,20 +113,25 @@ export const PodcastMiniPlayer: React.FC = memo(() => {
         </View>
 
         <View style={styles.innerContent}>
-          {/* Slot 1: Podcast Icon */}
-          <View style={styles.iconCircle}>
-            <MaterialCommunityIcons
-              name="headphones"
-              size={20}
-              color="#F59E0B"
+          {/* Slot 1: Audio / Podcast Artwork Thumbnail */}
+          <View style={styles.thumbnailWrapper}>
+            <Image
+              source={
+                activeTrackInfo.artworkUrl
+                  ? { uri: activeTrackInfo.artworkUrl }
+                  : require("../../../assets/lucid_audio_cover.jpg")
+              }
+              style={styles.thumbnailImage}
             />
           </View>
 
           {/* Slot 2: Module Title & Time Info */}
           <View style={styles.textContainer}>
-            <MarqueeTitle text={activeTrackInfo.title || "Podcast Playing"} />
+            <MarqueeTitle text={activeTrackInfo.title || (activeTrackInfo.mediaType === "content_library" ? "Audio Track" : "Podcast Playing")} />
             <Text style={styles.subtext}>
-              {isPlaying ? "Playing" : "Paused"} · {formatTime(positionMillis)} / {formatTime(durationMillis)}
+              {isPlaying ? "Playing" : "Paused"}
+              {activeTrackInfo.category ? ` · ${activeTrackInfo.category}` : ""}
+              {activeTrackInfo.isFallbackLang ? " (English)" : ""} · {formatTime(positionMillis)} / {formatTime(durationMillis)}
             </Text>
           </View>
 
@@ -210,14 +216,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "#FEF3C7",
-    justifyContent: "center",
-    alignItems: "center",
+  thumbnailWrapper: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    overflow: "hidden",
     marginRight: 10,
+    backgroundColor: "#0F172A",
+  },
+  thumbnailImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
   },
   textContainer: {
     flex: 1,
