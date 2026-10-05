@@ -37,6 +37,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { APP_ROUTES, STACK_ROUTES } from "../navigations/Routes";
 import { logger } from "../utils/UnifiedLogger";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
+import { FeedbackBottomSheet } from "../components/notifications/FeedbackBottomSheet";
 
 let isMessagingSupported = false;
 try {
@@ -100,6 +101,13 @@ export const NotificationProvider = ({
     message: string;
     onPress?: () => void;
   } | null>(null);
+  const [feedbackSheet, setFeedbackSheet] = useState<{
+    visible: boolean;
+    moduleId: string;
+    moduleType: string;
+    title: string;
+  }>({ visible: false, moduleId: "", moduleType: "", title: "" });
+
   const wsRef = useRef<WebSocket | null>(null);
 
   const showToast = useCallback(
@@ -119,15 +127,30 @@ export const NotificationProvider = ({
       if (newNotif && newNotif.id && newNotif.title) {
         setNotifications((prev) => [newNotif, ...prev]);
         setUnreadCount((count) => count + 1);
-        showToast(newNotif.title, newNotif.message || "", () => {
-          const val = newNotif.metadata?.sprint_id || newNotif.metadata?.task_id || newNotif.metadata?.id;
-          const titleVal = newNotif.metadata?.title || newNotif.metadata?.assignment_title;
-          handleSprintNotificationClick(
-            val ? String(val) : undefined,
-            titleVal ? String(titleVal) : undefined,
-            newNotif.type
-          );
-        });
+        
+        if (newNotif.type === "POST_COMPLETION_FEEDBACK") {
+          const val =
+            newNotif.metadata?.sprint_id ||
+            newNotif.metadata?.learning_plan_id ||
+            newNotif.metadata?.id ||
+            newNotif.metadata?.module_id;
+          setFeedbackSheet({
+            visible: true,
+            moduleId: String(val || ""),
+            moduleType: "GENERAL",
+            title: String(newNotif.metadata?.assignment_title || newNotif.metadata?.module_name || newNotif.title),
+          });
+        } else {
+          showToast(newNotif.title, newNotif.message || "", () => {
+            const val = newNotif.metadata?.sprint_id || newNotif.metadata?.task_id || newNotif.metadata?.id;
+            const titleVal = newNotif.metadata?.title || newNotif.metadata?.assignment_title;
+            handleSprintNotificationClick(
+              val ? String(val) : undefined,
+              titleVal ? String(titleVal) : undefined,
+              newNotif.type
+            );
+          });
+        }
         eventBus.emit("refresh_dashboard");
         eventBus.emit("refresh_tasks");
         eventBus.emit("refresh_roleplay");
@@ -148,6 +171,16 @@ export const NotificationProvider = ({
     async (sprintId?: string, assignmentTitle?: string, notifType?: string) => {
       try {
         const type = notifType ?? "";
+
+        if (type === "POST_COMPLETION_FEEDBACK") {
+          setFeedbackSheet({
+            visible: true,
+            moduleId: sprintId || "",
+            moduleType: "GENERAL", 
+            title: assignmentTitle || "Module Feedback",
+          });
+          return;
+        }
 
         if (type === "sprint_assigned" || type === "sprint_updated" || (sprintId && !type)) {
           // Navigate to the Sprint tab so the user sees their assigned sprint
@@ -501,35 +534,49 @@ export const NotificationProvider = ({
                 eventBus.emit("refresh_items");
               }
 
-              // Show in-app toast
-              showToast(newNotif.title, newNotif.message, () => {
+              if (notifType === "POST_COMPLETION_FEEDBACK") {
                 const val =
                   newNotif.metadata?.sprint_id ||
                   newNotif.metadata?.learning_plan_id ||
                   newNotif.metadata?.id ||
                   newNotif.metadata?.module_id;
-                const titleVal = newNotif.metadata?.assignment_title;
-                let metadataObj = newNotif.metadata;
-                if (typeof metadataObj === "string") {
-                  try {
-                    metadataObj = JSON.parse(metadataObj);
-                  } catch {}
-                }
-                const resolvedVal =
-                  val ||
-                  metadataObj?.sprint_id ||
-                  metadataObj?.learning_plan_id ||
-                  metadataObj?.id ||
-                  metadataObj?.module_id;
-                const resolvedTitle = titleVal || metadataObj?.assignment_title;
+                setFeedbackSheet({
+                  visible: true,
+                  moduleId: String(val || ""),
+                  moduleType: "GENERAL",
+                  title: String(newNotif.metadata?.assignment_title || newNotif.metadata?.module_name || newNotif.title),
+                });
+              } else {
+                // Show in-app toast
+                showToast(newNotif.title, newNotif.message, () => {
+                  const val =
+                    newNotif.metadata?.sprint_id ||
+                    newNotif.metadata?.learning_plan_id ||
+                    newNotif.metadata?.id ||
+                    newNotif.metadata?.module_id;
+                  const titleVal = newNotif.metadata?.assignment_title;
+                  let metadataObj = newNotif.metadata;
+                  if (typeof metadataObj === "string") {
+                    try {
+                      metadataObj = JSON.parse(metadataObj);
+                    } catch {}
+                  }
+                  const resolvedVal =
+                    val ||
+                    metadataObj?.sprint_id ||
+                    metadataObj?.learning_plan_id ||
+                    metadataObj?.id ||
+                    metadataObj?.module_id;
+                  const resolvedTitle = titleVal || metadataObj?.assignment_title;
 
-                if (resolvedVal || resolvedTitle) {
-                  handleSprintNotificationClick(
-                    String(resolvedVal || ""),
-                    String(resolvedTitle || ""),
-                  );
-                }
-              });
+                  if (resolvedVal || resolvedTitle) {
+                    handleSprintNotificationClick(
+                      String(resolvedVal || ""),
+                      String(resolvedTitle || ""),
+                    );
+                  }
+                });
+              }
             }
           } catch (e) {
             console.error("[WebSocket] Message parsing error:", e);
@@ -631,6 +678,17 @@ export const NotificationProvider = ({
           onDismiss={() => setToast(null)}
         />
       )}
+      <FeedbackBottomSheet
+        visible={feedbackSheet.visible}
+        moduleId={feedbackSheet.moduleId}
+        moduleType={feedbackSheet.moduleType}
+        title={feedbackSheet.title}
+        onClose={() => setFeedbackSheet((prev) => ({ ...prev, visible: false }))}
+        onSubmitSuccess={() => {
+          setFeedbackSheet((prev) => ({ ...prev, visible: false }));
+          showToast("Feedback Submitted", "Thank you for your feedback!");
+        }}
+      />
     </NotificationContext.Provider>
   );
 };
