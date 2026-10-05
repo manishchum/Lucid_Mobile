@@ -56,8 +56,9 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
     };
   }, []);
 
-  const handleVerify = async () => {
-    if (otp.length !== 6 || isInvalidated) return;
+  const handleVerify = async (otpValue?: string) => {
+    const code = otpValue ?? otp;
+    if (code.length !== 6 || isInvalidated || isLoading) return;
 
     if (isOnline === false) {
       setShowNoInternet(true);
@@ -67,7 +68,7 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
     setIsLoading(true);
     setError("");
 
-    const result = await verifyOTP(otp);
+    const result = await verifyOTP(code, phoneNumber);
 
     if (!result.success) {
       safeHaptics.errorNotification();
@@ -97,6 +98,15 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
     setIsLoading(false);
   };
 
+  const handleOtpChange = (txt: string) => {
+    if (isInvalidated || isLoading) return;
+    const cleanTxt = txt.replace(/[^0-9]/g, "");
+    setOtp(cleanTxt);
+    if (cleanTxt.length === 6) {
+      handleVerify(cleanTxt);
+    }
+  };
+
   const handleResend = async () => {
     if (timer > 0) return;
     if (isOnline === false) {
@@ -108,7 +118,7 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
     setRemainingAttempts(null);
     setIsInvalidated(false);
     setOtp("");
-    const res = await sendOTP();
+    const res = await sendOTP(phoneNumber);
     if (!res.success) {
       setError(res.message || "Failed to resend OTP. Please try again.");
     }
@@ -150,7 +160,7 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
           </Text>
 
           <TouchableOpacity
-            onPress={() => !isInvalidated && inputRef.current?.focus()}
+            onPress={() => !isInvalidated && !isLoading && inputRef.current?.focus()}
             style={styles.otpRow}
             activeOpacity={1}
           >
@@ -160,13 +170,13 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
           <TextInput
             ref={inputRef}
             value={otp}
-            onChangeText={(txt) =>
-              !isInvalidated && setOtp(txt.replace(/[^0-9]/g, ""))
-            }
+            onChangeText={handleOtpChange}
             maxLength={6}
             keyboardType="number-pad"
+            textContentType="oneTimeCode"
+            autoComplete="sms-otp"
             style={styles.hiddenInput}
-            editable={!isInvalidated}
+            editable={!isInvalidated && !isLoading}
           />
 
           {error ? (
@@ -180,21 +190,12 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
             </View>
           ) : null}
 
-          <TouchableOpacity
-            style={[
-              styles.verifyButton,
-              (otp.length !== 6 || isLoading || isInvalidated) &&
-                styles.buttonDisabled,
-            ]}
-            onPress={handleVerify}
-            disabled={otp.length !== 6 || isLoading || isInvalidated}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <Text style={styles.buttonText}>Verify</Text>
-            )}
-          </TouchableOpacity>
+          {isLoading ? (
+            <View style={styles.statusIndicator}>
+              <ActivityIndicator size="small" color="#2563EB" />
+              <Text style={styles.statusText}>Verifying code...</Text>
+            </View>
+          ) : null}
 
           <View style={styles.resendContainer}>
             {timer > 0 ? (
@@ -283,17 +284,22 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     fontWeight: "500",
   },
-  verifyButton: {
-    width: "100%",
-    backgroundColor: "#2563EB",
-    height: 60,
-    borderRadius: 16,
-    justifyContent: "center",
+  statusIndicator: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 10,
+    justifyContent: "center",
+    paddingVertical: 14,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 12,
+    marginTop: 15,
+    width: "100%",
   },
-  buttonDisabled: { backgroundColor: "#CBD5E1" },
-  buttonText: { color: "#FFF", fontSize: 16, fontWeight: "700" },
+  statusText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2563EB",
+    marginLeft: 8,
+  },
   resendContainer: { marginTop: 30 },
   resendText: { color: "#64748B", fontSize: 14 },
   timerText: { color: "#1E293B", fontWeight: "600" },

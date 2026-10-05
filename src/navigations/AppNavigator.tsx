@@ -26,6 +26,7 @@ import { APP_ROUTES, STACK_ROUTES } from "./Routes";
 import { initMobileErrorReporting } from "../utils/errorReporter";
 import { initOfflineQueueListener } from "../utils/offlineQueue";
 import { SplashScreen } from "../components/splash/SplashScreen";
+import { homePerfMeter } from "../utils/homePerformanceMeter";
 
 // Screens
 import LoginScreen from "../screens/auth/loginScreen/LoginScreen";
@@ -41,8 +42,12 @@ import ContentViewerScreen from "../screens/home/ContentViewerScreen";
 import SprintverseScreen from "../screens/home/SprintverseScreen";
 import ReportsScreen from "../screens/home/ReportsScreen";
 import RoleplayScreen from "../screens/home/roleplay/RoleplayScreen";
+import RoleplayConfigScreen from "../screens/home/roleplay/RoleplayConfigScreen";
 import RoleplaySessionScreen from "../screens/home/roleplay/RoleplaySessionScreen";
 import RoleplayReportScreen from "../screens/home/roleplay/RoleplayReportScreen";
+import GamificationHubScreen from "../screens/home/gamification/GamificationHubScreen";
+import DrillPlayerScreen from "../screens/home/gamification/DrillPlayerScreen";
+import SprintDetailScreen from "../screens/home/gamification/SprintDetailScreen";
 
 // Components
 import AppHeader from "../components/navigation/AppHeader";
@@ -192,6 +197,7 @@ function AppNavigatorContent() {
       if (isLoggedIn) {
         // Scenario 2: Recurring user (already logged in) -> show animated splash screen
         console.log("[AppNavigator] Launching recurring user flow -> showing splash screen");
+        homePerfMeter.markSplashStart();
         setIsSplashActive(true);
       } else {
         // Scenario 1: First-time user / unauthenticated -> skip pre-login splash, go to login screen directly
@@ -203,6 +209,7 @@ function AppNavigatorContent() {
       if (prevIsLoggedInRef.current === false && isLoggedIn) {
         console.log("[AppNavigator] Post-login transition detected -> triggering splash screen");
         appStartTimeRef.current = Date.now();
+        homePerfMeter.markSplashStart();
         setIsSplashActive(true);
       }
     }
@@ -212,6 +219,7 @@ function AppNavigatorContent() {
 
   const handleSplashComplete = useCallback(() => {
     const splashDuration = Date.now() - appStartTimeRef.current;
+    homePerfMeter.markSplashComplete();
     console.log(
       `[PerfMeter] 🚀 APP INITIALIZATION & SPLASH COMPLETED: Total Splash Active=${splashDuration}ms | IsLoggedIn=${isLoggedIn} | UserId=${cachedUser?.userId ?? "guest"}`
     );
@@ -282,8 +290,8 @@ function AppNavigatorContent() {
       <SplashScreen
         isDataReady={isDataReady}
         onAnimationComplete={handleSplashComplete}
-        minimumDurationMs={1200}
-        maxTimeoutMs={6000}
+        minimumDurationMs={800}
+        maxTimeoutMs={4500}
       />
     );
   }
@@ -346,6 +354,15 @@ function AppNavigatorContent() {
               }}
             />
             <Stack.Screen
+              name={STACK_ROUTES.ROLEPLAY_CONFIG}
+              component={RoleplayConfigScreen}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
               name={STACK_ROUTES.ROLEPLAY_SESSION}
               component={RoleplaySessionScreen}
               options={{
@@ -357,6 +374,33 @@ function AppNavigatorContent() {
             <Stack.Screen
               name={STACK_ROUTES.ROLEPLAY_REPORT}
               component={RoleplayReportScreen}
+              options={{
+                presentation: "card",
+                animation: "slide_from_right",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.GAMIFICATION}
+              component={GamificationHubScreen}
+              options={{
+                presentation: "card",
+                animation: "fade",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.GAMIFICATION_DRILL}
+              component={DrillPlayerScreen}
+              options={{
+                presentation: "card",
+                animation: "slide_from_bottom",
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name={STACK_ROUTES.GAMIFICATION_SPRINT_DETAIL}
+              component={SprintDetailScreen}
               options={{
                 presentation: "card",
                 animation: "slide_from_right",

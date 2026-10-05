@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { appStorage } from "../../utils/appStorage";
 import { eventBus } from "../../utils/EventBus";
 import { logger } from "../../utils/UnifiedLogger";
+import { homePerfMeter } from "../../utils/homePerformanceMeter";
 import { useTenant } from "../../contex/TenantContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import {
@@ -293,6 +294,33 @@ export const useGetProcessedModules = (
 };
 
 // ==================== PROCESSED MODULE BY ID HOOK ====================
+export const memoryProcessedModuleCache = new Map<string, any>();
+
+export const prefetchProcessedModule = async (
+  processedModuleId: string,
+  userId: string,
+): Promise<void> => {
+  if (!processedModuleId || !userId) return;
+  if (memoryProcessedModuleCache.has(processedModuleId)) return;
+  try {
+    const cacheKey = `@processed_module_${processedModuleId}`;
+    const cachedJson = await AsyncStorage.getItem(cacheKey);
+    if (cachedJson) {
+      const data = JSON.parse(cachedJson);
+      memoryProcessedModuleCache.set(processedModuleId, data);
+      return;
+    }
+    const response = await getProcessedModuleById(processedModuleId, userId);
+    const data = response?.data ?? null;
+    if (data) {
+      memoryProcessedModuleCache.set(processedModuleId, data);
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
+    }
+  } catch (err) {
+    logger.debug("[prefetchProcessedModule] background prefetch error:", err);
+  }
+};
+
 interface UseGetProcessedModuleByIdReturn {
   module: any | null;
   isLoading: boolean;
@@ -304,8 +332,14 @@ export const useGetProcessedModuleById = (
   processedModuleId: string | null,
   userId: string | null,
 ): UseGetProcessedModuleByIdReturn => {
-  const [module, setModule] = useState<any | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [module, setModule] = useState<any | null>(() => {
+    if (!processedModuleId) return null;
+    return memoryProcessedModuleCache.get(processedModuleId) ?? null;
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    if (!processedModuleId || !userId) return false;
+    return !memoryProcessedModuleCache.has(processedModuleId);
+  });
   const [error, setError] = useState<Error | null>(null);
 
   const fetchModuleData = async (showSpinner: boolean) => {
@@ -316,6 +350,7 @@ export const useGetProcessedModuleById = (
       const response = await getProcessedModuleById(processedModuleId, userId);
       const data = response?.data ?? null;
       if (!data) throw new Error("API returned empty data field");
+      memoryProcessedModuleCache.set(processedModuleId, data);
       setModule(data);
 
       const cacheKey = `@processed_module_${processedModuleId}`;
@@ -340,17 +375,28 @@ export const useGetProcessedModuleById = (
         return;
       }
 
+      // If already in memory cache, keep loading false and do a silent background revalidation
+      if (memoryProcessedModuleCache.has(processedModuleId)) {
+        setModule(memoryProcessedModuleCache.get(processedModuleId));
+        setIsLoading(false);
+        try {
+          await fetchModuleData(false);
+        } catch {}
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
 
       let hasCache = false;
 
-      // 1. Try to load from cache first
+      // 1. Try to load from AsyncStorage
       try {
         const cacheKey = `@processed_module_${processedModuleId}`;
         const cachedJson = await AsyncStorage.getItem(cacheKey);
         if (cachedJson) {
           const cachedData = JSON.parse(cachedJson);
+          memoryProcessedModuleCache.set(processedModuleId, cachedData);
           setModule(cachedData);
           logger.debug(
             "[Hook] ✅ Loaded processed module from cache:",
@@ -1179,10 +1225,25 @@ export const useGetDashboardSummary = (
   const [isLoading, setIsLoading] = useState<boolean>(() => {
     if (!userId || !companyId) return true;
     const mem = memoryDashboardCache.get(userId);
-    if (mem?.cards) return false;
+    if (mem?.cards && mem.cards.length > 0) {
+      homePerfMeter.markDashboardFetchEnd({
+        apiDurationMs: 0,
+        processingDurationMs: 0,
+        source: "MEMORY_CACHE",
+      });
+      return false;
+    }
     const cachedCards = appStorage.getObject<ResolvedPlanCard[]>(
       `@resolved_cards_${userId}`,
     );
+    if (cachedCards && cachedCards.length > 0) {
+      homePerfMeter.markDashboardFetchEnd({
+        apiDurationMs: 0,
+        processingDurationMs: 0,
+        source: "STORAGE_CACHE",
+      });
+      return false;
+    }
     return !cachedCards;
   });
   const [error, setError] = useState<Error | null>(null);
@@ -1190,10 +1251,10 @@ export const useGetDashboardSummary = (
   const { setCompanyFromDashboard } = useTenant();
 
   const fetchDashboardData = useCallback(
-    async (showSpinner: boolean) => {
+    async (showSpinner: boolean, forceFresh = false) => {
       if (!userId || !companyId) return;
 
-      if (fetchPromiseRef.current) {
+      if (!forceFresh && fetchPromiseRef.current) {
         logger.debug(
           "[Hook] fetchDashboardData already in progress, awaiting existing promise...",
         );
@@ -1212,15 +1273,18 @@ export const useGetDashboardSummary = (
       const fetchTask = (async () => {
         try {
           const startTime = Date.now();
+          homePerfMeter.markDashboardFetchStart();
           logger.debug(
             "[Hook] GET /employee/dashboard_summary/ →",
             userId,
             "companyId:",
             companyId,
+            "forceFresh:",
+            forceFresh,
           );
 
           const apiStart = Date.now();
-          const data = await getDashboardSummary(userId, companyId);
+          const data = await getDashboardSummary(userId, companyId, forceFresh);
           const apiEnd = Date.now();
           logger.debug(
             `[Timing] getDashboardSummary API took ${apiEnd - apiStart}ms`,
@@ -1410,8 +1474,15 @@ export const useGetDashboardSummary = (
           }
 
           const totalDuration = Date.now() - startTime;
+          const apiDuration = apiEnd - apiStart;
+          const processingDuration = Math.max(0, totalDuration - apiDuration);
+          homePerfMeter.markDashboardFetchEnd({
+            apiDurationMs: apiDuration,
+            processingDurationMs: processingDuration,
+            source: "NETWORK_API",
+          });
           console.log(
-            `[PerfMeter] 📊 getDashboardSummary NETWORK FETCH COMPLETED: API Call=${apiEnd - apiStart}ms | Total Processing=${totalDuration}ms | Resolved Cards=${cards.length} | UserID=${userId}`
+            `[PerfMeter] 📊 getDashboardSummary NETWORK FETCH COMPLETED: API Call=${apiDuration}ms | Total Processing=${totalDuration}ms | Resolved Cards=${cards.length} | UserID=${userId}`
           );
           logger.debug(
             `[Timing] Total fetchDashboardData took ${totalDuration}ms`,
@@ -1423,6 +1494,7 @@ export const useGetDashboardSummary = (
               ? err
               : new Error("Failed to fetch dashboard summary");
           logger.error("[Hook] fetchDashboardData error:", error.message);
+          setError(error);
           throw error;
         }
       })();
@@ -1471,9 +1543,9 @@ export const useGetDashboardSummary = (
   useEffect(() => {
     const handleRefresh = () => {
       logger.debug(
-        "[Hook] EventBus triggered refresh_dashboard. Refreshing silently...",
+        "[Hook] EventBus triggered refresh_dashboard. Refreshing with forceFresh...",
       );
-      fetchDashboardData(false).catch(() => {});
+      fetchDashboardData(false, true).catch(() => {});
     };
 
     const handleModuleCompleted = (data?: { processedModuleId?: string; quizScore?: number; taskId?: string }) => {
@@ -1540,8 +1612,12 @@ export const useGetDashboardSummary = (
     isLoading,
     error,
     refetch: useCallback(
-      async (showSpinner = true) => {
-        await fetchDashboardData(showSpinner);
+      async (showSpinner = true): Promise<void> => {
+        try {
+          await fetchDashboardData(showSpinner, true);
+        } catch {
+          // Handled gracefully — error state is updated in hook
+        }
       },
       [fetchDashboardData],
     ),
@@ -1558,6 +1634,7 @@ interface UseModuleProgressReturn {
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
+  refreshSilent: () => Promise<void>;
 }
 
 export const useModuleProgress = (
@@ -1601,16 +1678,6 @@ export const useModuleProgress = (
               };
             }
             return networkEntry;
-          });
-
-          const networkPids = new Set(data.map((d) => d.processed_module_id));
-          prevProgress.forEach((p) => {
-            if (
-              p.processed_module_id &&
-              !networkPids.has(p.processed_module_id)
-            ) {
-              mergedData.push(p);
-            }
           });
 
           const cacheKey = `@module_progress_${userId}`;
@@ -1769,6 +1836,9 @@ export const useModuleProgress = (
     refetch: useCallback(async () => {
       await fetchProgressData(true);
     }, [fetchProgressData]),
+    refreshSilent: useCallback(async () => {
+      await fetchProgressData(false, true);
+    }, [fetchProgressData]),
   };
 };
 
@@ -1840,7 +1910,7 @@ export const useGetTasks = (
   }, [tasks]);
 
   const fetchTasks = useCallback(
-    async (isSilent = false) => {
+    async (isSilent = false, forceFresh = false) => {
       if (!userId || !companyId || !enabled) return;
       if (isOnline === false) return;
 
@@ -1852,7 +1922,7 @@ export const useGetTasks = (
       setError(null);
 
       try {
-        const response: TasksResponse = await getTasks(userId, companyId);
+        const response: TasksResponse = await getTasks(userId, companyId, forceFresh);
         const fetchedTasks = Array.isArray(response.tasks) ? response.tasks : [];
         setTasks(fetchedTasks);
         setTotal(response.total ?? fetchedTasks.length);
@@ -1886,7 +1956,7 @@ export const useGetTasks = (
   }, [userId, companyId, enabled, fetchTasks]);
 
   const refetch = useCallback(
-    (isSilent = true) => fetchTasks(isSilent),
+    (isSilent = true) => fetchTasks(isSilent, true),
     [fetchTasks],
   );
 

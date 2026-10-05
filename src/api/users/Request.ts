@@ -22,6 +22,7 @@ import {
   FormatAnswer,
 } from "./Dto";
 import { uploadMediaToStorage } from "../../services/storageUpload";
+import { supabase } from "../../services/supabase";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -76,7 +77,7 @@ export const sendOtpApi = async (
 export const verifyOtpApi = async (
   phone: string,
   otp: string
-): Promise<{ success: boolean; token: string; user: any }> => {
+): Promise<{ success: boolean; token: string; user: any; company?: any }> => {
   const url = `${API_BASE_URL}/auth/verify-otp`;
   try {
     const response = await fetch(url, {
@@ -146,6 +147,8 @@ export const postModuleChat = async (
   const result = await apiFetch<PostModuleChatResponseDto>(MODULE_CHAT_URL, {
     method: "POST",
     userId: data.user_id,
+    companyId: data.company_id,
+    timeoutMs: 60_000,
     body: JSON.stringify(payload),
   });
 
@@ -195,7 +198,7 @@ const getPublicHeaders = (userId?: string, companyId?: string): Record<string, s
 };
 
 // ==================== CENTRALIZED FETCH WRAPPER ====================
-export const DEFAULT_FETCH_TIMEOUT_MS = 15_000; // 15 seconds
+export const DEFAULT_FETCH_TIMEOUT_MS = 20_000; // 20 seconds (allows for backend container cold-start)
 export const DEFAULT_RETRY_DELAY_MS = 800; // 800ms
 
 export class ApiError extends Error {
@@ -311,7 +314,9 @@ export async function apiFetch<T = any>(
       response = await fetch(url, { ...rest, headers, signal: controller.signal });
     } catch (networkErr: any) {
       if (isTimeout) {
-        if (retryBudget > 0 && !userSignal?.aborted) {
+        // Do not auto-retry long timeouts unless explicitly configured in options
+        const allowTimeoutRetry = typeof options.retries === "number" && retryBudget > 0;
+        if (allowTimeoutRetry && !userSignal?.aborted) {
           logger.warn(
             `[apiFetch] ${method} ${url} timed out after ${timeoutMs}ms, retrying (${retryBudget} retries left)...`,
           );
@@ -417,9 +422,11 @@ export async function apiFetch<T = any>(
 
   if (dedupKey) {
     inFlightRequests.set(dedupKey, executionPromise);
-    executionPromise.finally(() => {
-      inFlightRequests.delete(dedupKey);
-    });
+    executionPromise
+      .finally(() => {
+        inFlightRequests.delete(dedupKey);
+      })
+      .catch(() => {});
   }
 
   return executionPromise;
@@ -505,6 +512,37 @@ export const getCompanyActiveStatus = async (
   } catch (error) {
     logger.error("[Request] Error fetching company active status:", error);
     return null; // network error — treat as unknown, not as "inactive"
+  }
+};
+
+// 1b-2. Fetch full company details (addons, tiers, logos) directly
+export const getCompanyDetails = async (
+  companyId: string,
+  userId?: string,
+): Promise<any | null> => {
+  if (!companyId) return null;
+  try {
+    const url = `${API_BASE_URL}/companies/${encodeURIComponent(companyId)}`;
+    logger.debug("[Request] getCompanyDetails →", url);
+    const json = await apiFetch<any>(url, {
+      method: "GET",
+      userId,
+      companyId,
+      noCache: true,
+    });
+
+    const company = json?.company ?? json?.data?.company ?? json?.data ?? json;
+    if (!company || typeof company !== "object") {
+      logger.warn(
+        "[Request] getCompanyDetails — company not found for ID:",
+        companyId,
+      );
+      return null;
+    }
+    return company;
+  } catch (error) {
+    logger.error("[Request] Error fetching company details:", error);
+    return null;
   }
 };
 
@@ -1023,16 +1061,22 @@ export const getProcessedModuleById = async (
 export const getDashboardSummary = async (
   userId: string,
   companyId: string,
+  forceFresh: boolean = false,
 ): Promise<DashboardSummaryResponse> => {
   try {
     const url = `${API_BASE_URL}/employee/dashboard_summary/${encodeURIComponent(userId)}`;
-    logger.debug("[Request] getDashboardSummary →", url);
+    logger.debug("[Request] getDashboardSummary →", url, "forceFresh:", forceFresh);
     const json = await apiFetch<any>(url, {
       method: "GET",
       userId,
       companyId,
       timeoutMs: 30000,
-      headers: { "X-Company-ID": companyId },
+      headers: {
+        "X-Company-ID": companyId,
+        ...(forceFresh
+          ? { "Cache-Control": "no-cache", Pragma: "no-cache" }
+          : {}),
+      },
     });
 
     if (Array.isArray(json?.plans)) {
@@ -1077,6 +1121,7 @@ const isUuidFormat = (val?: string | null): boolean =>
 export const getTasks = async (
   userId: string,
   companyId: string,
+  forceFresh: boolean = false,
 ): Promise<TasksResponse> => {
   try {
     let resolvedUserId = userId;
@@ -1091,12 +1136,15 @@ export const getTasks = async (
     }
     const targetId = resolvedUserId && resolvedUserId.trim() ? resolvedUserId : "me";
     const url = `${API_BASE_URL}/task-manager/tasks/user/${encodeURIComponent(targetId)}`;
-    logger.debug("[Request] getTasks →", url);
+    logger.debug("[Request] getTasks →", url, "forceFresh:", forceFresh);
     const json = await apiFetch<any>(url, {
       method: "GET",
       userId: targetId === "me" ? undefined : targetId,
       companyId,
       timeoutMs: 30_000,
+      headers: forceFresh
+        ? { "Cache-Control": "no-cache", Pragma: "no-cache" }
+        : undefined,
     });
     logger.debug(
       "[Request] getTasks ✅ total:",
@@ -1353,10 +1401,7 @@ export const submitFormatAnswer = async (
     }
   }
 
-  const usesTextAnalysis = TEXT_ANALYSIS_FORMATS.includes(format);
-  const url = usesTextAnalysis
-    ? `${API_BASE_URL}/text-analysis/submit`
-    : `${API_BASE_URL}/task-manager/tasks/submit`;
+  const url = `${API_BASE_URL}/task-manager/tasks/submit`;
 
   const body: Record<string, any> = {
     task_id: taskId,
@@ -1512,6 +1557,25 @@ export const submitTaskAnswer = async (
 
     const json = (await response.json()) as TaskSubmissionResponse;
     logger.debug("[Request] submitTaskAnswer", json?.submission_id);
+
+    // Broadcast instant realtime completion event across Web & Mobile
+    try {
+      const channel = supabase.channel(`realtime_tasks_${resolvedUserId}_broadcast`);
+      await channel.subscribe();
+      await channel.send({
+        type: "broadcast",
+        event: "task_completed",
+        payload: { userId: resolvedUserId, taskId: payload.task_id, submissionId: json?.submission_id },
+      });
+      setTimeout(() => {
+        try {
+          supabase.removeChannel(channel);
+        } catch {}
+      }, 1000);
+    } catch (broadcastErr) {
+      logger.warn("[Request] Broadcast task_completed failed:", broadcastErr);
+    }
+
     return json;
   } catch (error) {
     logger.error("[Request] Error submitting task answer:", error);

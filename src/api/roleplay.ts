@@ -238,9 +238,20 @@ export async function getUserRoleplayReports(employeeId: string): Promise<Rolepl
       return [];
     }
     const data = await res.json();
-    return data.sessions || data || [];
+
+    // Defensive extraction — handle all possible backend response shapes
+    // Actual shape: { success: true, data: { sessions: [...], stats: {...} } }
+    if (Array.isArray(data?.data?.sessions)) return data.data.sessions;
+    if (Array.isArray(data?.sessions)) return data.sessions;
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.reports)) return data.reports;
+    if (Array.isArray(data)) return data;
+
+    logger.warn("[RoleplayAPI] getUserRoleplayReports: unexpected response shape", data);
+    return [];
   } catch (e) {
     logger.error("[RoleplayAPI] Error fetching roleplay reports:", e);
     return [];
   }
 }
+

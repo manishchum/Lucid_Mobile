@@ -143,6 +143,11 @@ export default function AppDrawer() {
     navigation.navigate(STACK_ROUTES.ROLEPLAY as never);
   };
 
+  const handleGamificationPress = () => {
+    closeDrawer();
+    navigation.navigate(STACK_ROUTES.GAMIFICATION as never);
+  };
+
   const getInitials = (name: string) => {
     return name
       ? name
@@ -245,6 +250,20 @@ export default function AppDrawer() {
                   <MaterialCommunityIcons name="account-voice" size={24} color="#6366F1" />
                 </View>
                 <Text style={styles.navItemText}>Roleplay</Text>
+                <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+
+            {hasFeature(FEATURES.GAMIFICATION) && (
+              <TouchableOpacity
+                onPress={handleGamificationPress}
+                activeOpacity={0.7}
+                style={[styles.navItem, { marginTop: 12 }]}
+              >
+                <View style={styles.navIconWrapper}>
+                  <MaterialCommunityIcons name="gamepad-variant" size={24} color="#6366F1" />
+                </View>
+                <Text style={styles.navItemText}>Arena</Text>
                 <MaterialCommunityIcons name="chevron-right" size={20} color="#94A3B8" />
               </TouchableOpacity>
             )}
@@ -379,6 +398,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: "#1E293B",
+  },
+  gamificationNavItem: {
+    backgroundColor: "#1E0A3C",
+    borderWidth: 1,
+    borderColor: "#4C1D95",
+  },
+  gamificationIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#2D1060",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: "#6D28D9",
+  },
+  gamificationNavItemText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#DDD6FE",
   },
   logoutButton: {
     flexDirection: "row",

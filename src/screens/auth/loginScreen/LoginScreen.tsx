@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   useWindowDimensions,
   Modal,
   StyleSheet,
+  ActivityIndicator,
+  Keyboard,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "../../../contex/AuthContext";
@@ -30,15 +32,19 @@ export default function LoginScreen() {
   const [showNoInternet, setShowNoInternet] = useState(false);
   const insets = useSafeAreaInsets();
   const isOnline = useNetworkStatus();
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleSendCode = async () => {
-    setError("");
-    setErrorDetails("");
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
-    if (phoneNumber.length !== 10) {
-      setError("Please enter exactly 10 digits");
-      return;
-    }
+  const triggerSendCode = async (phoneToVerify: string) => {
+    const cleanNumber = phoneToVerify.replace(/\D/g, "");
+    if (cleanNumber.length !== 10) return;
 
     if (isOnline === false) {
       setShowNoInternet(true);
@@ -46,10 +52,13 @@ export default function LoginScreen() {
     }
 
     setIsLoading(true);
+    setError("");
+    setErrorDetails("");
+    Keyboard.dismiss();
 
     try {
-      // Send OTP — Backend validates user registration & active status internally
-      const result = await sendOTP();
+      // Send OTP — explicitly pass the clean 10-digit phone number
+      const result = await sendOTP(cleanNumber);
       if (!result.success) {
         if (result.status === 404) {
           setShowNotRegisteredModal(true);
@@ -74,7 +83,36 @@ export default function LoginScreen() {
     }
   };
 
-  const isButtonDisabled = phoneNumber.length !== 10 || isLoading;
+  const handlePhoneChange = (txt: string) => {
+    let cleanTxt = txt.replace(/[^0-9]/g, "");
+
+    // Handle user pasting with country code (+91) or leading 0
+    if (cleanTxt.startsWith("91") && cleanTxt.length > 10) {
+      cleanTxt = cleanTxt.slice(2);
+    } else if (cleanTxt.startsWith("0") && cleanTxt.length > 10) {
+      cleanTxt = cleanTxt.slice(1);
+    }
+
+    // Limit to 10 digits
+    if (cleanTxt.length > 10) {
+      cleanTxt = cleanTxt.slice(0, 10);
+    }
+
+    setPhoneNumber(cleanTxt);
+    setError("");
+    setErrorDetails("");
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+
+    if (cleanTxt.length === 10) {
+      debounceTimerRef.current = setTimeout(() => {
+        triggerSendCode(cleanTxt);
+      }, 300);
+    }
+  };
 
   return (
     <>
@@ -85,6 +123,7 @@ export default function LoginScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           bounces={false}
+          keyboardShouldPersistTaps="handled"
         >
           {/* Header */}
           <View style={styles.topSection}>
@@ -116,12 +155,11 @@ export default function LoginScreen() {
                 style={styles.input}
                 keyboardType="phone-pad"
                 value={phoneNumber}
-                onChangeText={(txt) =>
-                  setPhoneNumber(txt.replace(/[^0-9]/g, ""))
-                }
-                maxLength={10}
+                onChangeText={handlePhoneChange}
+                maxLength={16}
                 placeholder="Enter phone number"
                 placeholderTextColor="#64748B"
+                editable={!isLoading}
               />
             </View>
 
@@ -136,27 +174,19 @@ export default function LoginScreen() {
               </View>
             ) : null}
 
-            <TouchableOpacity
-              style={[
-                styles.primaryButton,
-                isButtonDisabled && styles.buttonDisabled,
-              ]}
-              onPress={handleSendCode}
-              disabled={isButtonDisabled}
-            >
-              {isLoading ? (
-                <Text style={styles.buttonText}>Checking...</Text>
-              ) : (
-                <View style={styles.buttonContent}>
-                  <Text style={styles.buttonText}>Get OTP</Text>
-                  <MaterialCommunityIcons
-                    name="chevron-right"
-                    size={24}
-                    color="#fff"
-                  />
-                </View>
-              )}
-            </TouchableOpacity>
+            {isLoading ? (
+              <View style={styles.statusIndicator}>
+                <ActivityIndicator size="small" color="#2563EB" />
+                <Text style={styles.statusText}>Sending verification code...</Text>
+              </View>
+            ) : error && phoneNumber.replace(/\D/g, "").length === 10 ? (
+              <TouchableOpacity
+                style={{ marginTop: 12, alignItems: "center", paddingVertical: 8 }}
+                onPress={() => triggerSendCode(phoneNumber.replace(/\D/g, "").slice(-10))}
+              >
+                <Text style={styles.linkText}>Tap to Retry</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

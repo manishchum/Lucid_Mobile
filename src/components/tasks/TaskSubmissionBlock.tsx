@@ -172,6 +172,7 @@ interface TaskSubmissionBlockProps {
   value: FormatAnswerLocal;
   onChange: (next: FormatAnswerLocal) => void;
   textPlaceholder?: string;
+  onFocus?: () => void;
 }
 
 export default function TaskSubmissionBlock({
@@ -180,6 +181,7 @@ export default function TaskSubmissionBlock({
   value,
   onChange,
   textPlaceholder,
+  onFocus,
 }: TaskSubmissionBlockProps) {
   const meta = getFormatMeta(format);
 
@@ -235,6 +237,7 @@ export default function TaskSubmissionBlock({
           placeholder={textPlaceholder ?? "Write your response…"}
           placeholderTextColor="#CBD5E1"
           textAlignVertical="top"
+          onFocus={onFocus}
         />
         <Text style={s.charCount}>{(value.text ?? "").length} chars</Text>
       </View>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { friendlyError } from "../../../utils/friendlyError";
 import {
   View,
@@ -10,13 +10,19 @@ import {
   Alert,
   ActivityIndicator,
   Pressable,
-  Dimensions,
-  KeyboardAvoidingView,
+  useWindowDimensions,
   Keyboard,
   Platform,
+  LayoutAnimation,
+  UIManager,
 } from "react-native";
 
-const SCREEN_HEIGHT = Dimensions.get("window").height;
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -125,6 +131,7 @@ const FormatStep = ({
   value,
   onChange,
   done,
+  onFocus,
 }: {
   index: number;
   title: string;
@@ -133,6 +140,7 @@ const FormatStep = ({
   value: FormatAnswerLocal;
   onChange: (next: FormatAnswerLocal) => void;
   done: boolean;
+  onFocus?: () => void;
 }) => (
   <View style={s.stepRow}>
     <StepBadge index={index} done={done} />
@@ -145,6 +153,7 @@ const FormatStep = ({
           value={value}
           onChange={onChange}
           textPlaceholder="Write your answer here…"
+          onFocus={onFocus}
         />
       </View>
     </View>
@@ -159,6 +168,7 @@ const BundleStep = ({
   expanded,
   onToggle,
   done,
+  onFocus,
 }: {
   index: number;
   bt: BundleTask;
@@ -167,6 +177,7 @@ const BundleStep = ({
   expanded: boolean;
   onToggle: () => void;
   done: boolean;
+  onFocus?: () => void;
 }) => {
   const fmt = (toFormatList(bt.submission_format)[0] ??
     "text") as SubmissionFormat;
@@ -198,6 +209,7 @@ const BundleStep = ({
               value={value}
               onChange={onChange}
               textPlaceholder="Write your answer here…"
+              onFocus={onFocus}
             />
           </View>
         )}
@@ -223,10 +235,44 @@ export default function TaskAccordionItem({
 }: TaskAccordionItemProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const scrollViewRef = useRef<ScrollView>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submittingLabel, setSubmittingLabel] = useState<string>("Submitting…");
   const [justCompleted, setJustCompleted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(e.endCoordinates.height);
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const handleInputFocus = () => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 120);
+  };
 
   const [answers, setAnswers] = useState<Record<string, FormatAnswerLocal>>({});
   const [bundleAnswers, setBundleAnswers] = useState<
@@ -288,11 +334,21 @@ export default function TaskAccordionItem({
 
   const openModal = () => {
     setSubmitError(null);
+    setKeyboardHeight(0);
     setModalOpen(true);
   };
   const closeModal = () => {
+    Keyboard.dismiss();
     setModalOpen(false);
     setSubmitError(null);
+    setKeyboardHeight(0);
+  };
+  const handleBackdropPress = () => {
+    if (keyboardHeight > 0) {
+      Keyboard.dismiss();
+    } else {
+      closeModal();
+    }
   };
 
   const validate = (): string | null => {
@@ -491,10 +547,17 @@ export default function TaskAccordionItem({
       eventBus.emit("PROGRESS_NEEDS_RECALCULATION");
       eventBus.emit("refresh_dashboard");
       setModalOpen(false);
-    } catch (err) {
+    } catch (err: any) {
+      console.error("[TaskAccordionItem] handleSubmit failed:", err);
+      const rawMessage = err?.message || String(err);
       const message = friendlyError(err);
       setSubmitError(message);
-      Alert.alert("Submission failed", message);
+      Alert.alert(
+        "Submission failed",
+        rawMessage && !rawMessage.includes("HTTP error") && rawMessage !== message
+          ? `${message}\n\n(${rawMessage})`
+          : message,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -598,151 +661,170 @@ export default function TaskAccordionItem({
         transparent
         animationType="slide"
         onRequestClose={closeModal}
+        statusBarTranslucent
       >
-        <View style={s.sheetOverlay}>
-          <Pressable style={s.sheetBackdrop} onPress={closeModal} />
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
-            style={s.sheetContainer}
+        <View style={s.modalRoot}>
+          <Pressable style={s.sheetBackdrop} onPress={handleBackdropPress} />
+          <View
+            style={[
+              s.sheetOverlay,
+              keyboardHeight > 0 && { paddingBottom: keyboardHeight },
+            ]}
+            pointerEvents="box-none"
           >
-            <View style={s.sheetGrabber} />
-
-            <View style={s.modalHeader}>
-              <View
-                style={[s.modalHeaderIcon, { backgroundColor: primaryMeta.bg }]}
-              >
-                <MaterialCommunityIcons
-                  name={primaryMeta.icon as any}
-                  size={18}
-                  color={primaryMeta.color}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.modalTitle} numberOfLines={2}>
-                  {task.title}
-                </Text>
-                {!!task.description && task.description !== task.title && (
-                  <Text style={s.modalSubtitle} numberOfLines={2}>
-                    {task.description}
-                  </Text>
-                )}
-              </View>
-              <TouchableOpacity
-                onPress={closeModal}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <MaterialCommunityIcons
-                  name="close"
-                  size={20}
-                  color="#64748B"
-                />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              style={s.modalBody}
-              contentContainerStyle={{
-                paddingBottom: completed ? 16 + insets.bottom : 16,
-              }}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
-              onScrollBeginDrag={Keyboard.dismiss}
-              showsVerticalScrollIndicator={false}
+            <View
+              style={[
+                s.sheetContainer,
+                {
+                  maxHeight:
+                    keyboardHeight > 0
+                      ? Math.max(260, windowHeight - keyboardHeight - insets.top - 16)
+                      : windowHeight * 0.75,
+                },
+              ]}
             >
-              {completed ? (
-                <View style={s.completedPanel}>
-                  <MaterialCommunityIcons
-                    name="check-circle"
-                    size={20}
-                    color="#059669"
-                  />
-                  <Text style={s.completedPanelText}>
-                    This task has already been submitted.
-                  </Text>
-                </View>
-              ) : isBundle ? (
-                bundleTasks.map((bt, idx) => {
-                  const fmts = toFormatList(bt.submission_format);
-                  const val = getBundleAnswer(idx, fmts[0] ?? "text");
-                  const done = fmts.every((fmt) =>
-                    isFormatAnswered(
-                      fmt,
-                      bt.questions ?? [],
-                      getBundleAnswer(idx, fmt),
-                    ),
-                  );
-                  return (
-                    <BundleStep
-                      key={`${bt.title}-${idx}`}
-                      index={idx + 1}
-                      bt={bt}
-                      value={val}
-                      onChange={(next) =>
-                        setBundleAnswer(idx, fmts[0] ?? "text", next)
-                      }
-                      expanded={!!expandedBundleIdx[idx]}
-                      onToggle={() => toggleBundleIdx(idx)}
-                      done={done}
-                    />
-                  );
-                })
-              ) : (
-                submissionFormats.map((fmt, idx) => (
-                  <FormatStep
-                    key={fmt}
-                    index={idx + 1}
-                    title={
-                      questions.length && fmt === "multiple_choice"
-                        ? (questions[0]?.question ?? task.title)
-                        : task.title
-                    }
-                    format={fmt}
-                    questions={questions}
-                    value={getAnswer(fmt)}
-                    onChange={(next) => setAnswer(fmt, next)}
-                    done={isFormatAnswered(fmt, questions, getAnswer(fmt))}
-                  />
-                ))
-              )}
+              <View style={s.sheetGrabber} />
 
-              {!completed && !!submitError && (
-                <Text style={s.inlineError}>{submitError}</Text>
-              )}
-            </ScrollView>
-
-            {!completed && (
-              <View
-                style={[s.modalFooter, { paddingBottom: 20 + insets.bottom }]}
-              >
-                <TouchableOpacity
-                  style={[
-                    s.submitBtn,
-                    (submitting || !!validationMessage) && { opacity: 0.5 },
-                  ]}
-                  onPress={handleSubmit}
-                  activeOpacity={0.85}
-                  disabled={submitting || !!validationMessage}
+              <View style={s.modalHeader}>
+                <View
+                  style={[s.modalHeaderIcon, { backgroundColor: primaryMeta.bg }]}
                 >
-                  {submitting ? (
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <ActivityIndicator size="small" color="#fff" />
-                      <Text style={s.submitBtnText}>{submittingLabel}</Text>
-                    </View>
-                  ) : (
-                    <>
-                      <MaterialCommunityIcons
-                        name="send"
-                        size={15}
-                        color="#fff"
-                      />
-                      <Text style={s.submitBtnText}>Submit</Text>
-                    </>
+                  <MaterialCommunityIcons
+                    name={primaryMeta.icon as any}
+                    size={18}
+                    color={primaryMeta.color}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.modalTitle} numberOfLines={2}>
+                    {task.title}
+                  </Text>
+                  {!!task.description && task.description !== task.title && (
+                    <Text style={s.modalSubtitle} numberOfLines={2}>
+                      {task.description}
+                    </Text>
                   )}
+                </View>
+                <TouchableOpacity
+                  onPress={closeModal}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={20}
+                    color="#64748B"
+                  />
                 </TouchableOpacity>
               </View>
-            )}
-          </KeyboardAvoidingView>
+
+              <ScrollView
+                ref={scrollViewRef}
+                style={s.modalBody}
+                contentContainerStyle={{
+                  paddingBottom: completed ? 16 + insets.bottom : (keyboardHeight > 0 ? 12 : 20),
+                }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {completed ? (
+                  <View style={s.completedPanel}>
+                    <MaterialCommunityIcons
+                      name="check-circle"
+                      size={20}
+                      color="#059669"
+                    />
+                    <Text style={s.completedPanelText}>
+                      This task has already been submitted.
+                    </Text>
+                  </View>
+                ) : isBundle ? (
+                  bundleTasks.map((bt, idx) => {
+                    const fmts = toFormatList(bt.submission_format);
+                    const val = getBundleAnswer(idx, fmts[0] ?? "text");
+                    const done = fmts.every((fmt) =>
+                      isFormatAnswered(
+                        fmt,
+                        bt.questions ?? [],
+                        getBundleAnswer(idx, fmt),
+                      ),
+                    );
+                    return (
+                      <BundleStep
+                        key={`${bt.title}-${idx}`}
+                        index={idx + 1}
+                        bt={bt}
+                        value={val}
+                        onChange={(next) =>
+                          setBundleAnswer(idx, fmts[0] ?? "text", next)
+                        }
+                        expanded={!!expandedBundleIdx[idx]}
+                        onToggle={() => toggleBundleIdx(idx)}
+                        done={done}
+                        onFocus={handleInputFocus}
+                      />
+                    );
+                  })
+                ) : (
+                  submissionFormats.map((fmt, idx) => (
+                    <FormatStep
+                      key={fmt}
+                      index={idx + 1}
+                      title={
+                        questions.length && fmt === "multiple_choice"
+                          ? (questions[0]?.question ?? task.title)
+                          : task.title
+                      }
+                      format={fmt}
+                      questions={questions}
+                      value={getAnswer(fmt)}
+                      onChange={(next) => setAnswer(fmt, next)}
+                      done={isFormatAnswered(fmt, questions, getAnswer(fmt))}
+                      onFocus={handleInputFocus}
+                    />
+                  ))
+                )}
+
+                {!completed && !!submitError && (
+                  <Text style={s.inlineError}>{submitError}</Text>
+                )}
+              </ScrollView>
+
+              {!completed && (
+                <View
+                  style={[
+                    s.modalFooter,
+                    { paddingBottom: keyboardHeight > 0 ? 12 : 20 + insets.bottom },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={[
+                      s.submitBtn,
+                      (submitting || !!validationMessage) && { opacity: 0.5 },
+                    ]}
+                    onPress={handleSubmit}
+                    activeOpacity={0.85}
+                    disabled={submitting || !!validationMessage}
+                  >
+                    {submitting ? (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <ActivityIndicator size="small" color="#fff" />
+                        <Text style={s.submitBtnText}>{submittingLabel}</Text>
+                      </View>
+                    ) : (
+                      <>
+                        <MaterialCommunityIcons
+                          name="send"
+                          size={15}
+                          color="#fff"
+                        />
+                        <Text style={s.submitBtnText}>Submit</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </View>
         </View>
       </Modal>
     </>
@@ -814,14 +896,14 @@ const s = StyleSheet.create({
   startBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   startBtnTextDone: { color: "#475569" },
 
-  // Bottom-sheet modal — ~70% of screen height, scrollable body
+  // Bottom-sheet modal — scrollable body adapting to keyboard
+  modalRoot: { flex: 1, justifyContent: "flex-end" },
   sheetOverlay: { flex: 1, justifyContent: "flex-end" },
   sheetBackdrop: {
     ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(15, 23, 42, 0.4)",
   },
   sheetContainer: {
-    maxHeight: SCREEN_HEIGHT * 0.7,
     backgroundColor: "#fff",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -859,7 +941,7 @@ const s = StyleSheet.create({
   },
   modalTitle: { fontSize: 16, fontWeight: "800", color: "#1E293B" },
   modalSubtitle: { fontSize: 12, color: "#64748B", marginTop: 3 },
-  modalBody: { paddingHorizontal: 20, paddingTop: 16 },
+  modalBody: { paddingHorizontal: 20, paddingTop: 16, flexShrink: 1 },
 
   stepRow: { flexDirection: "row", gap: 12, marginBottom: 22 },
   stepBadge: {

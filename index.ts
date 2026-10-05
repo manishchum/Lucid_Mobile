@@ -1,3 +1,7 @@
+// Record true JavaScript runtime boot time
+import { homePerfMeter } from './src/utils/homePerformanceMeter';
+homePerfMeter.initBootTime(Date.now());
+
 import { registerRootComponent } from 'expo';
 import { getMessaging, setBackgroundMessageHandler } from '@react-native-firebase/messaging';
 

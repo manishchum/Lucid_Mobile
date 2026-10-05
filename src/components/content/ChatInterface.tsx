@@ -535,7 +535,7 @@ export default function ChatInterface({
         company_id: companyId,
       };
 
-      if (isSprintMode) {
+      if (isSprintMode || !processedModuleId) {
         chatPayload.module_id = sprintModuleId;
       } else {
         chatPayload.processed_module_id = processedModuleId;

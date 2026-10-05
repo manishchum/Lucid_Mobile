@@ -12,6 +12,9 @@ import {
   Keyboard,
   Platform,
   Animated,
+  LayoutAnimation,
+  UIManager,
+  Easing,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
@@ -25,6 +28,59 @@ import CoreContentSection from "./sections/CoreContentSection";
 import PodcastSection from "./sections/PodcastSection";
 import FlashcardsSection from "../../components/content/FlashcardsSection";
 import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
+
+// Enable LayoutAnimation for Android
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const AnimatedSectionWrapper = ({
+  children,
+  index,
+}: {
+  children: React.ReactNode;
+  index: number;
+}) => {
+  const animFade = useRef(new Animated.Value(0)).current;
+  const animTranslateY = useRef(new Animated.Value(14)).current;
+
+  useEffect(() => {
+    animFade.setValue(0);
+    animTranslateY.setValue(14);
+    const delay = Math.min(index * 35, 180);
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(animFade, {
+          toValue: 1,
+          duration: 260,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(animTranslateY, {
+          toValue: 0,
+          duration: 260,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [index]);
+
+  return (
+    <Animated.View
+      style={{
+        opacity: animFade,
+        transform: [{ translateY: animTranslateY }],
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+};
 
 // ─── Phase 2: Mind Map ────────────────────────────────────────────────────────
 // MindmapSection will be implemented in Phase 2 using a proper graph/SVG renderer.
@@ -222,8 +278,32 @@ export default function StudioScreen({ navigation, route }: any) {
     }
   }, [processedModule, isLoading, error]);
 
-  const toggle = (key: string) =>
+  const screenFade = useRef(new Animated.Value(0)).current;
+  const screenTranslateY = useRef(new Animated.Value(10)).current;
+
+  useEffect(() => {
+    screenFade.setValue(0);
+    screenTranslateY.setValue(10);
+    Animated.parallel([
+      Animated.timing(screenFade, {
+        toValue: 1,
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(screenTranslateY, {
+        toValue: 0,
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [processedModuleId]);
+
+  const toggle = (key: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded((prev) => (prev === key ? null : key));
+  };
 
   // ── Empty state: tab opened directly without a module selected ──
   if (!processedModuleId) {
@@ -250,7 +330,7 @@ export default function StudioScreen({ navigation, route }: any) {
   }
 
   // ── Loading ──
-  if (isLoading) {
+  if (isLoading && !processedModule) {
     return (
       <View style={styles.main}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -317,6 +397,7 @@ export default function StudioScreen({ navigation, route }: any) {
           RefreshSpinner(refreshing, onRefresh)
         }
       >
+        <Animated.View style={{ flex: 1, opacity: screenFade, transform: [{ translateY: screenTranslateY }] }}>
         {/* ── Hero ── */}
         <View style={styles.hero}>
           <View style={styles.topHeaderBar}>
@@ -390,28 +471,32 @@ export default function StudioScreen({ navigation, route }: any) {
         <View style={styles.accordionList}>
           {/* Playbook — parses processedModule.content (HTML) into sections */}
           {showTextual && (
-            <CoreContentSection
-              isExpanded={expanded === "core"}
-              onToggle={() => toggle("core")}
-              htmlContent={processedModule?.content ?? null}
-              moduleId={processedModuleId}
-              lang={lang}
-              onLangChange={setLang}
-              sections={translatedSections}
-              isTranslating={isTranslating}
-            />
+            <AnimatedSectionWrapper index={0}>
+              <CoreContentSection
+                isExpanded={expanded === "core"}
+                onToggle={() => toggle("core")}
+                htmlContent={processedModule?.content ?? null}
+                moduleId={processedModuleId}
+                lang={lang}
+                onLangChange={setLang}
+                sections={translatedSections}
+                isTranslating={isTranslating}
+              />
+            </AnimatedSectionWrapper>
           )}
 
           {/* Flashcards — from processedModule.flashcard_data array */}
           {showFlashcards && (
-            <FlashcardsSection
-              isExpanded={expanded === "flashcards"}
-              onToggle={() => toggle("flashcards")}
-              flashcardData={translatedFlashcards}
-              moduleId={processedModuleId}
-              lang={lang}
-              isTranslating={isTranslating}
-            />
+            <AnimatedSectionWrapper index={1}>
+              <FlashcardsSection
+                isExpanded={expanded === "flashcards"}
+                onToggle={() => toggle("flashcards")}
+                flashcardData={translatedFlashcards}
+                moduleId={processedModuleId}
+                lang={lang}
+                isTranslating={isTranslating}
+              />
+            </AnimatedSectionWrapper>
           )}
 
           {/* ── Phase 2: Mind Map ──────────────────────────────────────────────
@@ -427,71 +512,97 @@ export default function StudioScreen({ navigation, route }: any) {
 
           {/* Podcast — audio URLs and timelines all from API response */}
           {showPodcast && (
-            <PodcastSection
-              title={processedModule?.title ?? moduleTitle ?? "Podcast Lesson"}
-              isExpanded={expanded === "podcast"}
-              onToggle={() => toggle("podcast")}
-              lang={lang}
-              audioUrl={processedModule?.audio_url ?? null}
-              audioUrlHinglish={processedModule?.audio_url_hinglish ?? null}
-              podcastTimeline={processedModule?.podcast_timeline ?? null}
-              podcastTimelineHinglish={
-                processedModule?.podcast_timeline_hinglish ?? null
-              }
-              transcript={processedModule?.podcast_transcript ?? null}
-            />
+            <AnimatedSectionWrapper index={2}>
+              <PodcastSection
+                moduleId={processedModuleId}
+                title={processedModule?.title ?? moduleTitle ?? "Podcast Lesson"}
+                isExpanded={expanded === "podcast"}
+                onToggle={() => toggle("podcast")}
+                lang={lang}
+                audioUrl={processedModule?.audio_url ?? null}
+                audioUrlHindi={
+                  processedModule?.audio_url_hindi ??
+                  processedModule?.audio_url_hinglish ??
+                  null
+                }
+                audioUrlHinglish={processedModule?.audio_url_hinglish ?? null}
+                audioUrlTamil={processedModule?.audio_url_tamil ?? null}
+                audioUrlTelugu={processedModule?.audio_url_telugu ?? null}
+                audioUrlMarathi={processedModule?.audio_url_marathi ?? null}
+                audioUrlBengali={processedModule?.audio_url_bengali ?? null}
+                podcastTimeline={processedModule?.podcast_timeline ?? null}
+                podcastTimelineHindi={
+                  processedModule?.podcast_timeline_hindi ??
+                  processedModule?.podcast_timeline_hinglish ??
+                  null
+                }
+                podcastTimelineHinglish={
+                  processedModule?.podcast_timeline_hinglish ?? null
+                }
+                podcastTimelineTamil={processedModule?.podcast_timeline_tamil ?? null}
+                podcastTimelineTelugu={processedModule?.podcast_timeline_telugu ?? null}
+                podcastTimelineMarathi={processedModule?.podcast_timeline_marathi ?? null}
+                podcastTimelineBengali={processedModule?.podcast_timeline_bengali ?? null}
+                transcript={processedModule?.podcast_transcript ?? null}
+              />
+            </AnimatedSectionWrapper>
           )}
 
           {/* Video — from processedModule.video_url + regional variants */}
           {showVideo && (
-            <VideoSection
-              isExpanded={expanded === "video"}
-              onToggle={() => toggle("video")}
-              lang={lang}
-              videoUrl={processedModule?.video_url ?? null}
-              videoUrlHinglish={
-                processedModule?.video_url_hinglish ||
-                (processedModule?.audio_url_hinglish ? processedModule?.video_url : null)
-              }
-              videoUrlBengali={
-                processedModule?.video_url_bengali ||
-                (processedModule?.audio_url_bengali ? processedModule?.video_url : null)
-              }
-              videoUrlTamil={
-                processedModule?.video_url_tamil ||
-                (processedModule?.audio_url_tamil ? processedModule?.video_url : null)
-              }
-              videoUrlTelugu={
-                processedModule?.video_url_telugu ||
-                (processedModule?.audio_url_telugu ? processedModule?.video_url : null)
-              }
-              videoUrlMarathi={
-                processedModule?.video_url_marathi ||
-                (processedModule?.audio_url_marathi ? processedModule?.video_url : null)
-              }
-            />
+            <AnimatedSectionWrapper index={3}>
+              <VideoSection
+                isExpanded={expanded === "video"}
+                onToggle={() => toggle("video")}
+                lang={lang}
+                videoUrl={processedModule?.video_url ?? null}
+                videoUrlHinglish={
+                  processedModule?.video_url_hinglish ||
+                  (processedModule?.audio_url_hinglish ? processedModule?.video_url : null)
+                }
+                videoUrlBengali={
+                  processedModule?.video_url_bengali ||
+                  (processedModule?.audio_url_bengali ? processedModule?.video_url : null)
+                }
+                videoUrlTamil={
+                  processedModule?.video_url_tamil ||
+                  (processedModule?.audio_url_tamil ? processedModule?.video_url : null)
+                }
+                videoUrlTelugu={
+                  processedModule?.video_url_telugu ||
+                  (processedModule?.audio_url_telugu ? processedModule?.video_url : null)
+                }
+                videoUrlMarathi={
+                  processedModule?.video_url_marathi ||
+                  (processedModule?.audio_url_marathi ? processedModule?.video_url : null)
+                }
+              />
+            </AnimatedSectionWrapper>
           )}
 
           {/* AI Assistant — gated behind the chat_in_studio add-on */}
           {showAiAssistant && (
-            <AIAssistantSection
-              isExpanded={expanded === "ai"}
-              onToggle={() => toggle("ai")}
-              processedModuleId={processedModuleId}
-              sprintModuleId={sprintModuleId}
-              moduleTitle={moduleTitle}
-              sprintTitle={sprintTitle}
-              userId={userId ?? ""}
-              companyId={companyId}
-              lang={lang}
-              onInputFocus={() => {
-                setTimeout(() => {
-                  mainScrollRef.current?.scrollToEnd({ animated: true });
-                }, 150);
-              }}
-            />
+            <AnimatedSectionWrapper index={4}>
+              <AIAssistantSection
+                isExpanded={expanded === "ai"}
+                onToggle={() => toggle("ai")}
+                processedModuleId={processedModuleId}
+                sprintModuleId={sprintModuleId}
+                moduleTitle={moduleTitle}
+                sprintTitle={sprintTitle}
+                userId={userId ?? ""}
+                companyId={companyId}
+                lang={lang}
+                onInputFocus={() => {
+                  setTimeout(() => {
+                    mainScrollRef.current?.scrollToEnd({ animated: true });
+                  }, 150);
+                }}
+              />
+            </AnimatedSectionWrapper>
           )}
         </View>
+        </Animated.View>
       </ScrollView>
     </View>
   );

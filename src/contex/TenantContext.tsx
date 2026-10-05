@@ -7,7 +7,8 @@ import React, {
   useEffect,
 } from "react";
 import { useAuth } from "./AuthContext";
-import { getDashboardSummary } from "../api/users/Request";
+import { getDashboardSummary, getCompanyDetails } from "../api/users/Request";
+import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 import { appStorage } from "../utils/appStorage";
 
 export type Addon =
@@ -23,7 +24,8 @@ export type Addon =
   | "kpi"
   | "role_play"
   | "sprintverse"
-  | "reports";
+  | "reports"
+  | "gamification";
 
 type CompanyInfo = {
   company_id?: string;
@@ -62,6 +64,7 @@ const KNOWN_ADDONS: Addon[] = [
   "role_play",
   "sprintverse",
   "reports",
+  "gamification",
 ];
 
 const normalizeAddonKey = (value: string): Addon | null => {
@@ -106,15 +109,30 @@ export const TenantProvider = ({
   children: React.ReactNode;
 }) => {
   const { cachedUser } = useAuth();
-  const [company, setCompany] = useState<CompanyInfo | null>(null);
-  const [loadingAddons, setLoadingAddons] = useState(true);
-  const [addonsKnown, setAddonsKnown] = useState(false);
+  const [company, setCompany] = useState<CompanyInfo | null>(() => {
+    if (!cachedUser?.companyId) return null;
+    return appStorage.getObject<CompanyInfo>(`@company_${cachedUser.companyId}`);
+  });
+  const [loadingAddons, setLoadingAddons] = useState(() => {
+    if (!cachedUser?.companyId) return true;
+    const cached = appStorage.getObject<CompanyInfo>(`@company_${cachedUser.companyId}`);
+    return !cached;
+  });
+  const [addonsKnown, setAddonsKnown] = useState(() => {
+    if (!cachedUser?.companyId) return false;
+    const cached = appStorage.getObject<CompanyInfo>(`@company_${cachedUser.companyId}`);
+    return Array.isArray(cached?.subscription_addons);
+  });
 
   const setCompanyFromDashboard = useCallback((companyLike: any) => {
     if (!companyLike) {
       setAddonsKnown(true);
       setLoadingAddons(false);
       return;
+    }
+
+    if (companyLike.company_id) {
+      appStorage.setObject(`@company_${companyLike.company_id}`, companyLike);
     }
 
     setCompany({
@@ -142,29 +160,66 @@ export const TenantProvider = ({
     setLoadingAddons(false);
   }, []);
 
-  useEffect(() => {
-    if (!cachedUser) {
-      setCompany(null);
-      setAddonsKnown(false);
-      setLoadingAddons(true);
-    }
-  }, [cachedUser]);
-
   const refreshAddons = useCallback(async () => {
-    if (!cachedUser?.userId || !cachedUser?.companyId) return;
+    if (!cachedUser?.companyId) return;
     setLoadingAddons(true);
     try {
-      const data = await getDashboardSummary(
-        cachedUser.userId,
+      // 1. First attempt: Direct company fetch (no cache, instant permissions)
+      const directComp = await getCompanyDetails(
         cachedUser.companyId,
+        cachedUser.userId,
       );
-      setCompanyFromDashboard(data?.company ?? null);
+      if (directComp) {
+        setCompanyFromDashboard(directComp);
+        return;
+      }
+
+      // 2. Fallback attempt: Dashboard summary
+      if (cachedUser.userId) {
+        const data = await getDashboardSummary(
+          cachedUser.userId,
+          cachedUser.companyId,
+        );
+        setCompanyFromDashboard(data?.company ?? null);
+      }
     } catch (err) {
       console.warn("refreshAddons failed — failing open:", err);
       setAddonsKnown(false);
       setLoadingAddons(false);
     }
   }, [cachedUser?.userId, cachedUser?.companyId, setCompanyFromDashboard]);
+
+  // Proactive fetch on mount and whenever user/company changes
+  useEffect(() => {
+    if (!cachedUser?.companyId) {
+      setCompany(null);
+      setAddonsKnown(false);
+      setLoadingAddons(true);
+      return;
+    }
+
+    refreshAddons().catch(() => {});
+  }, [cachedUser?.companyId, refreshAddons]);
+
+  // Instant Realtime sync: Listen for company updates in Supabase
+  const companyId = cachedUser?.companyId ?? null;
+  useRealtimeSubscription({
+    table: "companies",
+    event: "UPDATE",
+    filter: companyId ? `company_id=eq.${companyId}` : undefined,
+    channelName: companyId ? `realtime:companies:${companyId}` : undefined,
+    enabled: Boolean(companyId),
+    onPayload: (payload: any) => {
+      console.log(
+        "[TenantContext] Real-time company update received:",
+        payload?.new?.company_id,
+        payload?.new?.subscription_addons,
+      );
+      if (payload?.new) {
+        setCompanyFromDashboard(payload.new);
+      }
+    },
+  });
 
   const addons = useMemo(
     () => normalizeAddons(company?.subscription_addons),

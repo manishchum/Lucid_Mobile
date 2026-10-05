@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useIsFocused } from "@react-navigation/native";
 import { WebView } from "react-native-webview";
 import { useVideoPlayer, VideoView } from "expo-video";
 import * as FileSystem from "expo-file-system/legacy";
@@ -20,11 +20,13 @@ import { useKeepAwake, activateKeepAwakeAsync, deactivateKeepAwake } from "expo-
 
 import { ContentItem } from "../../api/content-library/Dto";
 import AudioContentViewer from "../../components/content/AudioContentViewer";
+import { mediaCoordinator } from "../../utils/mediaCoordinator";
 
 export default function ContentViewerScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const route = useRoute<any>();
+  const isFocused = useIsFocused();
   const item: ContentItem = route.params?.item;
 
   const [loading, setLoading] = useState(true);
@@ -87,18 +89,6 @@ export default function ContentViewerScreen() {
     }
   }, [file_url, file_type, isDocument, isText]);
 
-  // Keep screen awake when viewing video in Content Library
-  useEffect(() => {
-    if (isVideo) {
-      activateKeepAwakeAsync("ContentViewerVideo").catch(() => {});
-    } else {
-      deactivateKeepAwake("ContentViewerVideo").catch(() => {});
-    }
-    return () => {
-      deactivateKeepAwake("ContentViewerVideo").catch(() => {});
-    };
-  }, [isVideo]);
-
   // Modern expo-video player hook (only initialize video source for videos)
   const player = useVideoPlayer(isVideo ? file_url : null, (player) => {
     if (player) {
@@ -107,6 +97,44 @@ export default function ContentViewerScreen() {
       if (isVideo) player.play();
     }
   });
+
+  // Pause video if screen loses focus
+  useEffect(() => {
+    if (!isVideo || !player) return;
+    if (!isFocused && player.playing) {
+      player.pause();
+    }
+  }, [isFocused, isVideo, player]);
+
+  // Mutual exclusivity coordination & keep awake management
+  useEffect(() => {
+    if (!isVideo || !player) return;
+
+    const unbind = mediaCoordinator.onPauseVideo(() => {
+      try {
+        if (player.playing) {
+          player.pause();
+        }
+      } catch (e) {
+        // ignore
+      }
+    });
+
+    const sub = player.addListener("playingChange", (payload: { isPlaying: boolean }) => {
+      if (payload.isPlaying) {
+        mediaCoordinator.notifyVideoStarted();
+        activateKeepAwakeAsync("ContentViewerVideo").catch(() => {});
+      } else {
+        deactivateKeepAwake("ContentViewerVideo").catch(() => {});
+      }
+    });
+
+    return () => {
+      unbind();
+      sub?.remove();
+      deactivateKeepAwake("ContentViewerVideo").catch(() => {});
+    };
+  }, [isVideo, player]);
 
   const handleDownload = async () => {
     try {
