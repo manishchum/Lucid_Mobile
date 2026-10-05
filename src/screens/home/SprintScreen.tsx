@@ -9,7 +9,6 @@ import {
 	StatusBar,
 	LayoutAnimation,
 	Platform,
-	UIManager,
 	Alert,
 	Linking,
 	Animated,
@@ -29,14 +28,6 @@ import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 import { eventBus } from "../../utils/EventBus";
 import { useRealtimeSubscription } from "../../hooks/useRealtimeSubscription";
 import { logger } from "../../utils/UnifiedLogger";
-
-if (
-	Platform.OS === "android" &&
-	!(globalThis as any).nativeFabricUIManager &&
-	UIManager.setLayoutAnimationEnabledExperimental
-) {
-	UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const AnimatedModuleCard = ({
 	children,
