@@ -12,7 +12,6 @@ import {
   FlatList,
   LayoutAnimation,
   Platform,
-  UIManager,
   RefreshControl,
   useWindowDimensions,
   Animated,
@@ -50,14 +49,6 @@ eventBus.on("refresh_reports", () => {
   reportsCache = null;
 });
 
-// Enable LayoutAnimation for Android
-if (
-  Platform.OS === "android" &&
-  !(globalThis as any).nativeFabricUIManager &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 // Coordinate offset (in pixels) for pull-to-refresh spinner so it emerges from behind the header
 const REFRESH_PROGRESS_OFFSET = 0;

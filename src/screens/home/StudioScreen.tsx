@@ -13,7 +13,6 @@ import {
   Platform,
   Animated,
   LayoutAnimation,
-  UIManager,
   Easing,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -29,13 +28,6 @@ import PodcastSection from "./sections/PodcastSection";
 import FlashcardsSection from "../../components/content/FlashcardsSection";
 import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 
-// Enable LayoutAnimation for Android
-if (
-  Platform.OS === "android" &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const AnimatedSectionWrapper = ({
   children,
