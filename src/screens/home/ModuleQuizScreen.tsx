@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  TextInput,
   useWindowDimensions,
   StatusBar,
   Animated,
@@ -36,6 +37,7 @@ import { useInAppReview } from "../../hooks/useInAppReview";
 import { offlineQueue } from "../../utils/offlineQueue";
 import { ApiError } from "../../api/users/Request";
 import { QuizScoreDonut } from "../../components/quiz/QuizScoreDonut";
+import { APP_ROUTES } from "../../navigations/Routes";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const PAGE_SIZE = 10;
@@ -225,6 +227,57 @@ export default function ModuleQuizScreen({
   const [showConfetti, setShowConfetti] = useState(false);
   const [showNoInternet, setShowNoInternet] = useState(false);
   const [showReview, setShowReview] = useState(false);
+
+  // Embedded Inline Feedback State
+  const [feedbackRating, setFeedbackRating] = useState<number>(0);
+  const [feedbackThumbsUp, setFeedbackThumbsUp] = useState<boolean | null>(null);
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [selectedQuestionFilter, setSelectedQuestionFilter] = useState<number | null>(null);
+
+  const handleInlineFeedbackSubmit = async () => {
+    const targetModId = processedModuleId || moduleId;
+    if (!userId || !targetModId) return;
+    if (feedbackRating === 0 && feedbackThumbsUp === null && !feedbackComment.trim()) return;
+
+    setIsSubmittingFeedback(true);
+    try {
+      const { getFirebaseToken } = await import("../../api/users/Request");
+      const token = await getFirebaseToken().catch(() => null);
+      const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      headers["X-User-ID"] = userId;
+
+      const res = await fetch(`${EXPO_API_URL}/api/notifications/feedback`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          module_id: targetModId,
+          module_type: "GENERAL",
+          rating: feedbackRating > 0 ? feedbackRating : (feedbackThumbsUp === true ? 5 : feedbackThumbsUp === false ? 1 : null),
+          thumbs_up: feedbackThumbsUp,
+          comments: feedbackComment.trim(),
+        }),
+      });
+
+      if (res.ok) {
+        setFeedbackSubmitted(true);
+        safeHaptics.successNotification();
+      } else {
+        console.warn("[Feedback] Submit error:", await res.text());
+        setFeedbackSubmitted(true);
+      }
+    } catch (err) {
+      console.error("[Feedback] Error submitting inline feedback:", err);
+      setFeedbackSubmitted(true);
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  };
 
   const isMountedRef = useRef(true);
   const pulseAnim = useRef(new Animated.Value(0.8)).current;
@@ -485,17 +538,21 @@ export default function ModuleQuizScreen({
       feedback: "Submitting details to server in the background...",
     };
     setGradingResult(localResult);
-    safeHaptics.successNotification();
-    setShowConfetti(true);
-    setTimeout(() => setShowConfetti(false), 3600);
 
     if (passed) {
+      safeHaptics.successNotification();
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3600);
+      
       // Trigger native in-app review at the "Aha! Moment" after confetti starts
       setTimeout(() => {
         console.log("[Quiz] Requesting in-app review...");
         requestReview();
       }, 1500);
+    } else {
+      safeHaptics.errorNotification();
     }
+    
     setPhase("ready");
 
     // 2. Emit global event updates instantly so lists refresh in real-time
@@ -813,6 +870,18 @@ export default function ModuleQuizScreen({
     const max = gradingResult?.maxScore ?? questions.length;
     const pct = gradingResult?.percentage ?? 0;
     const passed = pct >= passingThreshold;
+    const correctCount = questions.filter((q, idx) => userAnswers[idx] === q.correctIndex).length;
+    const incorrectCount = questions.length - correctCount;
+
+    // Filter questions if a filter is active
+    const filteredQuestions = questions
+      .map((q, idx) => ({ ...q, originalIndex: idx }))
+      .filter((item) => {
+        const isCorrect = userAnswers[item.originalIndex] === item.correctIndex;
+        if (selectedQuestionFilter === 1) return isCorrect;
+        if (selectedQuestionFilter === 2) return !isCorrect;
+        return true;
+      });
 
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -823,154 +892,570 @@ export default function ModuleQuizScreen({
           ref={resultScrollRef}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: insets.bottom + 32 },
+            { paddingBottom: insets.bottom },
           ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Module name title chip centered on results page */}
-          <View style={[styles.bodyModuleHeader, { alignSelf: "center", marginBottom: 16 }]}>
-            <MaterialCommunityIcons name="book-open-outline" size={14} color="#6366F1" />
-            <Text style={styles.bodyModuleHeaderText} numberOfLines={1}>
-              {moduleTitle || "Lucid Module Quiz"}
-            </Text>
+          {/* Executive Outcome Banner */}
+          <View
+            style={[
+              styles.outcomeBanner,
+              passed ? styles.outcomeBannerPassed : styles.outcomeBannerFailed,
+            ]}
+          >
+            <View
+              style={[
+                styles.outcomeIconBadge,
+                passed ? styles.outcomeIconBadgePassed : styles.outcomeIconBadgeFailed,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={passed ? "check-decagram" : "alert-circle-outline"}
+                size={22}
+                color={passed ? "#059669" : "#D97706"}
+              />
+            </View>
+            <View style={styles.outcomeTextWrap}>
+              <Text
+                style={[
+                  styles.outcomeTitle,
+                  passed ? styles.outcomeTitlePassed : styles.outcomeTitleFailed,
+                ]}
+              >
+                {passed ? "Assessment Passed" : "Review Recommended"}
+              </Text>
+              <Text style={styles.outcomeSubtitle}>
+                {passed
+                  ? "You have satisfied the required proficiency benchmark for this module. Competency records updated."
+                  : "Score is below the required proficiency benchmark. Review the missed questions below before retaking."}
+              </Text>
+            </View>
           </View>
 
-          {/* Achievement Badge Container */}
-          <View style={styles.achievementBadgeContainer}>
-            <Text style={styles.badgeEmoji}>{passed ? "🏆" : "💪"}</Text>
-            <Text style={styles.badgeHeading}>
-              {passed ? "Achievement Unlocked!" : "Keep Growing!"}
-            </Text>
-            <Text style={styles.badgeSub}>
-              {passed ? "You've successfully mastered this module quiz." : "You're getting closer! Re-review options below."}
-            </Text>
+          {/* Executive Score Overview Card */}
+          <View style={styles.scoreOverviewCard}>
+            <View style={styles.moduleMetaRow}>
+              <MaterialCommunityIcons name="book-open-variant" size={13} color="#6366F1" />
+              <Text style={styles.moduleMetaTitle} numberOfLines={1}>
+                {moduleTitle || "Lucid Module Assessment"}
+              </Text>
+            </View>
 
             {/* Circular Progress Ring */}
-            <ResultProgressRing score={score} max={max} pct={pct} passed={passed} threshold={passingThreshold} />
-
-            {/* Result Pips Row */}
-            <View style={styles.pipsLabelRow}>
-              <Text style={styles.pipsLabel}>Performance Breakdown</Text>
+            <View style={styles.donutContainer}>
+              <ResultProgressRing
+                score={score}
+                max={max}
+                pct={pct}
+                passed={passed}
+                threshold={passingThreshold}
+              />
             </View>
+
+            {/* Non-Redundant Key Metrics: Correct vs Missed vs Target */}
+            <View style={styles.metricsGrid}>
+              <View style={styles.metricItem}>
+                <View style={styles.metricLabelRow}>
+                  <MaterialCommunityIcons name="check-circle" size={12} color="#059669" />
+                  <Text style={styles.metricLabel}>CORRECT</Text>
+                </View>
+                <Text style={[styles.metricValue, { color: "#065F46" }]}>{correctCount}</Text>
+                <Text style={styles.metricSub}>of {max} total</Text>
+              </View>
+
+              <View style={styles.metricDivider} />
+
+              <View style={styles.metricItem}>
+                <View style={styles.metricLabelRow}>
+                  <MaterialCommunityIcons name="close-circle" size={12} color="#DC2626" />
+                  <Text style={styles.metricLabel}>MISSED</Text>
+                </View>
+                <Text style={[styles.metricValue, { color: "#991B1B" }]}>{incorrectCount}</Text>
+                <Text style={styles.metricSub}>need review</Text>
+              </View>
+
+              <View style={styles.metricDivider} />
+
+              <View style={styles.metricItem}>
+                <View style={styles.metricLabelRow}>
+                  <MaterialCommunityIcons name="target" size={12} color="#4F46E5" />
+                  <Text style={styles.metricLabel}>TARGET</Text>
+                </View>
+                <Text style={styles.metricValue}>{passingThreshold}%</Text>
+                <Text style={styles.metricSub}>passing min</Text>
+              </View>
+            </View>
+
+            {/* Actionable Benchmark Insight */}
+            {passed ? (
+              <View style={styles.benchmarkStatusPillPassed}>
+                <MaterialCommunityIcons name="check-decagram" size={14} color="#059669" />
+                <Text style={styles.benchmarkStatusTextPassed}>
+                  {pct === passingThreshold
+                    ? "Met passing threshold exactly"
+                    : `Exceeds passing benchmark by ${Math.round(pct - passingThreshold)}%`}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.benchmarkStatusPillFailed}>
+                <MaterialCommunityIcons name="information" size={14} color="#D97706" />
+                <Text style={styles.benchmarkStatusTextFailed}>
+                  {(() => {
+                    const minCorrectNeeded = Math.ceil((passingThreshold / 100) * max);
+                    const diff = minCorrectNeeded - correctCount;
+                    return diff > 0
+                      ? `${diff} more correct ${diff === 1 ? "answer" : "answers"} needed to pass (${minCorrectNeeded}/${max})`
+                      : "Review key areas below to improve proficiency";
+                  })()}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Question Map & Interactive Question Grid */}
+          <View style={styles.breakdownCard}>
+            <View style={styles.breakdownHeader}>
+              <View style={styles.breakdownTitleRow}>
+                <Text style={styles.breakdownTitle}>Question Navigator</Text>
+                <View style={styles.breakdownLegendRow}>
+                  <View style={styles.legendItem}>
+                    <View style={styles.legendDotCorrect} />
+                    <Text style={styles.legendText}>Correct</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={styles.legendDotIncorrect} />
+                    <Text style={styles.legendText}>Missed</Text>
+                  </View>
+                </View>
+              </View>
+              <Text style={styles.breakdownSubtitle}>
+                Tap any question to inspect solution and rationale
+              </Text>
+            </View>
+
+            {/* Question Pips Grid */}
             <View style={styles.pipsContainer}>
               {questions.map((q, idx) => {
                 const isCorrect = userAnswers[idx] === q.correctIndex;
                 return (
-                  <View
+                  <TouchableOpacity
                     key={idx}
+                    activeOpacity={0.7}
+                    onPress={() => setShowReview(true)}
                     style={[
                       styles.pipCircle,
-                      { backgroundColor: isCorrect ? "#10B981" : "#EF4444" }
+                      isCorrect ? styles.pipCorrect : styles.pipIncorrect,
                     ]}
                   >
-                    <Text style={styles.pipNumText}>{idx + 1}</Text>
-                  </View>
+                    <MaterialCommunityIcons
+                      name={isCorrect ? "check" : "close"}
+                      size={11}
+                      color={isCorrect ? "#059669" : "#DC2626"}
+                      style={{ marginRight: 2 }}
+                    />
+                    <Text
+                      style={[
+                        styles.pipNumText,
+                        { color: isCorrect ? "#065F46" : "#991B1B" },
+                      ]}
+                    >
+                      {idx + 1}
+                    </Text>
+                  </TouchableOpacity>
                 );
               })}
             </View>
-          </View>
 
-          {/* Action CTAs */}
-          <View style={styles.actionsWrap}>
+            {/* Review Toggle Button */}
             <TouchableOpacity
-              style={styles.primaryCTA}
-              onPress={handleBack}
-              activeOpacity={0.85}
-            >
-              <MaterialCommunityIcons name="arrow-left" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.primaryCTAText}>Back to Sprint</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryCTA}
+              style={styles.reviewToggleBtn}
               onPress={() => setShowReview(!showReview)}
-              activeOpacity={0.85}
+              activeOpacity={0.8}
             >
               <MaterialCommunityIcons
-                name={showReview ? "eye-off-outline" : "eye-outline"}
-                size={18}
-                color="#475569"
-                style={{ marginRight: 6 }}
+                name={showReview ? "eye-off-outline" : "file-search-outline"}
+                size={16}
+                color="#4F46E5"
               />
-              <Text style={styles.secondaryCTAText}>
-                {showReview ? "Hide Review" : "Review Answers"}
+              <Text style={styles.reviewToggleBtnText}>
+                {showReview ? "Hide Question Review" : "Review All Questions & Solutions"}
               </Text>
+              <MaterialCommunityIcons
+                name={showReview ? "chevron-up" : "chevron-down"}
+                size={16}
+                color="#4F46E5"
+              />
             </TouchableOpacity>
           </View>
 
-          {/* Detailed Question Review Panel */}
+          {/* Detailed Question Review Accordion */}
           {showReview && (
             <View style={styles.reviewSection}>
-              <Text style={styles.reviewSectionTitle}>Detailed Review</Text>
-              {questions.map((q, idx) => {
+              {/* Filter Tabs */}
+              <View style={styles.reviewFilterRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.reviewFilterChip,
+                    selectedQuestionFilter === null && styles.reviewFilterChipActive,
+                  ]}
+                  onPress={() => setSelectedQuestionFilter(null)}
+                >
+                  <Text
+                    style={[
+                      styles.reviewFilterChipText,
+                      selectedQuestionFilter === null && styles.reviewFilterChipTextActive,
+                    ]}
+                  >
+                    All ({questions.length})
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.reviewFilterChip,
+                    selectedQuestionFilter === 2 && styles.reviewFilterChipActive,
+                  ]}
+                  onPress={() => setSelectedQuestionFilter(2)}
+                >
+                  <Text
+                    style={[
+                      styles.reviewFilterChipText,
+                      selectedQuestionFilter === 2 && styles.reviewFilterChipTextActive,
+                    ]}
+                  >
+                    Incorrect ({incorrectCount})
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.reviewFilterChip,
+                    selectedQuestionFilter === 1 && styles.reviewFilterChipActive,
+                  ]}
+                  onPress={() => setSelectedQuestionFilter(1)}
+                >
+                  <Text
+                    style={[
+                      styles.reviewFilterChipText,
+                      selectedQuestionFilter === 1 && styles.reviewFilterChipTextActive,
+                    ]}
+                  >
+                    Correct ({correctCount})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {filteredQuestions.map((q) => {
+                const idx = q.originalIndex;
                 const selectedIdx = userAnswers[idx];
                 const isCorrect = selectedIdx === q.correctIndex;
                 return (
                   <View key={idx} style={styles.reviewQuestionCard}>
                     <View style={styles.reviewQuestionHeader}>
-                      <View style={[
-                        styles.reviewQNum,
-                        { backgroundColor: isCorrect ? "#ECFDF5" : "#FEF2F2" }
-                      ]}>
-                        <Text style={[
-                          styles.reviewQNumText,
-                          { color: isCorrect ? "#10B981" : "#EF4444" }
-                        ]}>
-                          Q{idx + 1}
+                      <View
+                        style={[
+                          styles.reviewQNum,
+                          { backgroundColor: isCorrect ? "#ECFDF5" : "#FEF2F2" },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.reviewQNumText,
+                            { color: isCorrect ? "#059669" : "#DC2626" },
+                          ]}
+                        >
+                          Question {idx + 1}
                         </Text>
                       </View>
-                      <Text style={[
-                        styles.reviewResultStatus,
-                        { color: isCorrect ? "#10B981" : "#EF4444" }
-                      ]}>
-                        {isCorrect ? "Correct" : "Incorrect"}
-                      </Text>
+                      <View
+                        style={[
+                          styles.reviewStatusBadge,
+                          { backgroundColor: isCorrect ? "#ECFDF5" : "#FEF2F2" },
+                        ]}
+                      >
+                        <MaterialCommunityIcons
+                          name={isCorrect ? "check-circle" : "close-circle"}
+                          size={13}
+                          color={isCorrect ? "#10B981" : "#EF4444"}
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text
+                          style={[
+                            styles.reviewResultStatus,
+                            { color: isCorrect ? "#059669" : "#DC2626" },
+                          ]}
+                        >
+                          {isCorrect ? "Correct" : "Incorrect"}
+                        </Text>
+                      </View>
                     </View>
-                    
+
                     <Text style={styles.reviewQuestionText}>{q.question}</Text>
-                    
+
                     <View style={styles.reviewOptionsList}>
                       {q.options.map((option, optIdx) => {
                         const isUserSelected = selectedIdx === optIdx;
                         const isCorrectOpt = optIdx === q.correctIndex;
-                        
+
                         let optStyle = styles.reviewOptionRow as any;
                         let optTextStyle = styles.reviewOptionText as any;
                         let rightIcon = null;
-                        
+
                         if (isCorrectOpt) {
                           optStyle = [styles.reviewOptionRow, styles.reviewOptionCorrect];
                           optTextStyle = [styles.reviewOptionText, styles.reviewOptionTextCorrect];
-                          rightIcon = <MaterialCommunityIcons name="check-circle" size={16} color="#10B981" />;
+                          rightIcon = (
+                            <MaterialCommunityIcons
+                              name="check-circle"
+                              size={16}
+                              color="#10B981"
+                            />
+                          );
                         } else if (isUserSelected && !isCorrectOpt) {
                           optStyle = [styles.reviewOptionRow, styles.reviewOptionIncorrect];
                           optTextStyle = [styles.reviewOptionText, styles.reviewOptionTextIncorrect];
-                          rightIcon = <MaterialCommunityIcons name="close-circle" size={16} color="#EF4444" />;
+                          rightIcon = (
+                            <MaterialCommunityIcons
+                              name="close-circle"
+                              size={16}
+                              color="#EF4444"
+                            />
+                          );
                         }
 
                         return (
                           <View key={optIdx} style={optStyle}>
-                            <Text style={optTextStyle}>{LETTERS[optIdx]}. {option}</Text>
+                            <Text style={optTextStyle}>
+                              {LETTERS[optIdx]}. {option}
+                            </Text>
                             {rightIcon}
                           </View>
                         );
                       })}
                     </View>
 
-                    {q.explanation && (
+                    {q.explanation ? (
                       <View style={styles.explanationBox}>
                         <View style={styles.explanationTitleRow}>
-                          <MaterialCommunityIcons name="information-outline" size={14} color="#4F46E5" />
-                          <Text style={styles.explanationTitle}>Explanation</Text>
+                          <MaterialCommunityIcons
+                            name="lightbulb-on-outline"
+                            size={14}
+                            color="#4F46E5"
+                          />
+                          <Text style={styles.explanationTitle}>Insight & Solution</Text>
                         </View>
                         <Text style={styles.explanationText}>{q.explanation}</Text>
                       </View>
-                    )}
+                    ) : null}
                   </View>
                 );
               })}
             </View>
           )}
+
+          {/* Embedded Module & Quiz Feedback Card */}
+          <View style={styles.feedbackCard}>
+            <View style={styles.feedbackHeaderRow}>
+              <View style={styles.feedbackIconWrap}>
+                <MaterialCommunityIcons name="message-draw" size={17} color="#4F46E5" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.feedbackCardTitle}>Module & Quiz Feedback</Text>
+                <Text style={styles.feedbackCardSubtitle}>
+                  Help us refine difficulty and content clarity
+                </Text>
+              </View>
+            </View>
+
+            {feedbackSubmitted ? (
+              <View style={styles.feedbackSuccessBanner}>
+                <MaterialCommunityIcons name="check-circle" size={22} color="#10B981" />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.feedbackSuccessTitle}>Feedback Recorded</Text>
+                  <Text style={styles.feedbackSuccessSubtitle}>
+                    Thank you! Your input directly enhances curriculum calibration.
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.feedbackBody}>
+                {/* Sentiment Quick Select */}
+                <Text style={styles.feedbackFieldLabel}>HOW WAS THIS ASSESSMENT?</Text>
+                <View style={styles.feedbackThumbsRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.feedbackThumbBtn,
+                      feedbackThumbsUp === true && styles.feedbackThumbBtnActivePositive,
+                    ]}
+                    onPress={() => setFeedbackThumbsUp(feedbackThumbsUp === true ? null : true)}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialCommunityIcons
+                      name={feedbackThumbsUp === true ? "thumb-up" : "thumb-up-outline"}
+                      size={16}
+                      color={feedbackThumbsUp === true ? "#059669" : "#64748B"}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={[
+                        styles.feedbackThumbBtnText,
+                        feedbackThumbsUp === true && styles.feedbackThumbBtnTextActivePositive,
+                      ]}
+                    >
+                      Helpful & Clear
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.feedbackThumbBtn,
+                      feedbackThumbsUp === false && styles.feedbackThumbBtnActiveNegative,
+                    ]}
+                    onPress={() => setFeedbackThumbsUp(feedbackThumbsUp === false ? null : false)}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialCommunityIcons
+                      name={feedbackThumbsUp === false ? "thumb-down" : "thumb-down-outline"}
+                      size={16}
+                      color={feedbackThumbsUp === false ? "#DC2626" : "#64748B"}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={[
+                        styles.feedbackThumbBtnText,
+                        feedbackThumbsUp === false && styles.feedbackThumbBtnTextActiveNegative,
+                      ]}
+                    >
+                      Needs Polish
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* 1-5 Star Rating */}
+                <Text style={styles.feedbackFieldLabel}>QUALITY RATING</Text>
+                <View style={styles.starRatingRow}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <TouchableOpacity
+                      key={star}
+                      onPress={() => setFeedbackRating(feedbackRating === star ? 0 : star)}
+                      style={styles.starTouchArea}
+                      activeOpacity={0.7}
+                    >
+                      <MaterialCommunityIcons
+                        name={star <= feedbackRating ? "star" : "star-outline"}
+                        size={26}
+                        color={star <= feedbackRating ? "#F59E0B" : "#CBD5E1"}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                  {feedbackRating > 0 && (
+                    <Text style={styles.starRatingText}>
+                      {feedbackRating === 5
+                        ? "Exceptional"
+                        : feedbackRating === 4
+                        ? "Good"
+                        : feedbackRating === 3
+                        ? "Average"
+                        : "Needs Work"}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Optional Comment Input */}
+                <Text style={styles.feedbackFieldLabel}>ADDITIONAL FEEDBACK (OPTIONAL)</Text>
+                <TextInput
+                  style={styles.feedbackTextInput}
+                  placeholder="Share comments on question difficulty, clarity, or concepts..."
+                  placeholderTextColor="#94A3B8"
+                  value={feedbackComment}
+                  onChangeText={setFeedbackComment}
+                  multiline
+                  numberOfLines={3}
+                  maxLength={500}
+                />
+
+                {/* Submit Feedback Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.submitFeedbackBtn,
+                    !feedbackRating &&
+                      feedbackThumbsUp === null &&
+                      !feedbackComment.trim() &&
+                      styles.submitFeedbackBtnDisabled,
+                  ]}
+                  onPress={handleInlineFeedbackSubmit}
+                  disabled={
+                    isSubmittingFeedback ||
+                    (!feedbackRating && feedbackThumbsUp === null && !feedbackComment.trim())
+                  }
+                  activeOpacity={0.85}
+                >
+                  {isSubmittingFeedback ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <MaterialCommunityIcons
+                        name="send"
+                        size={14}
+                        color="#FFFFFF"
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text style={styles.submitFeedbackBtnText}>Submit Feedback</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* Coaching & Analytics Report Callout */}
+          {/* <TouchableOpacity
+            style={styles.reportNoticeCard}
+            onPress={() => navigation.navigate(APP_ROUTES.REPORTS as never)}
+            activeOpacity={0.88}
+          >
+            <View style={styles.reportNoticeIconWrap}>
+              <MaterialCommunityIcons name="chart-box-outline" size={22} color="#4F46E5" />
+            </View>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={styles.reportNoticeTitle}>Coaching & Proficiency Report</Text>
+              <Text style={styles.reportNoticeSubtitle}>
+                Detailed analytics, competency breakdown, and personalized recommendations are ready.
+              </Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={20} color="#6366F1" />
+          </TouchableOpacity> */}
+
+          {/* Primary Action Buttons */}
+          <View style={styles.actionsWrap}>
+            <TouchableOpacity
+              style={styles.primaryCTA}
+              onPress={handleBack}
+              activeOpacity={0.85}
+            >
+              <MaterialCommunityIcons
+                name="arrow-left"
+                size={18}
+                color="#FFFFFF"
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.primaryCTAText}>Return to Sprint</Text>
+            </TouchableOpacity>
+
+            {!passed && (
+              <TouchableOpacity
+                style={styles.secondaryCTA}
+                onPress={handleRetry}
+                activeOpacity={0.85}
+              >
+                <MaterialCommunityIcons
+                  name="refresh"
+                  size={18}
+                  color="#475569"
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.secondaryCTAText}>Retake Assessment</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </ScrollView>
         <Confetti visible={showConfetti} />
       </View>
@@ -1372,11 +1857,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: "#FFFFFF",
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOpacity: 0.07,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 5,
+    // shadowColor: "#000",
+    // shadowOpacity: 0.07,
+    // shadowRadius: 16,
+    // shadowOffset: { width: 0, height: 6 },
+    // elevation: 5,
   },
   gradingAccent: { height: 5, backgroundColor: "#10B981" },
   gradingInner: { padding: 36, alignItems: "center" },
@@ -1419,11 +1904,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     overflow: "hidden",
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    // shadowColor: "#000",
+    // shadowOpacity: 0.06,
+    // shadowRadius: 14,
+    // shadowOffset: { width: 0, height: 4 },
+    // elevation: 4,
   },
   resultAccent: { height: 5 },
   resultInner: { padding: 28, alignItems: "center" },
@@ -1455,11 +1940,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    // shadowColor: "#000",
+    // shadowOpacity: 0.04,
+    // shadowRadius: 8,
+    // shadowOffset: { width: 0, height: 2 },
+    // elevation: 2,
   },
   progressCardLabel: {
     fontSize: 12,
@@ -1539,13 +2024,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 18,
     marginBottom: 14,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 2 },
-    // elevation: 2,
-    borderWidth:1,
-    borderColor: "#E5E7EB",
+    // shadowColor: "#000",
+    // shadowOpacity: 0.04,
+    // shadowRadius: 10,
+    // shadowOffset: { width: 0, height: 2 },
+    // // elevation: 2,
+    // borderWidth:1,
+    // borderColor: "#E5E7EB",
   },
   questionMeta: {
     flexDirection: "row",
@@ -1613,11 +2098,11 @@ const styles = StyleSheet.create({
     borderTopColor: "#E5E7EB",
     paddingHorizontal: 16,
     paddingTop: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 8,
+    // shadowColor: "#000",
+    // shadowOpacity: 0.06,
+    // shadowRadius: 10,
+    // shadowOffset: { width: 0, height: -4 },
+    // elevation: 8,
   },
 
   bottomStatusRow: {
@@ -1789,11 +2274,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F3FF",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#7C3AED",
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    // shadowColor: "#7C3AED",
+    // shadowOpacity: 0.12,
+    // shadowRadius: 10,
+    // shadowOffset: { width: 0, height: 4 },
+    // elevation: 3,
   },
   immersiveTitle: {
     fontSize: 24,
@@ -1811,113 +2296,616 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  // ─── Achievement Card / Elliptical Background Styles ───
-  headerAccentBackground: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 250,
-    borderBottomLeftRadius: 120,
-    borderBottomRightRadius: 120,
-    opacity: 0.4,
-    transform: [{ scaleX: 1.6 }],
-  },
-  achievementBadgeContainer: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 24,
+  // ─── Executive Outcome Banner Styles ───
+  outcomeBanner: {
+    flexDirection: "row",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1.5,
   },
-  badgeEmoji: {
-    fontSize: 48,
-    marginBottom: 10,
+  outcomeBannerPassed: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#BBF7D0",
   },
-  badgeHeading: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#0F172A",
-    textAlign: "center",
-    letterSpacing: -0.5,
+  outcomeBannerFailed: {
+    backgroundColor: "#FFFBEB",
+    borderColor: "#FDE68A",
   },
-  badgeSub: {
-    fontSize: 13,
+  outcomeIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+  outcomeIconBadgePassed: {
+    backgroundColor: "#DCFCE7",
+  },
+  outcomeIconBadgeFailed: {
+    backgroundColor: "#FEF3C7",
+  },
+  outcomeTextWrap: {
+    flex: 1,
+  },
+  outcomeTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  outcomeTitlePassed: {
+    color: "#166534",
+  },
+  outcomeTitleFailed: {
+    color: "#92400E",
+  },
+  outcomeSubtitle: {
+    fontSize: 12,
     color: "#64748B",
-    textAlign: "center",
-    marginTop: 6,
-    paddingHorizontal: 8,
-    lineHeight: 18,
+    lineHeight: 17,
     fontWeight: "500",
   },
 
-  // Pips
-  pipsLabelRow: {
-    alignSelf: "stretch",
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
-    marginTop: 20,
-    paddingTop: 16,
-    marginBottom: 10,
+  // ─── Executive Score Overview Card ───
+  scoreOverviewCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
     alignItems: "center",
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    // shadowColor: "#0F172A",
+    // shadowOpacity: 0.05,
+    // shadowRadius: 16,
+    // shadowOffset: { width: 0, height: 6 },
+    // elevation: 3,
   },
-  pipsLabel: {
+  moduleMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EEF2FF",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginBottom: 14,
+    gap: 6,
+  },
+  moduleMetaTitle: {
     fontSize: 12,
     fontWeight: "700",
+    color: "#4F46E5",
+  },
+  donutContainer: {
+    marginVertical: 4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  metricsGrid: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  metricItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  metricLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 4,
+  },
+  metricLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#64748B",
+    letterSpacing: 0.6,
+  },
+  metricValue: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.3,
+  },
+  metricSub: {
+    fontSize: 11,
+    fontWeight: "600",
     color: "#94A3B8",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
+    marginTop: 2,
+  },
+  metricDivider: {
+    width: 1,
+    height: 34,
+    backgroundColor: "#E2E8F0",
+  },
+  benchmarkStatusPillPassed: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 14,
+    width: "100%",
+    gap: 6,
+  },
+  benchmarkStatusTextPassed: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#166534",
+  },
+  benchmarkStatusPillFailed: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 14,
+    width: "100%",
+    gap: 6,
+  },
+  benchmarkStatusTextFailed: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#92400E",
+  },
+
+  // ─── Performance Breakdown Card & Question Pips ───
+  breakdownCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    // shadowColor: "#0F172A",
+    // shadowOpacity: 0.04,
+    // shadowRadius: 10,
+    // shadowOffset: { width: 0, height: 4 },
+    // elevation: 2,
+  },
+  breakdownHeader: {
+    marginBottom: 14,
+  },
+  breakdownTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  breakdownTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.2,
+  },
+  breakdownSubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "500",
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  breakdownLegendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  legendDotCorrect: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#10B981",
+  },
+  legendDotIncorrect: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#EF4444",
+  },
+  legendText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
   },
   pipsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "center",
-    alignItems: "center",
     gap: 8,
+    marginBottom: 14,
   },
   pipCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: "center",
+    flexDirection: "row",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  pipCorrect: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#BBF7D0",
+  },
+  pipIncorrect: {
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FECACA",
   },
   pipNumText: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  reviewToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EEF2FF",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  reviewToggleBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#4F46E5",
+    flex: 1,
+    textAlign: "center",
+  },
+
+  // ─── Question Review Section & Filters ───
+  reviewSection: {
+    marginBottom: 16,
+  },
+  reviewFilterRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  reviewFilterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "#F1F5F9",
+  },
+  reviewFilterChipActive: {
+    backgroundColor: "#4F46E5",
+  },
+  reviewFilterChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+  reviewFilterChipTextActive: {
+    color: "#FFFFFF",
+  },
+  reviewQuestionCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  reviewQuestionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  reviewQNum: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  reviewQNumText: {
     fontSize: 11,
     fontWeight: "800",
+  },
+  reviewStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  reviewResultStatus: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  reviewQuestionText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1E293B",
+    lineHeight: 21,
+    marginBottom: 12,
+  },
+  reviewOptionsList: {
+    gap: 6,
+    marginBottom: 10,
+  },
+  reviewOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  reviewOptionCorrect: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#10B981",
+  },
+  reviewOptionIncorrect: {
+    backgroundColor: "#FEF2F2",
+    borderColor: "#EF4444",
+  },
+  reviewOptionText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#475569",
+    lineHeight: 18,
+    marginRight: 8,
+  },
+  reviewOptionTextCorrect: {
+    color: "#166534",
+    fontWeight: "700",
+  },
+  reviewOptionTextIncorrect: {
+    color: "#991B1B",
+    fontWeight: "700",
+  },
+  explanationBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: "#6366F1",
+  },
+  explanationTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  explanationTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#4F46E5",
+    letterSpacing: 0.3,
+  },
+  explanationText: {
+    fontSize: 12,
+    color: "#334155",
+    lineHeight: 18,
+  },
+
+  // ─── Inline Feedback Card ───
+  feedbackCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    // shadowColor: "#0F172A",
+    // shadowOpacity: 0.04,
+    // shadowRadius: 10,
+    // shadowOffset: { width: 0, height: 4 },
+    // elevation: 2,
+  },
+  feedbackHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  feedbackIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  feedbackCardTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  feedbackCardSubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+  },
+  feedbackSuccessBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0FDF4",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+  },
+  feedbackSuccessTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#166534",
+  },
+  feedbackSuccessSubtitle: {
+    fontSize: 12,
+    color: "#15803D",
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  feedbackBody: {
+    gap: 12,
+  },
+  feedbackFieldLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#94A3B8",
+    letterSpacing: 0.7,
+  },
+  feedbackThumbsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  feedbackThumbBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+  },
+  feedbackThumbBtnActivePositive: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#10B981",
+  },
+  feedbackThumbBtnActiveNegative: {
+    backgroundColor: "#FEF2F2",
+    borderColor: "#EF4444",
+  },
+  feedbackThumbBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+  feedbackThumbBtnTextActivePositive: {
+    color: "#047857",
+  },
+  feedbackThumbBtnTextActiveNegative: {
+    color: "#B91C1C",
+  },
+  starRatingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  starTouchArea: {
+    padding: 4,
+  },
+  starRatingText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#D97706",
+    marginLeft: 8,
+  },
+  feedbackTextInput: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 12,
+    fontSize: 13,
+    color: "#0F172A",
+    textAlignVertical: "top",
+    minHeight: 70,
+  },
+  submitFeedbackBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4F46E5",
+    borderRadius: 12,
+    paddingVertical: 12,
+    shadowColor: "#4F46E5",
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  submitFeedbackBtnDisabled: {
+    backgroundColor: "#CBD5E1",
+    shadowOpacity: 0,
+  },
+  submitFeedbackBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
     color: "#FFFFFF",
   },
 
-  // Action CTAs
+  // ─── Coaching & Reports Card ───
+  reportNoticeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E0E7FF",
+    shadowColor: "#6366F1",
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  reportNoticeIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  reportNoticeTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#1E1B4B",
+    marginBottom: 3,
+  },
+  reportNoticeSubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    lineHeight: 16,
+    fontWeight: "500",
+  },
+
+  // ─── Action CTAs ───
   actionsWrap: {
     flexDirection: "column",
-    gap: 12,
-    marginBottom: 24,
+    gap: 10,
+    marginBottom: 20,
   },
   primaryCTA: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#4F46E5",
-    borderRadius: 16,
-    paddingVertical: 15,
-    // shadowColor: "#7C3AED",
-    // shadowOpacity: 0.2,
-    // shadowRadius: 10,
-    // shadowOffset: { width: 0, height: 4 },
-    // elevation: 3,
+    borderRadius: 14,
+    paddingVertical: 14,
   },
   primaryCTAText: {
     fontSize: 15,
@@ -1929,126 +2917,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    paddingVertical: 15,
+    borderRadius: 14,
+    paddingVertical: 14,
     borderWidth: 1.5,
     borderColor: "#E2E8F0",
   },
   secondaryCTAText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#475569",
-  },
-
-  // Detailed Review Panel
-  reviewSection: {
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  reviewSectionTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginBottom: 16,
-    letterSpacing: -0.3,
-  },
-  reviewQuestionCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
-  },
-  reviewQuestionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  reviewQNum: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  reviewQNumText: {
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  reviewResultStatus: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  reviewQuestionText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#1E293B",
-    lineHeight: 22,
-    marginBottom: 16,
-  },
-  reviewOptionsList: {
-    gap: 8,
-    marginBottom: 14,
-  },
-  reviewOptionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#F8FAFC",
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-    padding: 12,
-    gap: 10,
-  },
-  reviewOptionCorrect: {
-    backgroundColor: "#ECFDF5",
-    borderColor: "#10B981",
-  },
-  reviewOptionIncorrect: {
-    backgroundColor: "#FEF2F2",
-    borderColor: "#EF4444",
-  },
-  reviewOptionText: {
-    flex: 1,
     fontSize: 14,
+    fontWeight: "700",
     color: "#475569",
-    lineHeight: 20,
-  },
-  reviewOptionTextCorrect: {
-    color: "#065F46",
-    fontWeight: "700",
-  },
-  reviewOptionTextIncorrect: {
-    color: "#991B1B",
-    fontWeight: "700",
-  },
-  explanationBox: {
-    backgroundColor: "#EEF2FF",
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 4,
-    borderLeftWidth: 3,
-    borderLeftColor: "#4F46E5",
-  },
-  explanationTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 6,
-  },
-  explanationTitle: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#4F46E5",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  explanationText: {
-    fontSize: 13,
-    color: "#3730A3",
-    lineHeight: 19,
-    fontWeight: "500",
   },
   bodyModuleHeader: {
     flexDirection: "row",

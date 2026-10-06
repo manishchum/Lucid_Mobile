@@ -9,6 +9,7 @@ interface QuizScoreDonutProps {
   passed: boolean;
   threshold: number;
   size?: number;
+  showSubtitles?: boolean;
 }
 
 export const QuizScoreDonut: React.FC<QuizScoreDonutProps> = ({
@@ -18,6 +19,7 @@ export const QuizScoreDonut: React.FC<QuizScoreDonutProps> = ({
   passed,
   threshold,
   size = 180,
+  showSubtitles = false,
 }) => {
   const strokeWidth = 12;
   const radius = (size - strokeWidth) / 2;
@@ -35,7 +37,7 @@ export const QuizScoreDonut: React.FC<QuizScoreDonutProps> = ({
         justifyContent: "center",
         alignItems: "center",
         alignSelf: "center",
-        marginVertical: 20,
+        marginVertical: 14,
       }}
     >
       <Svg width={size} height={size}>
@@ -69,7 +71,7 @@ export const QuizScoreDonut: React.FC<QuizScoreDonutProps> = ({
       >
         <Text
           style={{
-            fontSize: 34,
+            fontSize: 38,
             fontWeight: "900",
             color: "#0F172A",
             letterSpacing: -1,
@@ -79,24 +81,40 @@ export const QuizScoreDonut: React.FC<QuizScoreDonutProps> = ({
         </Text>
         <Text
           style={{
-            fontSize: 12,
-            fontWeight: "600",
-            color: "#64748B",
-            marginTop: 2,
-          }}
-        >
-          {score} / {max} Correct
-        </Text>
-        <Text
-          style={{
             fontSize: 11,
-            fontWeight: "700",
-            color: passed ? "#10B981" : "#D97706",
+            fontWeight: "800",
+            color: "#64748B",
+            letterSpacing: 0.8,
+            textTransform: "uppercase",
             marginTop: 2,
           }}
         >
-          Pass Target: {threshold}%
+          Accuracy
         </Text>
+        {showSubtitles && (
+          <>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: "600",
+                color: "#64748B",
+                marginTop: 2,
+              }}
+            >
+              {score} / {max} Correct
+            </Text>
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: "700",
+                color: passed ? "#10B981" : "#D97706",
+                marginTop: 2,
+              }}
+            >
+              Pass Target: {threshold}%
+            </Text>
+          </>
+        )}
       </View>
     </View>
   );

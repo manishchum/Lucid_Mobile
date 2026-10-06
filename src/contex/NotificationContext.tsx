@@ -128,29 +128,15 @@ export const NotificationProvider = ({
         setNotifications((prev) => [newNotif, ...prev]);
         setUnreadCount((count) => count + 1);
         
-        if (newNotif.type === "POST_COMPLETION_FEEDBACK") {
-          const val =
-            newNotif.metadata?.sprint_id ||
-            newNotif.metadata?.learning_plan_id ||
-            newNotif.metadata?.id ||
-            newNotif.metadata?.module_id;
-          setFeedbackSheet({
-            visible: true,
-            moduleId: String(val || ""),
-            moduleType: "GENERAL",
-            title: String(newNotif.metadata?.assignment_title || newNotif.metadata?.module_name || newNotif.title),
-          });
-        } else {
-          showToast(newNotif.title, newNotif.message || "", () => {
-            const val = newNotif.metadata?.sprint_id || newNotif.metadata?.task_id || newNotif.metadata?.id;
-            const titleVal = newNotif.metadata?.title || newNotif.metadata?.assignment_title;
-            handleSprintNotificationClick(
-              val ? String(val) : undefined,
-              titleVal ? String(titleVal) : undefined,
-              newNotif.type
-            );
-          });
-        }
+        showToast(newNotif.title, newNotif.message || "", () => {
+          const val = newNotif.metadata?.sprint_id || newNotif.metadata?.task_id || newNotif.metadata?.id;
+          const titleVal = newNotif.metadata?.title || newNotif.metadata?.assignment_title;
+          handleSprintNotificationClick(
+            val ? String(val) : undefined,
+            titleVal ? String(titleVal) : undefined,
+            newNotif.type
+          );
+        });
         eventBus.emit("refresh_dashboard");
         eventBus.emit("refresh_tasks");
         eventBus.emit("refresh_roleplay");
@@ -161,28 +147,21 @@ export const NotificationProvider = ({
   /**
    * Navigates to the correct screen based on the notification payload.
    * Called from both foreground toast taps and background/quit notification taps.
-   *
-   * Dispatch table:
-   *   sprint_assigned | sprint_updated → Sprint tab
-   *   task_assigned   | task_updated   → Home screen Tasks tab
-   *   (default)                        → Notifications screen
    */
   const handleSprintNotificationClick = useCallback(
     async (sprintId?: string, assignmentTitle?: string, notifType?: string) => {
       try {
         const type = notifType ?? "";
 
-        if (type === "POST_COMPLETION_FEEDBACK") {
-          setFeedbackSheet({
-            visible: true,
-            moduleId: sprintId || "",
-            moduleType: "GENERAL", 
-            title: assignmentTitle || "Module Feedback",
-          });
-          return;
-        }
-
-        if (type === "sprint_assigned" || type === "sprint_updated" || (sprintId && !type)) {
+        if (
+          type === "REPORT_READY" ||
+          type === "QUIZ_PASSED" ||
+          type === "QUIZ_FAILED" ||
+          type === "MODULE_COMPLETED" ||
+          type.toUpperCase().includes("REPORT")
+        ) {
+          navigate(APP_ROUTES.REPORTS as any);
+        } else if (type === "sprint_assigned" || type === "sprint_updated" || (sprintId && !type)) {
           // Navigate to the Sprint tab so the user sees their assigned sprint
           navigate(STACK_ROUTES.SPRINT as any, { sprintId, assignmentTitle });
         } else if (type === "task_assigned" || type === "task_updated") {
@@ -370,8 +349,17 @@ export const NotificationProvider = ({
                 remoteMessage.data?.id ||
                 remoteMessage.data?.learning_plan_id ||
                 remoteMessage.data?.module_id;
+              const notifType = remoteMessage.data?.type ?? "";
+              const titleVal =
+                remoteMessage.data?.assignment_title ||
+                remoteMessage.data?.module_name ||
+                remoteMessage.notification?.title;
               if (val) {
-                handleSprintNotificationClick(String(val));
+                handleSprintNotificationClick(
+                  String(val),
+                  titleVal ? String(titleVal) : undefined,
+                  notifType
+                );
               }
             },
           );

@@ -65,8 +65,16 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
       await markAsRead(item.id);
     }
     const notifType = item.type || "";
-    const val = item.metadata?.sprint_id || item.metadata?.task_id || item.metadata?.id;
-    const titleVal = item.metadata?.title || item.metadata?.assignment_title;
+    const val =
+      item.metadata?.sprint_id ||
+      item.metadata?.task_id ||
+      item.metadata?.id ||
+      item.metadata?.module_id;
+    const titleVal =
+      item.metadata?.title ||
+      item.metadata?.assignment_title ||
+      item.metadata?.module_name ||
+      item.title;
     handleSprintNotificationClick(
       val ? String(val) : undefined,
       titleVal ? String(titleVal) : undefined,

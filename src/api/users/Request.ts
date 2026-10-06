@@ -1291,11 +1291,11 @@ export const submitQuizForGrading = async (
     }, 0);
 
     // Save module progress to DB FIRST so student completion is registered even if AI fails or rate limits
-    if (moduleId && processedModuleId) {
+    if (processedModuleId || moduleId) {
       try {
         await postModuleProgress(dbUserId, {
-          module_id: moduleId,
-          processed_module_id: processedModuleId,
+          module_id: moduleId || "",
+          processed_module_id: processedModuleId || "",
           quiz_score: localScore,
           max_score: questions.length,
           quiz_feedback: "Submitted",
