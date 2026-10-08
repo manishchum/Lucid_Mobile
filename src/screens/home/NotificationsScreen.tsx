@@ -66,10 +66,12 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
     }
     const notifType = item.type || "";
     const val =
+      item.metadata?.target_id ||
       item.metadata?.sprint_id ||
       item.metadata?.task_id ||
-      item.metadata?.id ||
-      item.metadata?.module_id;
+      item.metadata?.scenario_id ||
+      item.metadata?.module_id ||
+      item.metadata?.id;
     const titleVal =
       item.metadata?.title ||
       item.metadata?.assignment_title ||
@@ -78,7 +80,8 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
     handleSprintNotificationClick(
       val ? String(val) : undefined,
       titleVal ? String(titleVal) : undefined,
-      notifType
+      notifType,
+      item.metadata,
     );
   };
 
@@ -107,11 +110,36 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
   };
 
   const renderItem = ({ item }: { item: Notification }) => {
-    const isSprint = item.type === "sprint_assigned" || item.type === "sprint_updated";
-    const isTask = item.type === "task_assigned" || item.type === "task_updated";
-    const iconName = isSprint ? "lightning-bolt" : isTask ? "clipboard-text-outline" : "bell-outline";
-    const iconColor = isSprint ? "#6366F1" : isTask ? "#10B981" : "#EC4899";
-    const iconBg = isSprint ? "#EEF2FF" : isTask ? "#D1FAE5" : "#FDF2F8";
+    const t = (item.type || "").toUpperCase();
+    let iconName: any = "bell-outline";
+    let iconColor = "#6366F1";
+    let iconBg = "#EEF2FF";
+
+    if (t.includes("SPRINT") || item.metadata?.module_type === "sprint") {
+      iconName = "lightning-bolt";
+      iconColor = "#6366F1";
+      iconBg = "#EEF2FF";
+    } else if (t.includes("TASK") || item.metadata?.module_type === "task") {
+      iconName = "clipboard-text-outline";
+      iconColor = "#10B981";
+      iconBg = "#D1FAE5";
+    } else if (t.includes("ROLEPLAY") || item.metadata?.module_type === "roleplay") {
+      iconName = "account-voice";
+      iconColor = "#8B5CF6";
+      iconBg = "#EDE9FE";
+    } else if (t.includes("QUIZ") || t.includes("REPORT") || t.includes("MODULE_COMPLETED")) {
+      iconName = "trophy-outline";
+      iconColor = "#F59E0B";
+      iconBg = "#FEF3C7";
+    } else if (t.includes("DEADLINE")) {
+      iconName = "clock-alert-outline";
+      iconColor = "#EF4444";
+      iconBg = "#FEE2E2";
+    } else if (t.includes("FEEDBACK")) {
+      iconName = "star-outline";
+      iconColor = "#EC4899";
+      iconBg = "#FDF2F8";
+    }
 
     return (
       <TouchableOpacity

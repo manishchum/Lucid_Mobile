@@ -549,6 +549,15 @@ export default function ModuleQuizScreen({
         console.log("[Quiz] Requesting in-app review...");
         requestReview();
       }, 1500);
+
+      // Trigger direct CSAT feedback sheet after celebration
+      setTimeout(() => {
+        eventBus.emit("open_feedback_sheet", {
+          moduleId: processedModuleId,
+          moduleType: "quiz",
+          title: moduleTitle || "Module Quiz",
+        });
+      }, 3800);
     } else {
       safeHaptics.errorNotification();
     }

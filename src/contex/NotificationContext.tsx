@@ -73,6 +73,7 @@ interface NotificationContextType {
     sprintId?: string,
     assignmentTitle?: string,
     notifType?: string,
+    metadata?: any,
   ) => Promise<void>;
 }
 
@@ -117,6 +118,24 @@ export const NotificationProvider = ({
     [],
   );
 
+  // Listen for direct module completion event to prompt CSAT feedback sheet
+  useEffect(() => {
+    const unsub = eventBus.on("open_feedback_sheet", (data: any) => {
+      if (data?.moduleId) {
+        setFeedbackSheet({
+          visible: true,
+          moduleId: String(data.moduleId),
+          moduleType: String(data.moduleType || "quiz"),
+          title: String(data.title || "Module Feedback"),
+        });
+      }
+    });
+    return () => {
+      if (typeof unsub === "function") unsub();
+      else if (unsub && typeof (unsub as any).unsubscribe === "function") (unsub as any).unsubscribe();
+    };
+  }, []);
+
   // Supabase Realtime subscription for notifications table
   useRealtimeSubscription<Notification>({
     table: "notifications",
@@ -129,12 +148,22 @@ export const NotificationProvider = ({
         setUnreadCount((count) => count + 1);
         
         showToast(newNotif.title, newNotif.message || "", () => {
-          const val = newNotif.metadata?.sprint_id || newNotif.metadata?.task_id || newNotif.metadata?.id;
-          const titleVal = newNotif.metadata?.title || newNotif.metadata?.assignment_title;
+          const val =
+            newNotif.metadata?.target_id ||
+            newNotif.metadata?.sprint_id ||
+            newNotif.metadata?.task_id ||
+            newNotif.metadata?.module_id ||
+            newNotif.metadata?.id;
+          const titleVal =
+            newNotif.metadata?.title ||
+            newNotif.metadata?.assignment_title ||
+            newNotif.metadata?.module_name ||
+            newNotif.title;
           handleSprintNotificationClick(
             val ? String(val) : undefined,
             titleVal ? String(titleVal) : undefined,
-            newNotif.type
+            newNotif.type,
+            newNotif.metadata,
           );
         });
         eventBus.emit("refresh_dashboard");
@@ -145,14 +174,52 @@ export const NotificationProvider = ({
   });
 
   /**
-   * Navigates to the correct screen based on the notification payload.
-   * Called from both foreground toast taps and background/quit notification taps.
+   * Unified Deep-Linking Navigator:
+   * Maps explicit routing metadata (target_screen, target_id, initial_tab) or falls back
+   * to notification types and payload keys to navigate precisely to sprints, tasks, roleplay, reports, or feedback sheet.
    */
   const handleSprintNotificationClick = useCallback(
-    async (sprintId?: string, assignmentTitle?: string, notifType?: string) => {
+    async (targetId?: string, assignmentTitle?: string, notifType?: string, meta?: any) => {
       try {
         const type = notifType ?? "";
+        const targetScreen = meta?.target_screen || meta?.targetScreen;
+        const moduleId = meta?.module_id || meta?.target_id || targetId;
+        const moduleType = meta?.module_type || "quiz";
+        const titleVal = assignmentTitle || meta?.title || meta?.module_name || "Notification";
 
+        // 1. Explicit target screen contract
+        if (targetScreen === "Feedback" || type === "POST_COMPLETION_FEEDBACK") {
+          setFeedbackSheet({
+            visible: true,
+            moduleId: String(moduleId || ""),
+            moduleType: String(moduleType),
+            title: String(titleVal),
+          });
+          return;
+        }
+
+        if (targetScreen === "Reports") {
+          navigate(APP_ROUTES.REPORTS as any);
+          return;
+        }
+
+        if (targetScreen === "Sprint") {
+          const sprintId = targetId || meta?.sprint_id || meta?.target_id;
+          navigate(STACK_ROUTES.SPRINT as any, { sprintId, assignmentTitle: titleVal });
+          return;
+        }
+
+        if (targetScreen === "Home" || meta?.initial_tab === "tasks") {
+          navigate(APP_ROUTES.HOME as any, { initialTab: meta?.initial_tab || "tasks" });
+          return;
+        }
+
+        if (targetScreen === "Roleplay") {
+          navigate(STACK_ROUTES.ROLEPLAY as any, { scenarioId: targetId || meta?.scenario_id });
+          return;
+        }
+
+        // 2. Type-based and payload fallback routing
         if (
           type === "REPORT_READY" ||
           type === "QUIZ_PASSED" ||
@@ -161,15 +228,20 @@ export const NotificationProvider = ({
           type.toUpperCase().includes("REPORT")
         ) {
           navigate(APP_ROUTES.REPORTS as any);
-        } else if (type === "sprint_assigned" || type === "sprint_updated" || (sprintId && !type)) {
-          // Navigate to the Sprint tab so the user sees their assigned sprint
-          navigate(STACK_ROUTES.SPRINT as any, { sprintId, assignmentTitle });
-        } else if (type === "task_assigned" || type === "task_updated") {
-          // Navigate to Home screen -> Tasks tab
+        } else if (type === "sprint_assigned" || type === "sprint_updated" || meta?.sprint_id) {
+          navigate(STACK_ROUTES.SPRINT as any, { sprintId: targetId || meta?.sprint_id, assignmentTitle: titleVal });
+        } else if (type === "task_assigned" || type === "task_updated" || meta?.task_id) {
           navigate(APP_ROUTES.HOME as any, { initialTab: "tasks" });
-        } else if (type === "roleplay_assigned" || type === "roleplay_updated" || type === "roleplay") {
-          // Navigate to Roleplay screen
+        } else if (type === "roleplay_assigned" || type === "roleplay_updated" || type === "roleplay" || meta?.scenario_id) {
           navigate(STACK_ROUTES.ROLEPLAY as any);
+        } else if (type === "MODULE_ASSIGNED") {
+          if (meta?.task_id || meta?.module_type === "task") {
+            navigate(APP_ROUTES.HOME as any, { initialTab: "tasks" });
+          } else if (meta?.scenario_id || meta?.module_type === "roleplay") {
+            navigate(STACK_ROUTES.ROLEPLAY as any);
+          } else {
+            navigate(STACK_ROUTES.SPRINT as any, { sprintId: targetId || meta?.sprint_id || meta?.module_id, assignmentTitle: titleVal });
+          }
         } else {
           navigate("Notifications");
         }
@@ -346,21 +418,25 @@ export const NotificationProvider = ({
             remoteMessage.notification.body || "",
             () => {
               const val =
+                remoteMessage.data?.target_id ||
+                remoteMessage.data?.sprint_id ||
+                remoteMessage.data?.task_id ||
+                remoteMessage.data?.scenario_id ||
+                remoteMessage.data?.module_id ||
                 remoteMessage.data?.id ||
-                remoteMessage.data?.learning_plan_id ||
-                remoteMessage.data?.module_id;
+                remoteMessage.data?.learning_plan_id;
               const notifType = remoteMessage.data?.type ?? "";
               const titleVal =
+                remoteMessage.data?.title ||
                 remoteMessage.data?.assignment_title ||
                 remoteMessage.data?.module_name ||
                 remoteMessage.notification?.title;
-              if (val) {
-                handleSprintNotificationClick(
-                  String(val),
-                  titleVal ? String(titleVal) : undefined,
-                  notifType
-                );
-              }
+              handleSprintNotificationClick(
+                val ? String(val) : undefined,
+                titleVal ? String(titleVal) : undefined,
+                notifType,
+                remoteMessage.data,
+              );
             },
           );
         }
@@ -387,14 +463,22 @@ export const NotificationProvider = ({
           );
           const notifType = remoteMessage.data?.type ?? "";
           const val =
+            remoteMessage.data?.target_id ||
+            remoteMessage.data?.sprint_id ||
+            remoteMessage.data?.task_id ||
+            remoteMessage.data?.scenario_id ||
+            remoteMessage.data?.module_id ||
             remoteMessage.data?.id ||
-            remoteMessage.data?.learning_plan_id ||
-            remoteMessage.data?.module_id;
-          const titleVal = remoteMessage.data?.assignment_title;
+            remoteMessage.data?.learning_plan_id;
+          const titleVal =
+            remoteMessage.data?.title ||
+            remoteMessage.data?.assignment_title ||
+            remoteMessage.data?.module_name;
           handleSprintNotificationClick(
-            String(val || ""),
-            String(titleVal || ""),
+            val ? String(val) : undefined,
+            titleVal ? String(titleVal) : undefined,
             notifType,
+            remoteMessage.data,
           );
         });
 
@@ -408,16 +492,24 @@ export const NotificationProvider = ({
             );
             const notifType = remoteMessage.data?.type ?? "";
             const val =
+              remoteMessage.data?.target_id ||
+              remoteMessage.data?.sprint_id ||
+              remoteMessage.data?.task_id ||
+              remoteMessage.data?.scenario_id ||
+              remoteMessage.data?.module_id ||
               remoteMessage.data?.id ||
-              remoteMessage.data?.learning_plan_id ||
-              remoteMessage.data?.module_id;
-            const titleVal = remoteMessage.data?.assignment_title;
+              remoteMessage.data?.learning_plan_id;
+            const titleVal =
+              remoteMessage.data?.title ||
+              remoteMessage.data?.assignment_title ||
+              remoteMessage.data?.module_name;
             // Delay slightly for cold-start: navigation ref may not be ready yet
             setTimeout(() => {
               handleSprintNotificationClick(
-                String(val || ""),
-                String(titleVal || ""),
+                val ? String(val) : undefined,
+                titleVal ? String(titleVal) : undefined,
                 notifType,
+                remoteMessage.data,
               );
             }, 800);
           }
