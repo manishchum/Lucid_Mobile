@@ -23,6 +23,8 @@ export type Addon =
   | "task_management"
   | "kpi"
   | "role_play"
+  | "role_play_openai"
+  | "role_play_gemini"
   | "sprintverse"
   | "reports"
   | "gamification";
@@ -62,6 +64,8 @@ const KNOWN_ADDONS: Addon[] = [
   "task_management",
   "kpi",
   "role_play",
+  "role_play_openai",
+  "role_play_gemini",
   "sprintverse",
   "reports",
   "gamification",

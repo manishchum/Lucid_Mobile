@@ -679,6 +679,7 @@ export default function RoleplaySessionScreen({
             employeeId,
             sessionId: createdSessionId,
             voiceGender,
+            provider: config?.engine || "gemini",
           })
         );
 
@@ -713,6 +714,21 @@ export default function RoleplaySessionScreen({
               }
               break;
 
+            case "transcript_chunk":
+              if (data.text) {
+                setTranscript((prev) => {
+                  const last = prev[prev.length - 1];
+                  if (last && last.role === "assistant_chunk") {
+                    return [
+                      ...prev.slice(0, -1),
+                      { role: "assistant_chunk", text: last.text + data.text },
+                    ];
+                  }
+                  return [...prev, { role: "assistant_chunk", text: data.text }];
+                });
+              }
+              break;
+
             case "bot_transcription":
               if (data.text) {
                 const text = data.text.trim();
@@ -725,6 +741,13 @@ export default function RoleplaySessionScreen({
                 playBotAudioChunks(text);
               } else {
                 setIsBotSpeaking(false);
+              }
+              break;
+
+            case "response.done":
+              // When turn audio completes, ensure any accumulated chunks play
+              if (botAudioChunksRef.current.length > 0 && !soundRef.current) {
+                playBotAudioChunks();
               }
               break;
 
@@ -758,6 +781,11 @@ export default function RoleplaySessionScreen({
               break;
 
             case "audio_end":
+              setIsBotSpeaking(false);
+              break;
+
+            case "error":
+              logger.warn("[RoleplaySession] Server error:", data.message);
               setIsBotSpeaking(false);
               break;
 

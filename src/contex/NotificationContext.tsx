@@ -547,7 +547,7 @@ export const NotificationProvider = ({
         const token = await getFirebaseToken().catch(() => null);
         if (!token) return;
 
-        const wsUrl = `${WS_BASE_URL}/notifications/ws?user_id=${cachedUser.userId}`;
+        const wsUrl = `${WS_BASE_URL}/notifications/ws?user_id=${cachedUser.userId}&token=${encodeURIComponent(token)}`;
         logger.info(
           "[WebSocket] Connecting to WS server for user:",
           cachedUser.userId,
@@ -592,13 +592,22 @@ export const NotificationProvider = ({
               const notifType = newNotif.type || "";
               if (
                 notifType === "new_sprint" ||
-                notifType === "sprint_assigned"
+                notifType === "sprint_assigned" ||
+                (notifType === "MODULE_ASSIGNED" && (newNotif.metadata?.module_type === "sprint" || newNotif.metadata?.sprint_id))
               ) {
+                eventBus.emit("refresh_dashboard");
+              } else if (
+                notifType === "task_assigned" ||
+                notifType === "task_updated" ||
+                (notifType === "MODULE_ASSIGNED" && (newNotif.metadata?.module_type === "task" || newNotif.metadata?.task_id))
+              ) {
+                eventBus.emit("refresh_tasks");
                 eventBus.emit("refresh_dashboard");
               } else if (
                 notifType === "roleplay_assigned" ||
                 notifType === "roleplay_updated" ||
-                notifType === "roleplay"
+                notifType === "roleplay" ||
+                (notifType === "MODULE_ASSIGNED" && (newNotif.metadata?.module_type === "roleplay" || newNotif.metadata?.scenario_id))
               ) {
                 eventBus.emit("refresh_roleplay");
                 eventBus.emit("refresh_dashboard");

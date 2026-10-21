@@ -21,6 +21,7 @@ export interface RoleplayConfig {
   voiceGender: "female" | "male";
   cameraEnabled: boolean;
   micEnabled: boolean;
+  engine: "gemini" | "openai";
 }
 
 const DIFFICULTY_STYLE: Record<string, { bg: string; text: string; border: string }> = {
@@ -40,7 +41,9 @@ export default function RoleplayConfigScreen({
   const difficulty = scenario?.difficulty || "Medium";
   const diffStyle = DIFFICULTY_STYLE[difficulty] ?? DIFFICULTY_STYLE.Medium;
 
-  const { hasFeature, addonsKnown } = useFeatureGating();
+  const { hasFeature, addonsKnown, getRoleplayEngine } = useFeatureGating();
+  const activeEngine = getRoleplayEngine();
+
   useEffect(() => {
     if (addonsKnown && !hasFeature(FEATURES.ROLE_PLAY)) {
       navigation.navigate(APP_ROUTES.HOME);
@@ -54,12 +57,21 @@ export default function RoleplayConfigScreen({
     voiceGender: "female",
     cameraEnabled: true,
     micEnabled: true,
+    engine: activeEngine,
   });
+
+  // Keep config engine in sync when addons load
+  useEffect(() => {
+    setConfig((prev) => ({ ...prev, engine: activeEngine }));
+  }, [activeEngine]);
 
   const handleStart = () => {
     navigation.replace(STACK_ROUTES.ROLEPLAY_SESSION as never, {
       scenario,
-      config,
+      config: {
+        ...config,
+        engine: activeEngine,
+      },
     });
   };
 
@@ -332,6 +344,8 @@ const styles = StyleSheet.create({
   diffRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
     marginBottom: 12,
   },
   diffBadge: {
