@@ -21,6 +21,7 @@ import {
   SubmissionFormat,
   FormatAnswer,
 } from "./Dto";
+import { getMobileDeviceId, getMobileDeviceIdSync } from "../../utils/deviceId";
 import { uploadMediaToStorage } from "../../services/storageUpload";
 import { supabase } from "../../services/supabase";
 
@@ -79,14 +80,22 @@ export const verifyOtpApi = async (
   otp: string
 ): Promise<{ success: boolean; token: string; user: any; company?: any }> => {
   const url = `${API_BASE_URL}/auth/verify-otp`;
+  const deviceId = await getMobileDeviceId();
   try {
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "X-Device-ID": deviceId,
+        "X-Platform": "mobile",
       },
-      body: JSON.stringify({ phone, otp }),
+      body: JSON.stringify({
+        phone,
+        otp,
+        device_id: deviceId,
+        platform: "mobile",
+      }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -160,9 +169,12 @@ const getHeaders = async (
   userId?: string,
   options?: { noCache?: boolean; companyId?: string },
 ): Promise<Record<string, string>> => {
+  const deviceId = await getMobileDeviceId();
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
+    "X-Device-ID": deviceId,
+    "X-Platform": "mobile",
   };
   if (options?.noCache) {
     headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
@@ -188,9 +200,12 @@ const getHeaders = async (
 };
 
 const getPublicHeaders = (userId?: string, companyId?: string): Record<string, string> => {
+  const deviceId = getMobileDeviceIdSync();
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
+    "X-Device-ID": deviceId,
+    "X-Platform": "mobile",
   };
   if (userId) headers["X-User-ID"] = userId;
   if (companyId) headers["X-Company-ID"] = companyId;
@@ -378,20 +393,25 @@ export async function apiFetch<T = any>(
 
     // Session/account-validity codes — handled centrally, emit session event.
     const code = body?.code as SessionInvalidReason | undefined;
+    const detail = body?.detail;
     if (
       response.status === 401 &&
       (code === "SESSION_TERMINATED" ||
+        detail === "Session_Replaced" ||
         code === "ACCOUNT_DEACTIVATED" ||
         code === "COMPANY_DEACTIVATED")
     ) {
+      const emitReason: SessionInvalidReason = (detail === "Session_Replaced" || code === "SESSION_TERMINATED")
+        ? "SESSION_TERMINATED"
+        : code!;
       logger.warn(
-        `[apiFetch] session invalid (${code}) — emitting sessionEvents`,
+        `[apiFetch] session invalid (${detail || code}) — emitting sessionEvents`,
       );
-      emitSessionInvalid(code);
+      emitSessionInvalid(emitReason);
       throw new ApiError(
-        body?.message ?? "Session invalid",
+        body?.detail ?? body?.message ?? "Session invalid",
         response.status,
-        code,
+        emitReason,
       );
     }
 

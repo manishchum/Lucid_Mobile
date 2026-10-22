@@ -38,6 +38,8 @@ import { APP_ROUTES, STACK_ROUTES } from "../navigations/Routes";
 import { logger } from "../utils/UnifiedLogger";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 import { FeedbackBottomSheet } from "../components/notifications/FeedbackBottomSheet";
+import { emitSessionInvalid } from "../api/sessionEvents";
+import { getMobileDeviceIdSync } from "../utils/deviceId";
 
 let isMessagingSupported = false;
 try {
@@ -565,6 +567,19 @@ export const NotificationProvider = ({
         ws.onmessage = (event) => {
           try {
             const payload = JSON.parse(event.data);
+            if (payload?.type === "force_logout" || payload?.reason === "session_replaced") {
+              const currentDeviceId = getMobileDeviceIdSync();
+              if (
+                payload.platform === "mobile" &&
+                (!payload.keep_device_id || payload.keep_device_id !== currentDeviceId)
+              ) {
+                logger.warn(
+                  "[NotificationContext] Received force_logout via WebSocket for this device. Disconnecting.",
+                );
+                emitSessionInvalid("SESSION_TERMINATED");
+                return;
+              }
+            }
             if (payload.event === "refresh_data") {
               const refreshType = payload.data?.type || payload.type || "";
               if (refreshType === "dashboard" || refreshType === "sprint") {
