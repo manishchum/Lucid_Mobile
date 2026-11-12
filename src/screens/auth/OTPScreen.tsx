@@ -10,21 +10,20 @@ import {
   StyleSheet,
   Dimensions,
   ActivityIndicator,
-  useWindowDimensions,
+  BackHandler,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { STACK_ROUTES, APP_ROUTES } from "../../navigations/Routes";
 import { safeHaptics } from "../../utils/haptics";
 import { useAuth } from "../../contex/AuthContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { formatDisplayPhone } from "../../utils/countries";
 
 const { width } = Dimensions.get("window");
 
-export default function OTPScreen({ navigation }: { navigation: any }) {
-  const insets = useSafeAreaInsets();
-  const { phoneNumber, verifyOTP, sendOTP } = useAuth();
+export default function OTPScreen() {
+  const { phoneNumber, selectedCountry, setOtpStep, verifyOTP, sendOTP } =
+    useAuth();
 
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
@@ -44,6 +43,15 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
       inputRef.current?.focus();
     }, 500);
   }, []);
+
+  // Allow hardware back button to return to phone input step
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      setOtpStep(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [setOtpStep]);
 
   // Timer Logic — ref-tracked to prevent double-fire on re-mount
   useEffect(() => {
@@ -68,7 +76,7 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
     setIsLoading(true);
     setError("");
 
-    const result = await verifyOTP(code, phoneNumber);
+    const result = await verifyOTP(code, phoneNumber, selectedCountry);
 
     if (!result.success) {
       safeHaptics.errorNotification();
@@ -113,13 +121,17 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
       setShowNoInternet(true);
       return;
     }
-    setTimer(30);
     setError("");
     setRemainingAttempts(null);
     setIsInvalidated(false);
     setOtp("");
-    const res = await sendOTP(phoneNumber);
-    if (!res.success) {
+    const res = await sendOTP(phoneNumber, selectedCountry);
+    if (res.success) {
+      setTimer(res.retryAfter ?? 30);
+    } else {
+      if (res.retryAfter) {
+        setTimer(res.retryAfter);
+      }
       setError(res.message || "Failed to resend OTP. Please try again.");
     }
   };
@@ -156,7 +168,9 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
           <Text style={styles.title}>OTP Verification</Text>
           <Text style={styles.subtitle}>
             We've sent a code to{" "}
-            <Text style={styles.phoneHighlight}>+91 {phoneNumber}</Text>
+            <Text style={styles.phoneHighlight}>
+              {formatDisplayPhone(phoneNumber, selectedCountry)}
+            </Text>
           </Text>
 
           <TouchableOpacity
@@ -207,6 +221,14 @@ export default function OTPScreen({ navigation }: { navigation: any }) {
                 <Text style={styles.resendLink}>Resend OTP</Text>
               </TouchableOpacity>
             )}
+
+            <TouchableOpacity
+              onPress={() => setOtpStep(false)}
+              style={{ marginTop: 18 }}
+              disabled={isLoading}
+            >
+              <Text style={styles.changeNumberLink}>Change phone number</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -300,10 +322,11 @@ const styles = StyleSheet.create({
     color: "#2563EB",
     marginLeft: 8,
   },
-  resendContainer: { marginTop: 30 },
+  resendContainer: { marginTop: 30, alignItems: "center" },
   resendText: { color: "#64748B", fontSize: 14 },
   timerText: { color: "#1E293B", fontWeight: "600" },
   resendLink: { color: "#2563EB", fontWeight: "700", fontSize: 14 },
+  changeNumberLink: { color: "#64748B", fontWeight: "600", fontSize: 13 },
   devHint: {
     marginTop: 40,
     padding: 10,

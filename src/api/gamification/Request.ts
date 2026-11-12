@@ -1,26 +1,11 @@
-import { getFirebaseToken } from "../users/Request";
+import { apiFetch, API_BASE_URL } from "../client";
 
-const EXPO_API_URL =
-  process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
-const GAMIFICATION_BASE = `${EXPO_API_URL}/api/gamification`;
-
-async function authHeaders() {
-  const token = await getFirebaseToken();
-  return {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+const GAMIFICATION_BASE = `${API_BASE_URL}/gamification`;
 
 async function apiGet<T>(path: string): Promise<T> {
-  const headers = await authHeaders();
-  const res = await fetch(`${GAMIFICATION_BASE}${path}`, { headers });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.detail || `Gamification API error ${res.status}`);
-  }
-  const json = await res.json();
+  const json = await apiFetch<any>(`${GAMIFICATION_BASE}${path}`, {
+    method: "GET",
+  });
   return json.data as T;
 }
 
@@ -111,16 +96,9 @@ export const fetchActivityCalendar = (): Promise<string[]> =>
 export const submitDrillProgress = async (
   payload: DrillProgressPayload
 ): Promise<DrillProgressResult> => {
-  const headers = await authHeaders();
-  const res = await fetch(`${GAMIFICATION_BASE}/progress`, {
+  const json = await apiFetch<any>(`${GAMIFICATION_BASE}/progress`, {
     method: "POST",
-    headers,
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.detail || `Submit drill error ${res.status}`);
-  }
-  const json = await res.json();
   return json.data as DrillProgressResult;
 };

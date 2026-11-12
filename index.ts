@@ -20,7 +20,9 @@ try {
     let resolvedUserId = userId;
     let resolvedCompanyId = companyId;
     try {
-      const cachedUserJson = await AsyncStorage.getItem('@cached_user');
+      const { getMobileDeviceId } = require('./src/utils/deviceId');
+      await getMobileDeviceId();
+      const cachedUserJson = await AsyncStorage.getItem('@auth_cached_user');
       if (cachedUserJson) {
         const cachedUser = JSON.parse(cachedUserJson);
         if (!resolvedUserId) resolvedUserId = cachedUser.userId || cachedUser.user_id;

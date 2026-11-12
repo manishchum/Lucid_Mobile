@@ -1,9 +1,6 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { logger } from "../utils/UnifiedLogger";
-import { getAuth, getIdToken } from "@react-native-firebase/auth";
-
-const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
-const API_BASE_URL = `${EXPO_API_URL}/api`;
+import { apiFetch, API_BASE_URL } from "../api/client";
 
 export interface PresignedUploadResponse {
   upload_url: string;
@@ -30,32 +27,12 @@ export async function getPresignedUploadUrlApi(
     params.push(`file_size=${fileSize}`);
   }
   const url = `${API_BASE_URL}/generate-upload-url?${params.join("&")}`;
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (userId) headers["X-User-ID"] = userId;
-
-  try {
-    const authInstance = getAuth();
-    const currentUser = authInstance.currentUser;
-    if (currentUser) {
-      const token = await getIdToken(currentUser);
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-    }
-  } catch (e) {
-    logger.warn("[StorageUpload] Error reading auth token:", e);
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const res = await fetch(url, { method: "GET", headers, signal: controller.signal });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.detail ?? err?.message ?? `HTTP error ${res.status}`);
-    }
-    return (await res.json()) as PresignedUploadResponse;
-  } finally {
-    clearTimeout(timer);
-  }
+  return apiFetch<PresignedUploadResponse>(url, {
+    method: "GET",
+    userId,
+    noCache: true,
+    timeoutMs: 15_000,
+  });
 }
 
 // ── File Size Limits (Matching Backend Strict Security Policy) ────────

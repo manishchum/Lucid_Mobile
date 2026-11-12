@@ -1,7 +1,20 @@
 import { logger } from "../../utils/UnifiedLogger";
-import { emitSessionInvalid, SessionInvalidReason } from "../sessionEvents";
-import * as SecureStore from "expo-secure-store";
-import { getAuth, getIdToken } from "@react-native-firebase/auth";
+import {
+  EXPO_API_URL,
+  API_BASE_URL,
+  WS_BASE_URL,
+  JWT_TOKEN_KEY,
+  DEFAULT_FETCH_TIMEOUT_MS,
+  DEFAULT_RETRY_DELAY_MS,
+  getFirebaseToken,
+  refreshFirebaseToken,
+  getHeaders,
+  getPublicHeaders,
+  ApiError,
+  ApiFetchOptions,
+  apiFetch,
+  clearInFlightRequests,
+} from "../client";
 import {
   UserResponse,
   UserRolesResponse,
@@ -21,54 +34,125 @@ import {
   SubmissionFormat,
   FormatAnswer,
 } from "./Dto";
-import { getMobileDeviceId, getMobileDeviceIdSync } from "../../utils/deviceId";
+import { getMobileDeviceId } from "../../utils/deviceId";
 import { uploadMediaToStorage } from "../../services/storageUpload";
 import { supabase } from "../../services/supabase";
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+export {
+  EXPO_API_URL,
+  API_BASE_URL,
+  WS_BASE_URL,
+  JWT_TOKEN_KEY,
+  DEFAULT_FETCH_TIMEOUT_MS,
+  DEFAULT_RETRY_DELAY_MS,
+  getFirebaseToken,
+  refreshFirebaseToken,
+  getHeaders,
+  getPublicHeaders,
+  ApiError,
+  ApiFetchOptions,
+  apiFetch,
+  clearInFlightRequests,
+};
 
-const EXPO_API_URL =
-  process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
-const API_BASE_URL = `${EXPO_API_URL}/api`;
 const MODULE_CHAT_URL = `${API_BASE_URL}/module-chat`;
 
-export const JWT_TOKEN_KEY = "auth_jwt_token";
+export interface AuthMeTenantCompany {
+  company_id?: string;
+  name?: string;
+  domain?: string | null;
+  company_logo?: string | null;
+  subscription_tier?: string | null;
+  subscription_addons?: string[] | null;
+  learning_style_enabled?: boolean;
+}
 
-export const getFirebaseToken = async (): Promise<string | null> => {
-  try {
-    const authInstance = getAuth();
-    const currentUser = authInstance.currentUser;
-    if (currentUser) {
-      const token = await getIdToken(currentUser);
-      return token;
-    }
-  } catch (e) {
-    logger.error("[Request] Error reading Firebase token:", e);
+export interface AuthMeResponse {
+  success: boolean;
+  employeeData: {
+    user_id: string;
+    name: string;
+    email: string;
+    phone: string;
+    avatar_url?: string | null;
+    position?: string | null;
+    employment_status?: string | null;
+    hire_date?: string | null;
+    company_id: string;
+    function_id: string | null;
+    sub_function_id: string | null;
+    manager_id: string | null;
+    is_active: boolean;
+    company_name?: string | null;
+    company_logo?: string | null;
+    subscription_tier?: string | null;
+    learning_style_enabled?: boolean;
+  };
+  userId: string;
+  userRoles: string[];
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
+  isDeveloper: boolean;
+  isManager: boolean;
+  isManagerofUsers: boolean;
+  tenant: {
+    activeCompany: AuthMeTenantCompany | null;
+    availableCompanies?: AuthMeTenantCompany[];
+  };
+  notifications?: {
+    unread_count?: number;
+    items?: any[];
+  };
+}
+
+/**
+ * Authoritative session & profile bootstrap (`GET /api/auth/me`).
+ * Validates Firebase JWT + mobile single-device Redis session and returns
+ * active user profile, company addons/tenant metadata, and recent notifications.
+ */
+export const getAuthMe = async (options?: {
+  registerSession?: boolean;
+  timeoutMs?: number;
+  retries?: number;
+  suppressSessionInvalidEvent?: boolean;
+}): Promise<AuthMeResponse> => {
+  const url = `${API_BASE_URL}/auth/me`;
+  const headers: Record<string, string> = {};
+  if (options?.registerSession) {
+    headers["X-Register-Session"] = "true";
   }
-  return null;
+  return apiFetch<AuthMeResponse>(url, {
+    method: "GET",
+    noCache: true,
+    timeoutMs: options?.timeoutMs ?? 12_000,
+    retries: options?.retries ?? 0,
+    suppressSessionInvalidEvent: options?.suppressSessionInvalidEvent,
+    headers,
+  });
 };
 
 export const sendOtpApi = async (
-  phone: string
+  phone: string,
 ): Promise<{ success: boolean; message?: string; retry_after?: number }> => {
   const url = `${API_BASE_URL}/auth/send-otp`;
+  const deviceId = await getMobileDeviceId();
   try {
-    const response = await fetch(url, {
+    return await apiFetch<{
+      success: boolean;
+      message?: string;
+      retry_after?: number;
+    }>(url, {
       method: "POST",
+      public: true,
+      suppressSessionInvalidEvent: true,
+      timeoutMs: 15_000,
+      retries: 0,
       headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
+        "X-Device-ID": deviceId,
+        "X-Platform": "mobile",
       },
       body: JSON.stringify({ phone }),
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new ApiError(
-        data.detail || data.message || "Failed to send OTP",
-        response.status
-      );
-    }
-    return data;
   } catch (err: any) {
     logger.error("[Request] sendOtpApi error:", err);
     throw err;
@@ -77,16 +161,23 @@ export const sendOtpApi = async (
 
 export const verifyOtpApi = async (
   phone: string,
-  otp: string
+  otp: string,
 ): Promise<{ success: boolean; token: string; user: any; company?: any }> => {
   const url = `${API_BASE_URL}/auth/verify-otp`;
   const deviceId = await getMobileDeviceId();
   try {
-    const response = await fetch(url, {
+    return await apiFetch<{
+      success: boolean;
+      token: string;
+      user: any;
+      company?: any;
+    }>(url, {
       method: "POST",
+      public: true,
+      suppressSessionInvalidEvent: true,
+      timeoutMs: 15_000,
+      retries: 0,
       headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
         "X-Device-ID": deviceId,
         "X-Platform": "mobile",
       },
@@ -97,14 +188,6 @@ export const verifyOtpApi = async (
         platform: "mobile",
       }),
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new ApiError(
-        data.detail || data.message || "Failed to verify OTP",
-        response.status
-      );
-    }
-    return data;
   } catch (err: any) {
     logger.error("[Request] verifyOtpApi error:", err);
     throw err;
@@ -165,293 +248,6 @@ export const postModuleChat = async (
   return result;
 };
 
-const getHeaders = async (
-  userId?: string,
-  options?: { noCache?: boolean; companyId?: string },
-): Promise<Record<string, string>> => {
-  const deviceId = await getMobileDeviceId();
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-    "X-Device-ID": deviceId,
-    "X-Platform": "mobile",
-  };
-  if (options?.noCache) {
-    headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
-    headers["Pragma"] = "no-cache";
-    headers["Expires"] = "0";
-  }
-  if (userId) headers["X-User-ID"] = userId;
-  if (options?.companyId) headers["X-Company-ID"] = options.companyId;
-
-  const token = await getFirebaseToken();
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
-  // ─── DEBUG ───────────────────────────────────────────────────────────────
-  logger.debug("[DEBUG] getHeaders called with userId:", userId, "companyId:", options?.companyId);
-  logger.debug("[DEBUG] Authorization present:", !!token);
-  logger.debug("[DEBUG] X-User-ID value:", userId ?? "(Not passed)");
-  if (options?.companyId) {
-    logger.debug("[DEBUG] X-Company-ID value:", options.companyId);
-  }
-  // ─────────────────────────────────────────────────────────────────────────
-
-  return headers;
-};
-
-const getPublicHeaders = (userId?: string, companyId?: string): Record<string, string> => {
-  const deviceId = getMobileDeviceIdSync();
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-    "X-Device-ID": deviceId,
-    "X-Platform": "mobile",
-  };
-  if (userId) headers["X-User-ID"] = userId;
-  if (companyId) headers["X-Company-ID"] = companyId;
-  return headers;
-};
-
-// ==================== CENTRALIZED FETCH WRAPPER ====================
-export const DEFAULT_FETCH_TIMEOUT_MS = 20_000; // 20 seconds (allows for backend container cold-start)
-export const DEFAULT_RETRY_DELAY_MS = 800; // 800ms
-
-export class ApiError extends Error {
-  status: number;
-  code?: string;
-  constructor(message: string, status: number, code?: string) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-    this.code = code;
-  }
-}
-
-export interface ApiFetchOptions extends RequestInit {
-  userId?: string;
-  companyId?: string;
-  noCache?: boolean;
-  /** Skip auth headers entirely */
-  public?: boolean;
-  /** Internal flag — prevents infinite refresh loops */
-  _isRetry?: boolean;
-  /** Timeout in milliseconds before aborting (default: 15_000ms / 15s) */
-  timeoutMs?: number;
-  /**
-   * Number of retries on network error, timeout, or 502/503/504 status.
-   * Default: 1 for idempotent methods (GET, HEAD, OPTIONS), 0 for mutations.
-   */
-  retries?: number;
-  /** Base delay between retries in milliseconds (default: 800ms) */
-  retryDelayMs?: number;
-}
-
-// Concurrent in-flight request deduplication map
-const inFlightRequests = new Map<string, Promise<any>>();
-
-export const clearInFlightRequests = (): void => {
-  logger.debug(`[Request] Clearing inFlightRequests map (${inFlightRequests.size} active)`);
-  inFlightRequests.clear();
-};
-
-export async function apiFetch<T = any>(
-  url: string,
-  options: ApiFetchOptions = {},
-): Promise<T> {
-  const method = (options.method ?? "GET").toUpperCase();
-  const shouldDeduplicate =
-    method === "GET" &&
-    !options.noCache &&
-    !options._isRetry &&
-    !options.signal;
-
-  const dedupKey = shouldDeduplicate
-    ? `${method}:${url}:${options.userId || ""}:${options.companyId || ""}`
-    : null;
-
-  if (dedupKey && inFlightRequests.has(dedupKey)) {
-    logger.debug(`[apiFetch] In-flight deduplication hit for ${dedupKey}`);
-    return inFlightRequests.get(dedupKey) as Promise<T>;
-  }
-
-  const executionPromise = (async (): Promise<T> => {
-    const {
-      userId,
-      companyId,
-      noCache,
-      public: isPublic,
-      headers: extraHeaders,
-      timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
-      retries,
-      retryDelayMs = DEFAULT_RETRY_DELAY_MS,
-      signal: userSignal,
-      ...rest
-    } = options;
-
-    const isIdempotent = method === "GET" || method === "HEAD" || method === "OPTIONS";
-    const retryBudget = retries ?? (isIdempotent ? 1 : 0);
-
-  const baseHeaders = isPublic
-    ? getPublicHeaders(userId, companyId)
-    : await getHeaders(userId, { noCache, companyId });
-
-  const headers = {
-    ...baseHeaders,
-    ...(extraHeaders as Record<string, string> | undefined),
-  };
-
-  logger.debug(`[apiFetch] ${method} → ${url} (timeout: ${timeoutMs}ms, retries: ${retryBudget})`);
-
-  const controller = new AbortController();
-  let isTimeout = false;
-
-  const timer = setTimeout(() => {
-    isTimeout = true;
-    controller.abort();
-  }, timeoutMs);
-
-  let onUserAbort: (() => void) | undefined;
-  if (userSignal) {
-    if (userSignal.aborted) {
-      clearTimeout(timer);
-      controller.abort(userSignal.reason);
-    } else {
-      onUserAbort = () => {
-        controller.abort(userSignal.reason);
-      };
-      userSignal.addEventListener("abort", onUserAbort, { once: true });
-    }
-  }
-
-  let response: Response;
-  try {
-    try {
-      response = await fetch(url, { ...rest, headers, signal: controller.signal });
-    } catch (networkErr: any) {
-      if (isTimeout) {
-        // Do not auto-retry long timeouts unless explicitly configured in options
-        const allowTimeoutRetry = typeof options.retries === "number" && retryBudget > 0;
-        if (allowTimeoutRetry && !userSignal?.aborted) {
-          logger.warn(
-            `[apiFetch] ${method} ${url} timed out after ${timeoutMs}ms, retrying (${retryBudget} retries left)...`,
-          );
-          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-          return apiFetch<T>(url, {
-            ...options,
-            retries: retryBudget - 1,
-            _isRetry: true,
-          });
-        }
-        logger.error(`[apiFetch] ${method} ${url} timed out after ${timeoutMs}ms`);
-        throw new ApiError(
-          `Request timed out after ${Math.round(timeoutMs / 1000)} seconds. Please check your connection and try again.`,
-          408,
-          "TIMEOUT",
-        );
-      }
-
-      if (userSignal?.aborted) {
-        throw new ApiError("Request cancelled", 0, "CANCELLED");
-      }
-
-      logger.error(`[apiFetch] network error for ${url}:`, networkErr);
-
-      if (retryBudget > 0 && !userSignal?.aborted) {
-        logger.warn(
-          `[apiFetch] Network error for ${url}, retrying (${retryBudget} retries left)...`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-        return apiFetch<T>(url, {
-          ...options,
-          retries: retryBudget - 1,
-          _isRetry: true,
-        });
-      }
-
-      throw new ApiError("Network request failed", 0, "NETWORK_ERROR");
-    }
-
-    let body: any = null;
-    try {
-      body = await response.json();
-    } catch {}
-
-    // Transient server errors (502, 503, 504) — retry budget if idempotent or explicitly allowed
-    const isTransientServerError =
-      response.status === 502 || response.status === 503 || response.status === 504;
-    if (isTransientServerError && retryBudget > 0 && !userSignal?.aborted) {
-      logger.warn(
-        `[apiFetch] Server returned ${response.status} for ${url}, retrying (${retryBudget} retries left)...`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-      return apiFetch<T>(url, {
-        ...options,
-        retries: retryBudget - 1,
-        _isRetry: true,
-      });
-    }
-
-    // Session/account-validity codes — handled centrally, emit session event.
-    const code = body?.code as SessionInvalidReason | undefined;
-    const detail = body?.detail;
-    if (
-      response.status === 401 &&
-      (code === "SESSION_TERMINATED" ||
-        detail === "Session_Replaced" ||
-        code === "ACCOUNT_DEACTIVATED" ||
-        code === "COMPANY_DEACTIVATED")
-    ) {
-      const emitReason: SessionInvalidReason = (detail === "Session_Replaced" || code === "SESSION_TERMINATED")
-        ? "SESSION_TERMINATED"
-        : code!;
-      logger.warn(
-        `[apiFetch] session invalid (${detail || code}) — emitting sessionEvents`,
-      );
-      emitSessionInvalid(emitReason);
-      throw new ApiError(
-        body?.detail ?? body?.message ?? "Session invalid",
-        response.status,
-        emitReason,
-      );
-    }
-
-    // Generic 401 (most likely an expired/invalid token) — force logout
-    if (response.status === 401 && !options.public) {
-      logger.error(`[apiFetch] 401 on ${url} — session expired/invalid — emitting SESSION_TERMINATED`);
-      emitSessionInvalid("SESSION_TERMINATED");
-      throw new ApiError("Session expired. Please log in again.", 401, "SESSION_TERMINATED");
-    }
-
-    if (!response.ok) {
-      logger.error(`[apiFetch] ${response.status} for ${url}:`, body);
-      throw new ApiError(
-        body?.detail ?? body?.message ?? `HTTP error! status: ${response.status}`,
-        response.status,
-        code,
-      );
-    }
-
-    return body as T;
-  } finally {
-    clearTimeout(timer);
-    if (userSignal && onUserAbort) {
-      userSignal.removeEventListener("abort", onUserAbort);
-    }
-  }
-  })();
-
-  if (dedupKey) {
-    inFlightRequests.set(dedupKey, executionPromise);
-    executionPromise
-      .finally(() => {
-        inFlightRequests.delete(dedupKey);
-      })
-      .catch(() => {});
-  }
-
-  return executionPromise;
-}
-
 // 1. Get user by email
 export { PresignedUploadResponse, getPresignedUploadUrlApi } from "../../services/storageUpload";
 
@@ -462,7 +258,6 @@ export const getUserByEmail = async (email: string): Promise<UserResponse> => {
     logger.debug("[Request] getUserByEmail →", url);
     const json = await apiFetch<UserResponse>(url, {
       method: "GET",
-      public: true,
     });
     if (json.user) {
       logger.debug("[Request] getUserByEmail ✅ user_id:", json.user.user_id);
@@ -615,16 +410,13 @@ export const getLearningStyle = async (
   userId: string,
 ): Promise<LearningStyleResponse> => {
   try {
-    const headers = await getHeaders(userId);
-    const response = await fetch(
+    return await apiFetch<LearningStyleResponse>(
       `${API_BASE_URL}/learning-style?user_id=${userId}`,
       {
         method: "GET",
-        headers,
+        userId,
       },
     );
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return await response.json();
   } catch (error) {
     logger.error("[Request] Error fetching learning style:", error);
     throw error;
@@ -636,13 +428,13 @@ export const getUserRoles = async (
   userId: string,
 ): Promise<UserRolesResponse> => {
   try {
-    const headers = await getHeaders(userId);
-    const response = await fetch(`${API_BASE_URL}/roles/users/${userId}`, {
-      method: "GET",
-      headers,
-    });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return await response.json();
+    return await apiFetch<UserRolesResponse>(
+      `${API_BASE_URL}/roles/users/${userId}`,
+      {
+        method: "GET",
+        userId,
+      },
+    );
   } catch (error) {
     logger.error("[Request] Error fetching user roles:", error);
     throw error;
@@ -655,16 +447,14 @@ export const getTrainingModules = async (
   userId: string,
 ): Promise<TrainingModulesResponse> => {
   try {
-    const headers = await getHeaders(userId);
-    const response = await fetch(
+    return await apiFetch<TrainingModulesResponse>(
       `${API_BASE_URL}/training-modules/company/${companyId}`,
       {
         method: "GET",
-        headers,
+        userId,
+        companyId,
       },
     );
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return await response.json();
   } catch (error) {
     logger.error("[Request] Error fetching training modules:", error);
     throw error;
@@ -677,16 +467,13 @@ export const getTrainingModuleDetail = async (
   userId: string,
 ): Promise<{ module: TrainingModule }> => {
   try {
-    const headers = await getHeaders(userId);
-    const response = await fetch(
+    return await apiFetch<{ module: TrainingModule }>(
       `${API_BASE_URL}/training-modules/${moduleId}`,
       {
         method: "GET",
-        headers,
+        userId,
       },
     );
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return await response.json();
   } catch (error) {
     logger.error("[Request] Error fetching training module detail:", error);
     throw error;
@@ -699,13 +486,14 @@ export const getCompany = async (
   userId: string,
 ): Promise<CompanyResponse> => {
   try {
-    const headers = await getHeaders(userId);
-    const response = await fetch(`${API_BASE_URL}/companies/${companyId}`, {
-      method: "GET",
-      headers,
-    });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return await response.json();
+    return await apiFetch<CompanyResponse>(
+      `${API_BASE_URL}/companies/${companyId}`,
+      {
+        method: "GET",
+        userId,
+        companyId,
+      },
+    );
   } catch (error) {
     logger.error("[Request] Error fetching company:", error);
     throw error;
@@ -718,13 +506,14 @@ export const getCompanyUsers = async (
   userId: string,
 ): Promise<CompanyUsersResponse> => {
   try {
-    const headers = await getHeaders(userId);
-    const response = await fetch(`${API_BASE_URL}/users/company/${companyId}`, {
-      method: "GET",
-      headers,
-    });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return await response.json();
+    return await apiFetch<CompanyUsersResponse>(
+      `${API_BASE_URL}/users/company/${companyId}`,
+      {
+        method: "GET",
+        userId,
+        companyId,
+      },
+    );
   } catch (error) {
     logger.error("[Request] Error fetching company users:", error);
     throw error;
@@ -740,19 +529,11 @@ export const getTrainingPlan = async (
   try {
     if (!dbUserId) throw new Error("No authenticated user id (dbUserId)");
 
-    const headers = await getHeaders(dbUserId);
-    const response = await fetch(`${API_BASE_URL}/training-plan`, {
+    return await apiFetch<any>(`${API_BASE_URL}/training-plan`, {
       method: "POST",
-      headers,
+      userId: dbUserId,
       body: JSON.stringify({ user_id: dbUserId, module_id: moduleId }),
     });
-
-    if (!response.ok) {
-      const body = await response.text();
-      logger.error(`[Request] POST /training-plan ${response.status}:`, body);
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return await response.json();
   } catch (error) {
     logger.error("[Request] Error fetching training plan:", error);
     throw error;
@@ -765,17 +546,13 @@ export const getProcessedModules = async (
   userId: string,
 ): Promise<any> => {
   try {
-    const headers = await getHeaders(userId);
-    const response = await fetch(
+    return await apiFetch<any>(
       `${API_BASE_URL}/processed-modules/original-module/${originalModuleId}`,
-      { method: "GET", headers },
+      {
+        method: "GET",
+        userId,
+      },
     );
-    if (!response.ok) {
-      const body = await response.text();
-      logger.error(`[Request] getProcessedModules ${response.status}:`, body);
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return await response.json();
   } catch (error) {
     logger.error("[Request] Error fetching processed modules:", error);
     throw error;
@@ -799,8 +576,6 @@ export const getExistingAssessment = async (
   originalModuleId?: string, // ADD this param
 ): Promise<any | null> => {
   try {
-    const headers = await getHeaders(userId);
-
     // Web uses original_module_id + user_id_filter on first attempt
     const primaryId = originalModuleId || processedModuleId;
     const paramName = originalModuleId
@@ -809,12 +584,7 @@ export const getExistingAssessment = async (
 
     const url = `${API_BASE_URL}/assessments/filter/search?type=module&${paramName}=${primaryId}&learning_style=${encodeURIComponent(learningStyle)}&user_id_filter=${userId}`;
     logger.debug("[Quiz] Checking existing assessment →", url);
-    const response = await fetch(url, { method: "GET", headers });
-    if (!response.ok) {
-      logger.warn("[Quiz] getExistingAssessment HTTP", response.status);
-      return null;
-    }
-    const json = await response.json();
+    const json = await apiFetch<any>(url, { method: "GET", userId });
     const assessments: any[] =
       json?.data?.assessments ?? json?.assessments ?? [];
     if (assessments.length === 0) return null;
@@ -845,12 +615,13 @@ export const generateModuleQuiz = async (
   thresholdValue?: number;
 } | null> => {
   try {
-    const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/gpt-mcq-quiz`;
     logger.debug("[Quiz] Generating quiz →", url);
-    const response = await fetch(url, {
+    const json = await apiFetch<any>(url, {
       method: "POST",
-      headers,
+      userId,
+      companyId,
+      timeoutMs: 45_000,
       body: JSON.stringify({
         moduleId: processedModuleId, // camelCase, matches web
         learningStyle,
@@ -858,18 +629,6 @@ export const generateModuleQuiz = async (
         companyId,
       }),
     });
-    if (!response.ok) {
-      const body = await response.text();
-      logger.error("[Quiz] submitQuizForGrading HTTP", response.status, body);
-      // ─── DEBUG: log all response headers ─────────────────────────────────
-      logger.error("[DEBUG] Response headers:");
-      response.headers.forEach((value, key) => {
-        logger.error(`[DEBUG]   ${key}: ${value}`);
-      });
-      // ─────────────────────────────────────────────────────────────────────
-      return null;
-    }
-    const json = await response.json();
 
     // ── Parse response: server can return three different shapes ─────────────
     //
@@ -942,17 +701,17 @@ export const generateModuleQuiz = async (
       );
       try {
         const searchUrl = `${API_BASE_URL}/assessments/filter/search?type=module&processed_module_id=${processedModuleId}&learning_style=${encodeURIComponent(learningStyle)}`;
-        const searchRes = await fetch(searchUrl, { method: "GET", headers });
-        if (searchRes.ok) {
-          const searchJson = await searchRes.json();
-          const list: any[] =
-            searchJson?.data?.assessments ?? searchJson?.assessments ?? [];
-          assessmentId = list[0]?.assessment_id;
-          logger.debug(
-            "[Quiz] generateModuleQuiz — assessmentId from GET fallback:",
-            assessmentId,
-          );
-        }
+        const searchJson = await apiFetch<any>(searchUrl, {
+          method: "GET",
+          userId,
+        });
+        const list: any[] =
+          searchJson?.data?.assessments ?? searchJson?.assessments ?? [];
+        assessmentId = list[0]?.assessment_id;
+        logger.debug(
+          "[Quiz] generateModuleQuiz — assessmentId from GET fallback:",
+          assessmentId,
+        );
       } catch (fallbackErr) {
         logger.warn(
           "[Quiz] generateModuleQuiz — GET fallback failed (non-blocking):",
@@ -979,12 +738,13 @@ export const generateBaselineQuiz = async (
   thresholdValue?: number;
 } | null> => {
   try {
-    const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/gpt-mcq-quiz`;
     logger.debug("[Quiz] Generating baseline quiz →", url);
-    const response = await fetch(url, {
+    const json = await apiFetch<any>(url, {
       method: "POST",
-      headers,
+      userId,
+      companyId,
+      timeoutMs: 45_000,
       body: JSON.stringify({
         moduleIds: [moduleId],
         learningStyle,
@@ -995,12 +755,6 @@ export const generateBaselineQuiz = async (
         assessmentType: "baseline",
       }),
     });
-    if (!response.ok) {
-      const body = await response.text();
-      logger.error("[Quiz] generateBaselineQuiz HTTP", response.status, body);
-      return null;
-    }
-    const json = await response.json();
 
     let questions: any[] | null = null;
     let assessmentId: string | undefined;
@@ -1042,25 +796,13 @@ export const getProcessedModuleById = async (
   userId: string,
 ): Promise<any> => {
   try {
-    const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/processed-modules/${processedModuleId}`;
     logger.debug("[v0] [Request] Fetching processed module:", {
       url,
       processedModuleId,
     });
 
-    const response = await fetch(url, { method: "GET", headers });
-
-    if (!response.ok) {
-      const body = await response.text();
-      logger.error(
-        `[v0] [Request] ❌ getProcessedModuleById HTTP ${response.status}:`,
-        body.substring(0, 200),
-      );
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const json = await response.json();
+    const json = await apiFetch<any>(url, { method: "GET", userId });
 
     if (!json || !json.data) {
       throw new Error('API response missing "data" field');
@@ -1186,11 +928,8 @@ export const getUserByEmailForQuiz = async (
   userId: string,
 ): Promise<any | null> => {
   try {
-    const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/users/by-email/${encodeURIComponent(email)}`;
-    const response = await fetch(url, { method: "GET", headers });
-    if (!response.ok) return null;
-    const json = await response.json();
+    const json = await apiFetch<any>(url, { method: "GET", userId });
     return json?.user ?? null;
   } catch (err) {
     logger.warn("[Quiz] getUserByEmailForQuiz error:", err);
@@ -1213,7 +952,6 @@ export const postModuleProgress = async (
   },
 ): Promise<void> => {
   try {
-    const headers = await getHeaders(dbUserId);
     const url = `${API_BASE_URL}/module-progress`;
     logger.debug("[Quiz] POST /module-progress →", url, {
       module_id: payload.module_id,
@@ -1221,9 +959,9 @@ export const postModuleProgress = async (
       quiz_score: payload.quiz_score,
       max_score: payload.max_score,
     });
-    const response = await fetch(url, {
+    await apiFetch<any>(url, {
       method: "POST",
-      headers,
+      userId: dbUserId,
       body: JSON.stringify({
         user_id: dbUserId,
         module_id: payload.module_id,
@@ -1234,12 +972,7 @@ export const postModuleProgress = async (
         completed_at: payload.completed_at,
       }),
     });
-    if (!response.ok) {
-      const body = await response.text();
-      logger.warn("[Quiz] POST /module-progress HTTP", response.status, body);
-    } else {
-      logger.debug("[Quiz] POST /module-progress ✅");
-    }
+    logger.debug("[Quiz] POST /module-progress ✅");
   } catch (err) {
     logger.warn("[Quiz] postModuleProgress error (non-blocking):", err);
   }
@@ -1276,18 +1009,16 @@ export const submitQuizForGrading = async (
   try {
     if (!dbUserId) throw new Error("No authenticated user ID provided");
 
-    const headers = await getHeaders(dbUserId);
-
     // Step 1 — non-blocking parity with web
     if (employeeName && employeeName.includes("@")) {
-      fetch(
+      apiFetch<any>(
         `${API_BASE_URL}/users/by-email/${encodeURIComponent(employeeName)}`,
         {
           method: "GET",
-          headers,
+          userId: dbUserId,
         },
       )
-        .then((r) => logger.debug("[Quiz] Step 1 by-email HTTP", r.status))
+        .then(() => logger.debug("[Quiz] Step 1 by-email ✅"))
         .catch((e) =>
           logger.warn("[Quiz] Step 1 by-email failed (non-blocking):", e),
         );
@@ -1332,9 +1063,10 @@ export const submitQuizForGrading = async (
     try {
       const url = `${API_BASE_URL}/gpt-feedback`;
       logger.debug("[Quiz] Submitting GPT feedback request →", url);
-      const response = await fetch(url, {
+      feedbackJson = await apiFetch<any>(url, {
         method: "POST",
-        headers,
+        userId: dbUserId,
+        timeoutMs: 45_000,
         body: JSON.stringify({
           quiz: questions,
           userAnswers,
@@ -1344,24 +1076,18 @@ export const submitQuizForGrading = async (
           modules: moduleObjects ?? [],
         }),
       });
-
-      if (response.ok) {
-        feedbackJson = await response.json();
-      } else {
-        const body = await response.text();
-        logger.warn(`[Quiz] GPT Feedback HTTP ${response.status}:`, body.slice(0, 200));
-      }
     } catch (gptErr) {
       logger.warn("[Quiz] GPT Feedback request failed or rate limited (non-blocking):", gptErr);
     }
 
     // Step 3 — background refresh (non-blocking)
-    fetch(`${API_BASE_URL}/employee-assessments/user/${dbUserId}`, {
+    apiFetch<any>(`${API_BASE_URL}/employee-assessments/user/${dbUserId}`, {
       method: "GET",
-      headers,
+      userId: dbUserId,
+      noCache: true,
     })
-      .then((r) =>
-        logger.debug("[Quiz] Step 3 assessments refresh HTTP", r.status),
+      .then(() =>
+        logger.debug("[Quiz] Step 3 assessments refresh ✅"),
       )
       .catch((e) =>
         logger.warn(
@@ -1461,33 +1187,17 @@ export const submitFormatAnswer = async (
   }
 
   try {
-    const headers = await getHeaders(resolvedUserId ?? undefined);
     logger.debug("[Request] submitFormatAnswer →", url, {
       task_id: taskId,
       format,
     });
 
-    const response = await fetch(url, {
+    const json = await apiFetch<TaskSubmissionResponse>(url, {
       method: "POST",
-      headers,
+      userId: resolvedUserId ?? undefined,
+      timeoutMs: 30_000,
       body: JSON.stringify(body),
     });
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => "");
-      let parsedDetail = "";
-      try {
-        const parsed = JSON.parse(errText);
-        parsedDetail = parsed.detail || parsed.message || "";
-      } catch {}
-      logger.error(
-        `[Request] submitFormatAnswer(${format}) ${response.status}:`,
-        errText,
-      );
-      throw new Error(parsedDetail || `HTTP error! status: ${response.status}`);
-    }
-
-    const json = (await response.json()) as TaskSubmissionResponse;
     logger.debug(
       `[Request] submitFormatAnswer(${format}) ✅`,
       json?.submission_id,
@@ -1516,7 +1226,6 @@ export const submitTaskAnswer = async (
         logger.warn("[Request] submitTaskAnswer — Failed to resolve userId to UUID:", e);
       }
     }
-    const headers = await getHeaders(resolvedUserId ?? undefined);
     const url = `${API_BASE_URL}/task-manager/tasks/submit`;
 
     // Map internal submission_type → the wire value the API actually expects.
@@ -1558,24 +1267,12 @@ export const submitTaskAnswer = async (
       submission_type: payload.submission_type,
     });
 
-    const response = await fetch(url, {
+    const json = await apiFetch<TaskSubmissionResponse>(url, {
       method: "POST",
-      headers,
+      userId: resolvedUserId ?? undefined,
+      timeoutMs: 30_000,
       body: JSON.stringify(body),
     });
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => "");
-      let parsedDetail = "";
-      try {
-        const parsed = JSON.parse(errText);
-        parsedDetail = parsed.detail || parsed.message || "";
-      } catch {}
-      logger.error(`[Request] submitTaskAnswer ${response.status}:`, errText);
-      throw new Error(parsedDetail || `HTTP error! status: ${response.status}`);
-    }
-
-    const json = (await response.json()) as TaskSubmissionResponse;
     logger.debug("[Request] submitTaskAnswer", json?.submission_id);
 
     // Broadcast instant realtime completion event across Web & Mobile
@@ -1607,11 +1304,8 @@ export const getEmployeeAssessments = async (
   userId: string,
 ): Promise<any | null> => {
   try {
-    const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/employee-assessments/user/${userId}`;
-    const response = await fetch(url, { method: "GET", headers });
-    if (!response.ok) return null;
-    return await response.json();
+    return await apiFetch<any>(url, { method: "GET", userId });
   } catch (err) {
     logger.warn("[Quiz] getEmployeeAssessments error:", err);
     return null;
@@ -1644,15 +1338,12 @@ export const getAssessmentsBatch = async (
   assessmentIds: string[],
 ): Promise<any | null> => {
   try {
-    const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/assessments/batch`;
-    const response = await fetch(url, {
+    return await apiFetch<any>(url, {
       method: "POST",
-      headers,
+      userId,
       body: JSON.stringify({ assessment_ids: assessmentIds }),
     });
-    if (!response.ok) return null;
-    return await response.json();
   } catch (err) {
     logger.warn("[Request] getAssessmentsBatch error:", err);
     return null;
@@ -1664,15 +1355,12 @@ export const getProcessedModulesBatch = async (
   processedModuleIds: string[],
 ): Promise<any | null> => {
   try {
-    const headers = await getHeaders(userId);
     const url = `${API_BASE_URL}/processed-modules/batch`;
-    const response = await fetch(url, {
+    return await apiFetch<any>(url, {
       method: "POST",
-      headers,
+      userId,
       body: JSON.stringify({ processed_module_ids: processedModuleIds }),
     });
-    if (!response.ok) return null;
-    return await response.json();
   } catch (err) {
     logger.warn("[Request] getProcessedModulesBatch error:", err);
     return null;

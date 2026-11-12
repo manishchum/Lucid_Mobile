@@ -15,11 +15,8 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "../../contex/AuthContext";
-import { getFirebaseToken } from "../../api/users/Request";
+import { apiFetch, API_BASE_URL } from "../../api/client";
 import { logger } from "../../utils/UnifiedLogger";
-
-const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
-const API_BASE_URL = `${EXPO_API_URL}/api`;
 
 interface FeedbackBottomSheetProps {
   visible: boolean;
@@ -82,19 +79,10 @@ export const FeedbackBottomSheet: React.FC<FeedbackBottomSheetProps> = ({
     
     setIsSubmitting(true);
     try {
-      const token = await getFirebaseToken().catch(() => null);
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-      headers["X-User-ID"] = cachedUser.userId;
-
       // Submit feedback to the backend API endpoint
-      const response = await fetch(`${API_BASE_URL}/notifications/feedback`, {
+      await apiFetch(`${API_BASE_URL}/notifications/feedback`, {
         method: "POST",
-        headers,
+        userId: cachedUser.userId,
         body: JSON.stringify({
           module_id: moduleId,
           module_type: moduleType,
@@ -104,18 +92,12 @@ export const FeedbackBottomSheet: React.FC<FeedbackBottomSheetProps> = ({
         }),
       });
 
-      if (response.ok) {
-        logger.info("[Feedback] Successfully submitted feedback.");
-        onSubmitSuccess();
-        // Reset state
-        setRating(0);
-        setThumbsUp(null);
-        setComments("");
-      } else {
-        logger.warn("[Feedback] Failed to submit:", await response.text());
-        // Fallback closing on error to not block UI
-        onSubmitSuccess(); 
-      }
+      logger.info("[Feedback] Successfully submitted feedback.");
+      onSubmitSuccess();
+      // Reset state
+      setRating(0);
+      setThumbsUp(null);
+      setComments("");
     } catch (e) {
       logger.error("[Feedback] Error submitting:", e);
       onSubmitSuccess();

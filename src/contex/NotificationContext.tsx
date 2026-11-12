@@ -29,7 +29,13 @@ import {
   getInitialNotification,
   AuthorizationStatus,
 } from "@react-native-firebase/messaging";
-import { getFirebaseToken } from "../api/users/Request";
+import {
+  apiFetch,
+  API_BASE_URL,
+  WS_BASE_URL,
+  getFirebaseToken,
+  refreshFirebaseToken,
+} from "../api/client";
 import { useAuth } from "./AuthContext";
 import { eventBus } from "../utils/EventBus";
 import { navigate } from "../navigations/NavigationService";
@@ -39,7 +45,7 @@ import { logger } from "../utils/UnifiedLogger";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 import { FeedbackBottomSheet } from "../components/notifications/FeedbackBottomSheet";
 import { emitSessionInvalid } from "../api/sessionEvents";
-import { getMobileDeviceIdSync } from "../utils/deviceId";
+import { getMobileDeviceId } from "../utils/deviceId";
 
 let isMessagingSupported = false;
 try {
@@ -83,19 +89,12 @@ const NotificationContext = createContext<NotificationContextType | undefined>(
   undefined,
 );
 
-const EXPO_API_URL =
-  process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
-const API_BASE_URL = `${EXPO_API_URL}/api`;
-const WS_BASE_URL = EXPO_API_URL.startsWith("https")
-  ? EXPO_API_URL.replace(/^https/, "wss") + "/api"
-  : EXPO_API_URL.replace(/^http/, "ws") + "/api";
-
 export const NotificationProvider = ({
   children,
 }: {
   children: React.ReactNode;
 }) => {
-  const { isLoggedIn, cachedUser } = useAuth();
+  const { isLoggedIn, cachedUser, authMeData } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -258,37 +257,39 @@ export const NotificationProvider = ({
   // Blocking notifications for Release Phase 2 release 2
   const NOTIFICATIONS_LIVE_ENABLED = true; // Toggle to true once push implemented from Firebase
 
-  // Helper to get headers for API requests
-  const getAuthHeaders = async () => {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    const token = await getFirebaseToken().catch(() => null);
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
+  // Hydrate initial notifications & unread count immediately from /api/auth/me
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
     }
-    if (cachedUser?.userId) {
-      headers["X-User-ID"] = cachedUser.userId;
+    const authNotifs = authMeData?.notifications;
+    if (authNotifs) {
+      if (Array.isArray(authNotifs.items)) {
+        setNotifications(authNotifs.items as Notification[]);
+      }
+      if (typeof authNotifs.unread_count === "number") {
+        setUnreadCount(authNotifs.unread_count);
+      } else if (Array.isArray(authNotifs.items)) {
+        setUnreadCount(authNotifs.items.filter((n: any) => !n.read).length);
+      }
     }
-    return headers;
-  };
+  }, [isLoggedIn, authMeData?.notifications]);
 
   // Fetch notification log from server
   const fetchNotifications = async () => {
     if (!isLoggedIn || !cachedUser) return;
     setIsLoading(true);
     try {
-      const headers = await getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/notifications/`, {
+      const data = await apiFetch<any>(`${API_BASE_URL}/notifications/`, {
         method: "GET",
-        headers,
+        userId: cachedUser.userId,
+        noCache: true,
       });
-      if (response.ok) {
-        const data = await response.json();
-        const list = data.notifications || [];
-        setNotifications(list);
-        setUnreadCount(list.filter((n: Notification) => !n.read).length);
-      }
+      const list = data?.notifications || [];
+      setNotifications(list);
+      setUnreadCount(list.filter((n: Notification) => !n.read).length);
     } catch (error) {
       console.error(
         "[NotificationContext] Error fetching notifications:",
@@ -302,17 +303,14 @@ export const NotificationProvider = ({
   // Mark notification as read
   const markAsRead = async (id: string) => {
     try {
-      const headers = await getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/notifications/${id}/read`, {
+      await apiFetch(`${API_BASE_URL}/notifications/${id}/read`, {
         method: "PUT",
-        headers,
+        userId: cachedUser?.userId,
       });
-      if (response.ok) {
-        setNotifications((prev) =>
-          prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-        );
-        setUnreadCount((prev) => Math.max(0, prev - 1));
-      }
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
+      );
+      setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch (error) {
       console.error("[NotificationContext] Error marking read:", error);
     }
@@ -321,15 +319,12 @@ export const NotificationProvider = ({
   // Mark all notifications as read
   const markAllAsRead = async () => {
     try {
-      const headers = await getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/notifications/read-all`, {
+      await apiFetch(`${API_BASE_URL}/notifications/read-all`, {
         method: "PUT",
-        headers,
+        userId: cachedUser?.userId,
       });
-      if (response.ok) {
-        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-        setUnreadCount(0);
-      }
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      setUnreadCount(0);
     } catch (error) {
       console.error("[NotificationContext] Error marking all read:", error);
     }
@@ -374,10 +369,9 @@ export const NotificationProvider = ({
         const fcmToken = await getToken(messagingInstance).catch(() => null);
         if (fcmToken) {
           logger.info("[FCM] Obtained token:", fcmToken);
-          const headers = await getAuthHeaders();
-          await fetch(`${API_BASE_URL}/notifications/register-token`, {
+          await apiFetch(`${API_BASE_URL}/notifications/register-token`, {
             method: "POST",
-            headers,
+            userId: cachedUser?.userId,
             body: JSON.stringify({ fcm_token: fcmToken }),
           });
         }
@@ -543,11 +537,16 @@ export const NotificationProvider = ({
     let retryDelay = 1000;
     const isForeground = { current: AppState.currentState === "active" };
 
-    const connectWS = async () => {
+    const connectWS = async (forceRefreshToken = false) => {
       try {
         if (!cachedUser?.userId) return;
-        const token = await getFirebaseToken().catch(() => null);
-        if (!token) return;
+        const [token, currentDeviceId] = await Promise.all([
+          forceRefreshToken
+            ? refreshFirebaseToken().catch(() => null)
+            : getFirebaseToken().catch(() => null),
+          getMobileDeviceId(),
+        ]);
+        if (!token || !active) return;
 
         const wsUrl = `${WS_BASE_URL}/notifications/ws?user_id=${cachedUser.userId}&token=${encodeURIComponent(token)}`;
         logger.info(
@@ -564,14 +563,17 @@ export const NotificationProvider = ({
           }
         };
 
-        ws.onmessage = (event) => {
+        ws.onmessage = async (event) => {
           try {
             const payload = JSON.parse(event.data);
             if (payload?.type === "force_logout" || payload?.reason === "session_replaced") {
-              const currentDeviceId = getMobileDeviceIdSync();
+              const resolvedDeviceId = currentDeviceId || (await getMobileDeviceId());
+              const targetPlatform = String(payload.platform || "").toLowerCase();
               if (
-                payload.platform === "mobile" &&
-                (!payload.keep_device_id || payload.keep_device_id !== currentDeviceId)
+                targetPlatform === "mobile" &&
+                Boolean(payload.keep_device_id) &&
+                Boolean(resolvedDeviceId) &&
+                payload.keep_device_id !== resolvedDeviceId
               ) {
                 logger.warn(
                   "[NotificationContext] Received force_logout via WebSocket for this device. Disconnecting.",
@@ -691,15 +693,19 @@ export const NotificationProvider = ({
           logger.info(`[WebSocket] Closed (${e.reason || "network drop"}). Reconnecting in ${retryDelay}ms...`);
           if (active && isForeground.current) {
             clearTimeout(reconnectTimeout);
+            const shouldRefreshNext = e?.code === 1008;
             reconnectTimeout = setTimeout(() => {
               retryDelay = Math.min(retryDelay * 2, 30000);
-              connectWS();
+              connectWS(shouldRefreshNext);
             }, retryDelay);
           }
         };
 
-        ws.onerror = (err) => {
-          logger.info("[WebSocket] Error (handled safely):", err);
+        ws.onerror = (err: any) => {
+          logger.info(
+            "[WebSocket] Error (handled safely):",
+            err?.message || "WebSocket connection failed",
+          );
         };
 
         wsRef.current = ws;
@@ -747,7 +753,9 @@ export const NotificationProvider = ({
     );
 
     setupFCM();
-    fetchNotifications();
+    if (!authMeData?.notifications?.items) {
+      fetchNotifications();
+    }
     connectWS();
 
     return () => {
@@ -759,7 +767,7 @@ export const NotificationProvider = ({
         wsRef.current = null;
       }
     };
-  }, [isLoggedIn, cachedUser]);
+  }, [isLoggedIn, cachedUser?.userId]);
 
   return (
     <NotificationContext.Provider

@@ -112,7 +112,7 @@ export const TenantProvider = ({
 }: {
   children: React.ReactNode;
 }) => {
-  const { cachedUser } = useAuth();
+  const { cachedUser, authMeData } = useAuth();
   const [company, setCompany] = useState<CompanyInfo | null>(() => {
     if (!cachedUser?.companyId) return null;
     return appStorage.getObject<CompanyInfo>(`@company_${cachedUser.companyId}`);
@@ -135,38 +135,61 @@ export const TenantProvider = ({
       return;
     }
 
-    if (companyLike.company_id) {
-      appStorage.setObject(`@company_${companyLike.company_id}`, companyLike);
-    }
-
-    setCompany({
-      ...companyLike,
-      company_id: companyLike.company_id,
-      name: companyLike.name,
-      company_logo: companyLike.company_logo ?? null,
-      subscription_tier: companyLike.subscription_tier ?? null,
-      subscription_addons: Array.isArray(companyLike.subscription_addons)
-        ? companyLike.subscription_addons
-        : null,
-      enabled_languages: Array.isArray(companyLike.enabled_languages)
-        ? companyLike.enabled_languages
-        : null,
-      translation_languages: Array.isArray(companyLike.translation_languages)
-        ? companyLike.translation_languages
-        : null,
-      languages: Array.isArray(companyLike.languages)
-        ? companyLike.languages
-        : null,
-      rawCompany: companyLike,
+    setCompany((prev) => {
+      const merged = {
+        ...prev,
+        ...companyLike,
+        company_id: companyLike.company_id ?? prev?.company_id,
+        name: companyLike.name ?? prev?.name,
+        company_logo: companyLike.company_logo ?? prev?.company_logo ?? null,
+        subscription_tier:
+          companyLike.subscription_tier ?? prev?.subscription_tier ?? null,
+        subscription_addons: Array.isArray(companyLike.subscription_addons)
+          ? companyLike.subscription_addons
+          : prev?.subscription_addons ?? null,
+        enabled_languages: Array.isArray(companyLike.enabled_languages)
+          ? companyLike.enabled_languages
+          : prev?.enabled_languages ?? null,
+        translation_languages: Array.isArray(companyLike.translation_languages)
+          ? companyLike.translation_languages
+          : prev?.translation_languages ?? null,
+        languages: Array.isArray(companyLike.languages)
+          ? companyLike.languages
+          : prev?.languages ?? null,
+        learning_style:
+          companyLike.learning_style ??
+          companyLike.learning_style_enabled ??
+          prev?.learning_style ??
+          null,
+      };
+      if (merged.company_id) {
+        appStorage.setObject(`@company_${merged.company_id}`, merged);
+      }
+      return {
+        ...merged,
+        rawCompany: companyLike,
+      };
     });
 
-    setAddonsKnown(Array.isArray(companyLike.subscription_addons));
+    setAddonsKnown((prevKnown) =>
+      Array.isArray(companyLike.subscription_addons) ? true : prevKnown,
+    );
     setLoadingAddons(false);
   }, []);
 
-  const refreshAddons = useCallback(async () => {
+  // Hydrate immediately whenever /api/auth/me returns activeCompany metadata
+  useEffect(() => {
+    const activeCompany = authMeData?.tenant?.activeCompany;
+    if (activeCompany?.company_id) {
+      setCompanyFromDashboard(activeCompany);
+    }
+  }, [authMeData?.tenant?.activeCompany, setCompanyFromDashboard]);
+
+  const refreshAddons = useCallback(async (silent: boolean = false) => {
     if (!cachedUser?.companyId) return;
-    setLoadingAddons(true);
+    if (!silent) {
+      setLoadingAddons(true);
+    }
     try {
       // 1. First attempt: Direct company fetch (no cache, instant permissions)
       const directComp = await getCompanyDetails(
@@ -188,12 +211,14 @@ export const TenantProvider = ({
       }
     } catch (err) {
       console.warn("refreshAddons failed — failing open:", err);
-      setAddonsKnown(false);
-      setLoadingAddons(false);
+      if (!silent) {
+        setAddonsKnown(false);
+        setLoadingAddons(false);
+      }
     }
   }, [cachedUser?.userId, cachedUser?.companyId, setCompanyFromDashboard]);
 
-  // Proactive fetch on mount and whenever user/company changes
+  // Proactive fetch on mount; silent background sync if /api/auth/me already hydrated addons
   useEffect(() => {
     if (!cachedUser?.companyId) {
       setCompany(null);
@@ -202,8 +227,14 @@ export const TenantProvider = ({
       return;
     }
 
-    refreshAddons().catch(() => {});
-  }, [cachedUser?.companyId, refreshAddons]);
+    const alreadyHydratedByMe =
+      authMeData?.tenant?.activeCompany?.company_id === cachedUser.companyId;
+    refreshAddons(alreadyHydratedByMe).catch(() => {});
+  }, [
+    cachedUser?.companyId,
+    authMeData?.tenant?.activeCompany?.company_id,
+    refreshAddons,
+  ]);
 
   // Instant Realtime sync: Listen for company updates in Supabase
   const companyId = cachedUser?.companyId ?? null;

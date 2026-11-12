@@ -40,7 +40,7 @@ import {
   createRoleplaySession,
   finishRoleplaySession,
 } from "../../../api/roleplay";
-import { getFirebaseToken } from "../../../api/users/Request";
+import { getFirebaseToken, apiFetch, API_BASE_URL } from "../../../api/users/Request";
 import { STACK_ROUTES, APP_ROUTES } from "../../../navigations/Routes";
 import { useAuth } from "../../../contex/AuthContext";
 import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
@@ -330,50 +330,42 @@ export default function RoleplaySessionScreen({
       try {
         setIsBotSpeaking(true);
 
-        const ttsUrl = `${EXPO_API_URL}/api/tts`;
-        const token = await getFirebaseToken().catch(() => null);
-
-        const response = await fetch(ttsUrl, {
+        const ttsUrl = `${API_BASE_URL}/tts`;
+        const data = await apiFetch<any>(ttsUrl, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
+          userId: cachedUser?.userId,
           body: JSON.stringify({
             text: cleanText,
             voiceGender,
           }),
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          const audioBase64 = data.audio;
-          if (audioBase64) {
-            const tempFileUri = `${FileSystem.cacheDirectory}roleplay_agent_${Date.now()}.mp3`;
-            await FileSystem.writeAsStringAsync(tempFileUri, audioBase64, {
-              encoding: FileSystem.EncodingType.Base64,
-            });
+        const audioBase64 = data?.audio;
+        if (audioBase64) {
+          const tempFileUri = `${FileSystem.cacheDirectory}roleplay_agent_${Date.now()}.mp3`;
+          await FileSystem.writeAsStringAsync(tempFileUri, audioBase64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
 
-            await setAudioModeAsync({ playsInSilentMode: true });
-            const player = createAudioPlayer({ uri: tempFileUri });
-            soundRef.current = player;
+          await setAudioModeAsync({ playsInSilentMode: true });
+          const player = createAudioPlayer({ uri: tempFileUri });
+          soundRef.current = player;
 
-            player.addListener("playbackStatusUpdate", (status: any) => {
-              if (
-                status.playing === false &&
-                status.currentTime >= status.duration &&
-                status.duration > 0
-              ) {
-                setIsBotSpeaking(false);
-                try {
-                  player.remove();
-                } catch {}
-                soundRef.current = null;
-              }
-            });
-            player.play();
-            return;
-          }
+          player.addListener("playbackStatusUpdate", (status: any) => {
+            if (
+              status.playing === false &&
+              status.currentTime >= status.duration &&
+              status.duration > 0
+            ) {
+              setIsBotSpeaking(false);
+              try {
+                player.remove();
+              } catch {}
+              soundRef.current = null;
+            }
+          });
+          player.play();
+          return;
         }
         setIsBotSpeaking(false);
       } catch (err) {
@@ -381,7 +373,7 @@ export default function RoleplaySessionScreen({
         setIsBotSpeaking(false);
       }
     },
-    [voiceGender]
+    [voiceGender, cachedUser?.userId]
   );
 
   // ── Play Accumulated Bot Audio Chunks from Realtime WS (PCM16 -> WAV) ───────

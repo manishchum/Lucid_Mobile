@@ -5,6 +5,7 @@ import { logger } from "./UnifiedLogger";
 import { offlineQueue } from "./offlineQueue";
 import { clearInFlightRequests, JWT_TOKEN_KEY } from "../api/users/Request";
 import { clearHooksMemoryCaches } from "../api/users/hooksCache";
+import { getMobileDeviceId, setCachedDeviceId } from "./deviceId";
 
 /**
  * Purges and invalidates ALL mobile local caches when a user signs out:
@@ -47,6 +48,12 @@ export async function purgeAllMobileLocalCache(): Promise<void> {
   }
 
   // 5. Purge persistent storage (MMKV + memory map + AsyncStorage completely)
+  // Preserve persistent device UUID so this device retains consistent identity across logins.
+  let preservedDeviceId: string | null = null;
+  try {
+    preservedDeviceId = await getMobileDeviceId();
+  } catch {}
+
   try {
     await appStorage.clearAll();
     logger.info("[CacheManager] ✅ appStorage (MMKV + Memory) and AsyncStorage completely purged.");
@@ -58,6 +65,10 @@ export async function purgeAllMobileLocalCache(): Promise<void> {
     } catch (fallbackErr) {
       logger.error("[CacheManager] Fallback AsyncStorage.clear() also failed:", fallbackErr);
     }
+  }
+
+  if (preservedDeviceId) {
+    setCachedDeviceId(preservedDeviceId);
   }
 
   logger.info("[CacheManager] 🎉 Complete mobile local cache purge completed successfully.");

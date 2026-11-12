@@ -1,11 +1,13 @@
 // Bridge between Request.ts and AuthContext.
 // Emits auth-invalid events so AuthContext can force logout.
 // Backend reasons:
-//   - SESSION_TERMINATED    → logged in on another device
+//   - SESSION_TERMINATED    → logged in on another mobile device
+//   - SESSION_EXPIRED       → 30-day session expired or token unrefreshable
 //   - ACCOUNT_DEACTIVATED   → user removed/deactivated
 //   - COMPANY_DEACTIVATED   → company suspended
 export type SessionInvalidReason =
   | "SESSION_TERMINATED"
+  | "SESSION_EXPIRED"
   | "ACCOUNT_DEACTIVATED"
   | "COMPANY_DEACTIVATED"
   | "UNKNOWN";

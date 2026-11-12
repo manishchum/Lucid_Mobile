@@ -26,6 +26,8 @@ import {
   generateBaselineQuiz,
   submitQuizForGrading,
   getProcessedModuleById,
+  apiFetch,
+  API_BASE_URL,
 } from "../../api/users/Request";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../components/networkModal/NetworkModal";
@@ -243,18 +245,9 @@ export default function ModuleQuizScreen({
 
     setIsSubmittingFeedback(true);
     try {
-      const { getFirebaseToken } = await import("../../api/users/Request");
-      const token = await getFirebaseToken().catch(() => null);
-      const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      headers["X-User-ID"] = userId;
-
-      const res = await fetch(`${EXPO_API_URL}/api/notifications/feedback`, {
+      await apiFetch(`${API_BASE_URL}/notifications/feedback`, {
         method: "POST",
-        headers,
+        userId,
         body: JSON.stringify({
           module_id: targetModId,
           module_type: "GENERAL",
@@ -264,13 +257,8 @@ export default function ModuleQuizScreen({
         }),
       });
 
-      if (res.ok) {
-        setFeedbackSubmitted(true);
-        safeHaptics.successNotification();
-      } else {
-        console.warn("[Feedback] Submit error:", await res.text());
-        setFeedbackSubmitted(true);
-      }
+      setFeedbackSubmitted(true);
+      safeHaptics.successNotification();
     } catch (err) {
       console.error("[Feedback] Error submitting inline feedback:", err);
       setFeedbackSubmitted(true);
@@ -605,15 +593,9 @@ export default function ModuleQuizScreen({
     (async () => {
       try {
         if (isBaseline) {
-          const { getFirebaseToken } = await import("../../api/users/Request");
-          const token = await getFirebaseToken();
-          const EXPO_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
-          const res = await fetch(`${EXPO_API_URL}/api/submit-assessment`, {
+          const resJson = await apiFetch<any>(`${API_BASE_URL}/submit-assessment`, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
+            userId,
             body: JSON.stringify({
               assessment_id: assessmentId,
               answers: answerIndices,
@@ -622,9 +604,8 @@ export default function ModuleQuizScreen({
               assessment_type: "baseline",
             }),
           });
-          if (res.ok && isMountedRef.current) {
+          if (isMountedRef.current) {
             console.log("[Quiz Submit] Baseline evaluation submitted successfully.");
-            const resJson = await res.json().catch(() => null);
             if (resJson) {
               setGradingResult((prev: any) => ({
                 ...prev,

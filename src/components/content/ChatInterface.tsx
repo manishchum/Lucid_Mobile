@@ -21,7 +21,7 @@ import {
 } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
 import ChatMessage from "./ChatMessage";
-import { postModuleChat, ModuleChatMessage, getFirebaseToken } from "../../api/users/Request";
+import { postModuleChat, ModuleChatMessage, apiFetch, API_BASE_URL } from "../../api/users/Request";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 
 // --- Exported so AIAssistantSection can own the state ------------------------
@@ -456,24 +456,17 @@ export default function ChatInterface({
       setCurrentlyPlayingId(messageId);
       if (speechMode) setVoiceState("speaking");
 
-      const ttsUrl = `${EXPO_API_URL}/api/tts`;
+      const ttsUrl = `${API_BASE_URL}/tts`;
       console.log("[TTS] Requesting speech from:", ttsUrl);
 
-      const token = await getFirebaseToken().catch(() => null);
-
-      const response = await fetch(ttsUrl, {
+      const data = await apiFetch<any>(ttsUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        userId,
+        companyId,
         body: JSON.stringify({ text, voiceGender: "female" }),
       });
 
-      if (!response.ok) throw new Error(`TTS failed with status ${response.status}`);
-
-      const data = await response.json();
-      const audioBase64 = data.audio;
+      const audioBase64 = data?.audio;
       if (!audioBase64) throw new Error("No audio returned from TTS");
 
       const tempFileUri = `${FileSystem.cacheDirectory}tts_audio_${Date.now()}.mp3`;

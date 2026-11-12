@@ -3,23 +3,32 @@
  *
  * When a network request fails with a NETWORK_ERROR (device offline), the
  * action is serialized and saved to AsyncStorage. When the device reconnects
- * (detected via NetInfo), all queued actions are replayed silently.
+ * (detected via NetInfo), all queued actions are replayed silently after
+ * validating session integrity via `/api/auth/me`.
  *
  * SECURITY:
  * - Sensitive Authorization headers are NEVER persisted to AsyncStorage.
  * - If an action requires authentication (or was passed with an Authorization header),
  *   it is marked with `requiresAuth: true`, and the fresh active session token is
  *   dynamically injected at replay time via `getFirebaseToken()`.
- * - If no active session exists at replay time, actions requiring auth are discarded
- *   to prevent unauthenticated/stale replay attacks.
- * - When a user logs out, `purgeQueue()` is invoked to remove all queued items
- *   from storage, preventing token or payload replay across user sessions.
+ * - `X-Device-ID` and `X-Platform: mobile` are injected dynamically on every replay.
+ * - Before any replay starts, the registered pre-replay validator confirms the
+ *   session is still valid (not displaced/expired/deactivated).
+ * - If a replayed request returns 401 `Session_Replaced`/`Session_Expired` or
+ *   403 account/company deactivation, replay aborts, purges the queue, and emits
+ *   the corresponding session-invalid event.
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 import { logger } from "./UnifiedLogger";
-import { getFirebaseToken } from "../api/users/Request";
+import {
+  getFirebaseToken,
+  refreshFirebaseToken,
+  detectDeactivationReason,
+} from "../api/client";
+import { emitSessionInvalid } from "../api/sessionEvents";
+import { getMobileDeviceId } from "./deviceId";
 
 export const QUEUE_STORAGE_KEY = "@offline_queue";
 const MAX_RETRY_COUNT = 3;
@@ -38,6 +47,22 @@ export interface QueuedAction {
   requiresAuth?: boolean;
   /** User ID of the account that enqueued this action (prevents cross-user replay) */
   userId?: string;
+}
+
+type PreReplayValidator = () => Promise<boolean>;
+
+let preReplayValidator: PreReplayValidator | null = null;
+let inFlightReplayPromise: Promise<void> | null = null;
+
+/**
+ * Registers a validator invoked before replaying any queued offline mutations.
+ * AuthContext registers `/api/auth/me` revalidation here so displaced or
+ * expired sessions are signed out cleanly before queued requests replay.
+ */
+export function setPreReplayValidator(
+  validator: PreReplayValidator | null,
+): void {
+  preReplayValidator = validator;
 }
 
 // ─── Persistence helpers ────────────────────────────────────────────────────
@@ -129,25 +154,87 @@ export async function purgeQueue(): Promise<void> {
 
 export const clearQueue = purgeQueue;
 
-/**
- * Replay all queued actions. Called automatically on reconnect.
- * Successful actions are removed; permanently-failed ones (4xx) are discarded.
- * Network failures increment retryCount up to MAX_RETRY_COUNT.
- * Dynamically resolves fresh Authorization tokens for actions requiring auth.
- */
-export async function replayQueue(): Promise<void> {
+async function parseJsonSafe(response: Response): Promise<any> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function handleTerminalAuthResponse(response: Response): Promise<boolean> {
+  if (response.status !== 401 && response.status !== 403) {
+    return false;
+  }
+
+  const body = await parseJsonSafe(response);
+  const code = body?.code as string | undefined;
+  const detail = body?.detail;
+  const detailStr = typeof detail === "string" ? detail : "";
+
+  if (response.status === 401) {
+    if (code === "SESSION_TERMINATED" || detailStr === "Session_Replaced") {
+      await purgeQueue();
+      emitSessionInvalid("SESSION_TERMINATED");
+      return true;
+    }
+    if (code === "SESSION_EXPIRED" || detailStr === "Session_Expired") {
+      await purgeQueue();
+      emitSessionInvalid("SESSION_EXPIRED");
+      return true;
+    }
+    const deactivation = detectDeactivationReason(code, detail);
+    if (deactivation) {
+      await purgeQueue();
+      emitSessionInvalid(deactivation);
+      return true;
+    }
+    return false;
+  }
+
+  const deactivation = detectDeactivationReason(code, detail);
+  if (deactivation) {
+    await purgeQueue();
+    emitSessionInvalid(deactivation);
+    return true;
+  }
+  return false;
+}
+
+async function executeReplay(): Promise<void> {
+  const initialQueue = await loadQueue();
+  if (initialQueue.length === 0) return;
+
+  if (preReplayValidator) {
+    const canReplay = await preReplayValidator().catch((err) => {
+      logger.warn("[OfflineQueue] Pre-replay validator threw:", err);
+      return false;
+    });
+    if (!canReplay) {
+      logger.warn(
+        "[OfflineQueue] Pre-replay validation declined replay — waiting for valid online session.",
+      );
+      return;
+    }
+  }
+
   const queue = await loadQueue();
   if (queue.length === 0) return;
 
+  const deviceId = await getMobileDeviceId();
   logger.info(`[OfflineQueue] Replaying ${queue.length} queued action(s)...`);
 
   const remaining: QueuedAction[] = [];
 
   for (const action of queue) {
     try {
-      const requestHeaders: Record<string, string> = { ...action.headers };
+      const requestHeaders: Record<string, string> = {
+        ...action.headers,
+        "X-Device-ID": deviceId,
+        "X-Platform": "mobile",
+      };
 
-      // If legacy item has static Authorization header, remove it from persisted state
+      // Strip any legacy static Authorization header before injecting fresh token
       let requiresAuth = Boolean(action.requiresAuth);
       for (const key of Object.keys(requestHeaders)) {
         if (key.toLowerCase() === "authorization") {
@@ -162,23 +249,50 @@ export async function replayQueue(): Promise<void> {
           logger.warn(
             `[OfflineQueue] Discarding action requiring auth because no active user session exists: ${action.label ?? action.url}`,
           );
-          // Discard: cannot authenticate, preventing unauthenticated or stale replay
           continue;
         }
         requestHeaders["Authorization"] = `Bearer ${token}`;
       }
 
-      const response = await fetch(action.url, {
+      let response = await fetch(action.url, {
         method: action.method,
         headers: requestHeaders,
         body: action.body,
       });
 
+      if (response.status === 401 || response.status === 403) {
+        const handledTerminal = await handleTerminalAuthResponse(response);
+        if (handledTerminal) {
+          return;
+        }
+
+        if (response.status === 401 && requiresAuth) {
+          const freshToken = await refreshFirebaseToken();
+          if (freshToken) {
+            requestHeaders["Authorization"] = `Bearer ${freshToken}`;
+            response = await fetch(action.url, {
+              method: action.method,
+              headers: requestHeaders,
+              body: action.body,
+            });
+            const handledRetryTerminal = await handleTerminalAuthResponse(response);
+            if (handledRetryTerminal) {
+              return;
+            }
+          }
+
+          if (response.status === 401) {
+            await purgeQueue();
+            emitSessionInvalid("SESSION_EXPIRED");
+            return;
+          }
+        }
+      }
+
       if (response.ok) {
         logger.info(
           `[OfflineQueue] ✅ Replayed: ${action.label ?? action.url}`,
         );
-        // Success — don't add back to remaining
         continue;
       }
 
@@ -193,7 +307,7 @@ export async function replayQueue(): Promise<void> {
       // Server error (5xx) or unexpected — increment retry counter
       const updated: QueuedAction = {
         ...action,
-        headers: requestHeaders, // Ensure sanitized headers are persisted
+        headers: action.headers,
         requiresAuth,
         retryCount: action.retryCount + 1,
       };
@@ -220,6 +334,22 @@ export async function replayQueue(): Promise<void> {
   logger.info(
     `[OfflineQueue] Replay complete. ${remaining.length} action(s) still pending.`,
   );
+}
+
+/**
+ * Replay all queued actions. Called automatically on reconnect and guarded
+ * by a single-flight lock + pre-replay `/api/auth/me` session check.
+ */
+export async function replayQueue(): Promise<void> {
+  if (inFlightReplayPromise) {
+    return inFlightReplayPromise;
+  }
+
+  inFlightReplayPromise = executeReplay().finally(() => {
+    inFlightReplayPromise = null;
+  });
+
+  return inFlightReplayPromise;
 }
 
 // ─── Auto-replay on reconnect ────────────────────────────────────────────────
@@ -253,4 +383,5 @@ export const offlineQueue = {
   replayQueue,
   purgeQueue,
   clearQueue,
+  setPreReplayValidator,
 };

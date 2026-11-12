@@ -6,6 +6,7 @@ import { logger } from "../../utils/UnifiedLogger";
 import { homePerfMeter } from "../../utils/homePerformanceMeter";
 import { useTenant } from "../../contex/TenantContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
+import { toE164Phone } from "../../utils/countries";
 import {
   getUserByEmail,
   getUserByPhone,
@@ -186,18 +187,7 @@ export const useGetUserByPhone = (
     setIsLoading(true);
     setError(null);
     try {
-      // Defensive normalization — backend strictly expects +91XXXXXXXXXX.
-      const digits = phone.replace(/[^\d]/g, "");
-      const normalizedPhone =
-        phone.startsWith("+91") && phone.length === 13
-          ? phone
-          : digits.length === 10
-            ? `+91${digits}`
-            : digits.length === 12 && digits.startsWith("91")
-              ? `+${digits}`
-              : digits.length === 11 && digits.startsWith("0")
-                ? `+91${digits.slice(1)}`
-                : phone;
+      const normalizedPhone = toE164Phone(phone);
       const response: UserResponse = await getUserByPhone(normalizedPhone);
       setUser(response.user);
     } catch (err) {

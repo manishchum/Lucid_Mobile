@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { View, StyleSheet, Alert } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import {
   createBottomTabNavigator,
@@ -171,8 +171,6 @@ function AppNavigatorContent() {
     isLoggedIn,
     isInitializing,
     cachedUser,
-    forcedLogoutReason,
-    clearForcedLogoutReason,
   } = useAuth();
   const {
     isLeaderboardOpen,
@@ -225,19 +223,6 @@ function AppNavigatorContent() {
     );
     setIsSplashActive(false);
   }, [isLoggedIn, cachedUser]);
-
-  useEffect(() => {
-    if (!forcedLogoutReason) return;
-    const message =
-      forcedLogoutReason === "company_deactivated"
-        ? "Your company's access has been suspended. Please contact your administrator."
-        : forcedLogoutReason === "session_terminated"
-          ? "You were logged out because you signed in on another device."
-          : "Your account has been deactivated. Please contact your administrator.";
-    Alert.alert("Signed out", message, [
-      { text: "OK", onPress: clearForcedLogoutReason },
-    ]);
-  }, [forcedLogoutReason]);
 
   const userId = cachedUser?.userId ?? null;
   const companyId = cachedUser?.companyId ?? null;
