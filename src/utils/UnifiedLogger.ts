@@ -9,6 +9,8 @@
 // Instead it exposes `setCrashReporter()` so the app's real crash-reporting
 // setup (wherever it already lives) can be plugged in with one call at
 // startup, without touching any of the call sites below.
+import { sanitizeText } from "./sanitizer";
+
 type LogLevel = "info" | "error" | "warn" | "debug" | "trace" | "fatal";
 
 export type CrashReporter = {
@@ -100,12 +102,13 @@ class SimpleLogger {
 
   private log(level: LogLevel, ...args: unknown[]) {
     const { message, meta } = normalizeArgs(args);
+    const safeMessage = sanitizeText(message) ?? message;
 
     if (this.enableConsole) {
       const fn = this.consoleMethodFor(level);
       meta === undefined
-        ? fn(`[${level}] ${message}`)
-        : fn(`[${level}] ${message}`, meta);
+        ? fn(`[${level}] ${safeMessage}`)
+        : fn(`[${level}] ${safeMessage}`, meta);
     }
 
     if (level === "error" || level === "fatal") {
@@ -199,12 +202,19 @@ class SimpleLogger {
   }
 
   setUserId(userId: string) {
-    if (this.enableConsole) console.info(`User ID set: ${userId}`);
+    if (this.enableConsole) {
+      const maskedId = userId && userId.length > 8 ? `${userId.slice(0, 8)}...` : userId;
+      console.info(`User ID set: ${maskedId}`);
+    }
     this.crashReporter?.setUserId?.(userId);
   }
 
   setCustomAttribute(key: string, value: string | number | boolean) {
-    if (this.enableConsole) console.info(`Custom attribute: ${key} = ${value}`);
+    if (this.enableConsole) {
+      const isSensitiveKey = /(token|auth|password|secret|phone|email)/i.test(key);
+      const displayVal = isSensitiveKey ? "[REDACTED]" : value;
+      console.info(`Custom attribute: ${key} = ${displayVal}`);
+    }
     this.crashReporter?.setCustomAttribute?.(key, value);
   }
 }

@@ -2,6 +2,7 @@ import { getAuth, getIdToken } from "@react-native-firebase/auth";
 import { logger } from "../utils/UnifiedLogger";
 import { emitSessionInvalid, SessionInvalidReason } from "./sessionEvents";
 import { getMobileDeviceId, getMobileDeviceIdSync } from "../utils/deviceId";
+import { maskUrl } from "../utils/sanitizer";
 
 export const EXPO_API_URL =
   process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
@@ -184,6 +185,7 @@ export async function apiFetch<T = any>(
   options: ApiFetchOptions = {},
 ): Promise<T> {
   const method = (options.method ?? "GET").toUpperCase();
+  const sanitizedUrl = maskUrl(url);
   const shouldDeduplicate =
     method === "GET" &&
     !options.noCache &&
@@ -196,7 +198,7 @@ export async function apiFetch<T = any>(
     : null;
 
   if (dedupKey && inFlightRequests.has(dedupKey)) {
-    logger.debug(`[apiFetch] In-flight deduplication hit for ${dedupKey}`);
+    logger.debug(`[apiFetch] In-flight deduplication hit for ${method}:${sanitizedUrl}`);
     return inFlightRequests.get(dedupKey) as Promise<T>;
   }
 
@@ -235,7 +237,7 @@ export async function apiFetch<T = any>(
     };
 
     logger.debug(
-      `[apiFetch] ${method} → ${url} (timeout: ${timeoutMs}ms, retries: ${retryBudget})`,
+      `[apiFetch] ${method} → ${sanitizedUrl} (timeout: ${timeoutMs}ms, retries: ${retryBudget})`,
     );
 
     const controller = new AbortController();
@@ -273,7 +275,7 @@ export async function apiFetch<T = any>(
             typeof options.retries === "number" && retryBudget > 0;
           if (allowTimeoutRetry && !userSignal?.aborted) {
             logger.warn(
-              `[apiFetch] ${method} ${url} timed out after ${timeoutMs}ms, retrying (${retryBudget} retries left)...`,
+              `[apiFetch] ${method} ${sanitizedUrl} timed out after ${timeoutMs}ms, retrying (${retryBudget} retries left)...`,
             );
             await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
             return apiFetch<T>(url, {
@@ -283,7 +285,7 @@ export async function apiFetch<T = any>(
             });
           }
           logger.error(
-            `[apiFetch] ${method} ${url} timed out after ${timeoutMs}ms`,
+            `[apiFetch] ${method} ${sanitizedUrl} timed out after ${timeoutMs}ms`,
           );
           throw new ApiError(
             `Request timed out after ${Math.round(timeoutMs / 1000)} seconds. Please check your connection and try again.`,
@@ -296,11 +298,11 @@ export async function apiFetch<T = any>(
           throw new ApiError("Request cancelled", 0, "CANCELLED");
         }
 
-        logger.error(`[apiFetch] network error for ${url}:`, networkErr);
+        logger.error(`[apiFetch] network error for ${sanitizedUrl}:`, networkErr);
 
         if (retryBudget > 0 && !userSignal?.aborted) {
           logger.warn(
-            `[apiFetch] Network error for ${url}, retrying (${retryBudget} retries left)...`,
+            `[apiFetch] Network error for ${sanitizedUrl}, retrying (${retryBudget} retries left)...`,
           );
           await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
           return apiFetch<T>(url, {
@@ -324,7 +326,7 @@ export async function apiFetch<T = any>(
         response.status === 504;
       if (isTransientServerError && retryBudget > 0 && !userSignal?.aborted) {
         logger.warn(
-          `[apiFetch] Server returned ${response.status} for ${url}, retrying (${retryBudget} retries left)...`,
+          `[apiFetch] Server returned ${response.status} for ${sanitizedUrl}, retrying (${retryBudget} retries left)...`,
         );
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
         return apiFetch<T>(url, {
@@ -391,7 +393,7 @@ export async function apiFetch<T = any>(
           const freshToken = await refreshFirebaseToken();
           if (freshToken) {
             logger.info(
-              `[apiFetch] 401 on ${url} — forced Firebase token refresh succeeded, retrying once`,
+              `[apiFetch] 401 on ${sanitizedUrl} — forced Firebase token refresh succeeded, retrying once`,
             );
             return apiFetch<T>(url, {
               ...options,
@@ -403,7 +405,7 @@ export async function apiFetch<T = any>(
 
         if (!isPublic) {
           logger.error(
-            `[apiFetch] 401 on ${url} after refresh check — emitting SESSION_EXPIRED`,
+            `[apiFetch] 401 on ${sanitizedUrl} after refresh check — emitting SESSION_EXPIRED`,
           );
           if (!suppressSessionInvalidEvent) {
             emitSessionInvalid("SESSION_EXPIRED");
@@ -421,7 +423,7 @@ export async function apiFetch<T = any>(
         const deactivation = detectDeactivationReason(code, detail);
         if (deactivation) {
           logger.warn(
-            `[apiFetch] 403 deactivation (${deactivation}) on ${url} — emitting sessionEvents`,
+            `[apiFetch] 403 deactivation (${deactivation}) on ${sanitizedUrl} — emitting sessionEvents`,
           );
           if (!suppressSessionInvalidEvent) {
             emitSessionInvalid(deactivation);
@@ -436,7 +438,7 @@ export async function apiFetch<T = any>(
       }
 
       if (!response.ok) {
-        logger.error(`[apiFetch] ${response.status} for ${url}:`, body);
+        logger.error(`[apiFetch] ${response.status} for ${sanitizedUrl}:`, body);
         throw new ApiError(
           detailStr || body?.message || `HTTP error! status: ${response.status}`,
           response.status,

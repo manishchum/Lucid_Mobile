@@ -25,6 +25,12 @@ export default function OTPScreen() {
   const { phoneNumber, selectedCountry, setOtpStep, verifyOTP, sendOTP } =
     useAuth();
 
+  const displayPhone =
+    formatDisplayPhone(phoneNumber, selectedCountry) ||
+    (phoneNumber
+      ? `${selectedCountry?.dialCode || ""} ${phoneNumber}`.trim()
+      : "your mobile number");
+
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -167,11 +173,27 @@ export default function OTPScreen() {
         <View style={styles.content}>
           <Text style={styles.title}>OTP Verification</Text>
           <Text style={styles.subtitle}>
-            We've sent a code to{" "}
-            <Text style={styles.phoneHighlight}>
-              {formatDisplayPhone(phoneNumber, selectedCountry)}
-            </Text>
+            Enter the 6-digit code sent to
           </Text>
+          <View style={styles.phonePill}>
+            <MaterialCommunityIcons
+              name="cellphone-check"
+              size={18}
+              color="#2563EB"
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.phoneHighlight}>{displayPhone}</Text>
+            <TouchableOpacity
+              onPress={() => setOtpStep(false)}
+              disabled={isLoading}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.editPhoneBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Change phone number"
+            >
+              <Text style={styles.editPhoneText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
             onPress={() => !isInvalidated && !isLoading && inputRef.current?.focus()}
@@ -256,9 +278,31 @@ const styles = StyleSheet.create({
     color: "#64748B",
     textAlign: "center",
     lineHeight: 24,
-    marginBottom: 16,
+    marginBottom: 10,
   },
-  phoneHighlight: { color: "#1E293B", fontWeight: "700" },
+  phonePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    marginBottom: 24,
+  },
+  phoneHighlight: { color: "#1E293B", fontWeight: "700", fontSize: 15 },
+  editPhoneBtn: {
+    marginLeft: 10,
+    paddingLeft: 10,
+    borderLeftWidth: 1,
+    borderLeftColor: "#BFDBFE",
+  },
+  editPhoneText: {
+    color: "#2563EB",
+    fontWeight: "700",
+    fontSize: 13,
+  },
   attemptsBadge: {
     flexDirection: "row",
     alignItems: "center",

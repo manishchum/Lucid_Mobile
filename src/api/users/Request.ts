@@ -1,4 +1,5 @@
 import { logger } from "../../utils/UnifiedLogger";
+import { maskPhone, maskUrl } from "../../utils/sanitizer";
 import {
   EXPO_API_URL,
   API_BASE_URL,
@@ -255,7 +256,7 @@ export { PresignedUploadResponse, getPresignedUploadUrlApi } from "../../service
 export const getUserByEmail = async (email: string): Promise<UserResponse> => {
   try {
     const url = `${API_BASE_URL}/users/by-email/${encodeURIComponent(email)}`;
-    logger.debug("[Request] getUserByEmail →", url);
+    logger.debug("[Request] getUserByEmail →", maskUrl(url));
     const json = await apiFetch<UserResponse>(url, {
       method: "GET",
     });
@@ -278,12 +279,12 @@ export const getUserByEmail = async (email: string): Promise<UserResponse> => {
 export const getUserByPhone = async (phone: string): Promise<UserResponse> => {
   try {
     const url = `${API_BASE_URL}/users/by-phone/${encodeURIComponent(phone)}`;
-    logger.debug("[Request] getUserByPhone →", url);
+    logger.debug("[Request] getUserByPhone →", maskUrl(url));
     const json = await apiFetch<UserResponse>(url, { method: "GET" });
     if (json.user) {
       logger.debug("[Request] getUserByPhone ✅ user_id:", json.user.user_id);
     } else {
-      logger.warn("[Request] getUserByPhone — no user found for phone:", phone);
+      logger.warn("[Request] getUserByPhone — no user found for phone:", maskPhone(phone));
     }
     return json;
   } catch (error) {

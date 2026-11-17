@@ -42,6 +42,7 @@ import { navigate } from "../navigations/NavigationService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { APP_ROUTES, STACK_ROUTES } from "../navigations/Routes";
 import { logger } from "../utils/UnifiedLogger";
+import { maskToken } from "../utils/sanitizer";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 import { FeedbackBottomSheet } from "../components/notifications/FeedbackBottomSheet";
 import { emitSessionInvalid } from "../api/sessionEvents";
@@ -368,7 +369,7 @@ export const NotificationProvider = ({
 
         const fcmToken = await getToken(messagingInstance).catch(() => null);
         if (fcmToken) {
-          logger.info("[FCM] Obtained token:", fcmToken);
+          logger.info("[FCM] Obtained token:", maskToken(fcmToken));
           await apiFetch(`${API_BASE_URL}/notifications/register-token`, {
             method: "POST",
             userId: cachedUser?.userId,

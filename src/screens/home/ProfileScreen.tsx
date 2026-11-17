@@ -22,6 +22,7 @@ import FeedbackCard from "../../components/feedback/FeedbackCard";
 import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 import SignOutModal from "../../components/modals/SignOutModal";
 import { toE164Phone } from "../../utils/countries";
+import { maskPhone } from "../../utils/sanitizer";
 
 export default function ProfileScreen() {
   const { phoneNumber, selectedCountry, cachedUser, logout } = useAuth();
@@ -105,7 +106,7 @@ export default function ProfileScreen() {
         if (response?.user) {
           setUser(response.user);
         } else {
-          console.warn("[ProfileScreen] No user found for", normalizedPhone);
+          console.warn("[ProfileScreen] No user found for", maskPhone(normalizedPhone));
         }
       }
     } catch (error) {

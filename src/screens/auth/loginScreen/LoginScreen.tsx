@@ -19,6 +19,9 @@ import styles from "./style";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNetworkStatus } from "../../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../../components/networkModal/NetworkModal";
+import { logger } from "../../../utils/UnifiedLogger";
+import { friendlyError } from "../../../utils/friendlyError";
+import { maskPhone } from "../../../utils/sanitizer";
 import {
   COUNTRIES,
   CountryItem,
@@ -90,7 +93,6 @@ export default function LoginScreen() {
     clearForcedLogoutReason,
   } = useAuth();
   const [error, setError] = useState("");
-  const [errorDetails, setErrorDetails] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showNotRegisteredModal, setShowNotRegisteredModal] = useState(false);
   const [showAccessDeniedModal, setShowAccessDeniedModal] = useState(false);
@@ -135,12 +137,20 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     setError("");
-    setErrorDetails("");
     Keyboard.dismiss();
 
     try {
       const result = await sendOTP(cleanNumber, countryToUse);
       if (!result.success) {
+        console.error("[LoginScreen] OTP send failed:", {
+          phone: maskPhone(`${countryToUse.dialCode} ${cleanNumber}`),
+          status: result.status,
+          message: result.message,
+          details: result.details,
+          retryAfter: result.retryAfter,
+        });
+        logger.error("[LoginScreen] OTP send failed:", result);
+
         if (result.status === 404) {
           setShowNotRegisteredModal(true);
         } else if (result.status === 403) {
@@ -150,21 +160,13 @@ export default function LoginScreen() {
           );
           setShowAccessDeniedModal(true);
         } else {
-          setError(result.message || "Failed to send OTP. Please try again.");
-          if (result.details && (!result.status || result.status >= 500)) {
-            setErrorDetails(result.details);
-          }
+          setError(friendlyError(result));
         }
       }
     } catch (err: any) {
-      const apiUrl =
-        process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
-      setError(
-        `Connection failed: ${err?.message || "Please check connection"}`,
-      );
-      setErrorDetails(
-        `Target: ${apiUrl}/api/auth/send-otp | ${err?.name || "Error"} ${err?.cause ? JSON.stringify(err.cause) : ""}`,
-      );
+      console.error("[LoginScreen] Unexpected error sending OTP:", err);
+      logger.error("[LoginScreen] Unexpected error sending OTP:", err);
+      setError(friendlyError(err));
     } finally {
       setIsLoading(false);
     }
@@ -175,7 +177,6 @@ export default function LoginScreen() {
 
     setPhoneNumber(cleanTxt);
     setError("");
-    setErrorDetails("");
 
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -199,7 +200,6 @@ export default function LoginScreen() {
     }
     setSelectedCountry(country);
     setError("");
-    setErrorDetails("");
     setCountryQuery("");
     setShowCountryModal(false);
   };
@@ -277,21 +277,14 @@ export default function LoginScreen() {
             </View>
 
             {error ? (
-              <View style={{ marginTop: 6, marginBottom: 4 }}>
+              <View style={styles.errorContainer}>
+                <MaterialCommunityIcons
+                  name="alert-circle-outline"
+                  size={16}
+                  color="#EF4444"
+                  style={{ marginRight: 6 }}
+                />
                 <Text style={styles.errorTextBelow}>{error}</Text>
-                {errorDetails ? (
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      color: "#94A3B8",
-                      marginTop: 2,
-                      fontFamily:
-                        Platform.OS === "ios" ? "Courier" : "monospace",
-                    }}
-                  >
-                    {errorDetails}
-                  </Text>
-                ) : null}
               </View>
             ) : null}
 

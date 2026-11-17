@@ -45,6 +45,7 @@ import { STACK_ROUTES, APP_ROUTES } from "../../../navigations/Routes";
 import { useAuth } from "../../../contex/AuthContext";
 import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
 import { logger } from "../../../utils/UnifiedLogger";
+import { maskUrl } from "../../../utils/sanitizer";
 
 const EXPO_API_URL =
   process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
@@ -648,7 +649,7 @@ export default function RoleplaySessionScreen({
       const host = EXPO_API_URL.replace(/^https?:\/\//, "").replace(/\/$/, "");
       const wsUrl = `${wsProtocol}//${host}/api/roleplay/realtime?token=${token}`;
 
-      logger.info("[RoleplaySession] Connecting WS:", wsUrl);
+      logger.info("[RoleplaySession] Connecting WS:", maskUrl(wsUrl));
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 

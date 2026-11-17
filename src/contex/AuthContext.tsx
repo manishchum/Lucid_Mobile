@@ -30,6 +30,7 @@ import {
 } from "../utils/countries";
 import { getMobileDeviceId } from "../utils/deviceId";
 import { logger } from "../utils/UnifiedLogger";
+import { maskPhone } from "../utils/sanitizer";
 import { offlineQueue } from "../utils/offlineQueue";
 import { appStorage } from "../utils/appStorage";
 import { purgeAllMobileLocalCache } from "../utils/cacheManager";
@@ -185,10 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<any>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [phoneNumber, setPhoneNumberState] = useState<string>(() => {
-    const raw = appStorage.getString(PHONE_NUMBER_KEY) || "";
-    return sanitizeLocalPhoneInput(raw, initialCountry);
-  });
+  const [phoneNumber, setPhoneNumberState] = useState<string>("");
   const [otpStep, setOtpStep] = useState(false);
   const [cachedUser, setCachedUserState] = useState<CachedUser | null>(() =>
     appStorage.getObject<CachedUser>(CACHED_USER_KEY),
@@ -234,17 +232,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     AsyncStorage.setItem(COUNTRY_CODE_KEY, country.code).catch(() => {});
 
     setPhoneNumberState((prev) => {
-      const clean = sanitizeLocalPhoneInput(prev, country);
-      appStorage.setString(PHONE_NUMBER_KEY, clean);
-      AsyncStorage.setItem(PHONE_NUMBER_KEY, clean).catch(() => {});
-      return clean;
+      return sanitizeLocalPhoneInput(prev, country);
     });
   }, []);
 
   const setPhoneNumber = useCallback((phone: string) => {
     const clean = sanitizeLocalPhoneInput(phone, selectedCountryRef.current);
     setPhoneNumberState(clean);
-    appStorage.setString(PHONE_NUMBER_KEY, clean);
   }, []);
 
   const persistCachedUser = useCallback(
@@ -260,10 +254,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         );
         if (parsed.localNumber) {
           setPhoneNumberState(parsed.localNumber);
-          appStorage.setString(PHONE_NUMBER_KEY, parsed.localNumber);
-          AsyncStorage.setItem(PHONE_NUMBER_KEY, parsed.localNumber).catch(
-            () => {},
-          );
         }
         if (parsed.country) {
           selectedCountryRef.current = parsed.country;
@@ -310,6 +300,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsLoggedIn(false);
     setPhoneNumberState("");
     setOtpStep(false);
+    appStorage.removeItem(PHONE_NUMBER_KEY);
+    AsyncStorage.removeItem(PHONE_NUMBER_KEY).catch(() => {});
 
     await purgeAllMobileLocalCache();
   }, []);
@@ -487,12 +479,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const restoreCachedData = async () => {
       try {
-        const [storedUserJson, storedPhone, storedCountryCode] =
-          await Promise.all([
-            AsyncStorage.getItem(CACHED_USER_KEY),
-            AsyncStorage.getItem(PHONE_NUMBER_KEY),
-            AsyncStorage.getItem(COUNTRY_CODE_KEY),
-          ]);
+        const [storedUserJson, storedCountryCode] = await Promise.all([
+          AsyncStorage.getItem(CACHED_USER_KEY),
+          AsyncStorage.getItem(COUNTRY_CODE_KEY),
+        ]);
+
+        // Clean up any stale unauthenticated phone number persisted by previous app versions
+        appStorage.removeItem(PHONE_NUMBER_KEY);
+        AsyncStorage.removeItem(PHONE_NUMBER_KEY).catch(() => {});
 
         if (!mounted) return;
 
@@ -525,17 +519,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         selectedCountryRef.current = resolvedCountry;
         setSelectedCountryState(resolvedCountry);
         appStorage.setString(COUNTRY_CODE_KEY, resolvedCountry.code);
-
-        if (storedPhone) {
-          const cleanStored = sanitizeLocalPhoneInput(
-            storedPhone,
-            resolvedCountry,
-          );
-          if (cleanStored) {
-            setPhoneNumberState(cleanStored);
-            appStorage.setString(PHONE_NUMBER_KEY, cleanStored);
-          }
-        }
       } catch (err) {
         logger.error("[Auth] Error restoring cached auth data:", err);
       }
@@ -603,15 +586,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (cleanLocal) {
         setPhoneNumberState(cleanLocal);
-        appStorage.setString(PHONE_NUMBER_KEY, cleanLocal);
-        AsyncStorage.setItem(PHONE_NUMBER_KEY, cleanLocal).catch(() => {});
       }
 
       const phone = raw.startsWith("+")
         ? toE164Phone(raw, activeCountry)
         : toE164Phone(cleanLocal || raw, activeCountry);
 
-      logger.info("[Auth] Sending OTP via backend API to:", phone);
+      logger.info("[Auth] Sending OTP via backend API to:", maskPhone(phone));
       const res = await sendOtpApi(phone);
       if (res.success) {
         setOtpStep(true);
@@ -648,7 +629,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const raw =
         phoneOverride && typeof phoneOverride === "string" && phoneOverride.trim()
           ? phoneOverride.trim()
-          : phoneNumber || appStorage.getString(PHONE_NUMBER_KEY) || "";
+          : phoneNumber;
 
       const cleanLocal = raw.startsWith("+")
         ? parseE164Phone(raw, activeCountry).localNumber
@@ -657,7 +638,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         ? toE164Phone(raw, activeCountry)
         : toE164Phone(cleanLocal || raw, activeCountry);
 
-      logger.info("[Auth] Verifying OTP via backend API for:", phone);
+      logger.info("[Auth] Verifying OTP via backend API for:", maskPhone(phone));
       const res = await verifyOtpApi(phone, otp);
       if (res.success && res.token) {
         isSigningInRef.current = true;
@@ -668,8 +649,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
           if (cleanLocal) {
             setPhoneNumberState(cleanLocal);
-            appStorage.setString(PHONE_NUMBER_KEY, cleanLocal);
-            await AsyncStorage.setItem(PHONE_NUMBER_KEY, cleanLocal);
           }
 
           clearForcedLogoutReason();

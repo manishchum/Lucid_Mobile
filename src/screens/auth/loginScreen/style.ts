@@ -47,7 +47,14 @@ export default StyleSheet.create({
   inputLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   label: { fontSize: 14, fontWeight: '600', color: '#475569' },
   errorTextInline: { fontSize: 12, color: '#EF4444', fontWeight: '500' },
-  errorTextBelow: { fontSize: 12, color: '#EF4444', fontWeight: '500', marginTop: -22, marginBottom: 20 },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: -20,
+    marginBottom: 20,
+    paddingHorizontal: 2,
+  },
+  errorTextBelow: { fontSize: 13, color: '#EF4444', fontWeight: '500', flex: 1, lineHeight: 18 },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -61,10 +68,10 @@ export default StyleSheet.create({
   },
   inputError: { borderColor: '#FECACA', backgroundColor: '#FFF1F2' },
   countryPicker: { flexDirection: 'row', alignItems: 'center' },
-  flag: { fontSize: 20, marginRight: 8 },
+  flag: { fontSize: 16, marginRight: 8 },
   countryCode: { fontSize: 16, fontWeight: '700', color: '#1E293B' },
   divider: { width: 1, height: 24, backgroundColor: '#CBD5E1', marginHorizontal: 12 },
-  input: { flex: 1, fontSize: 17, fontWeight: '500', color: '#1E293B', letterSpacing: 1 },
+  input: { flex: 1, fontSize: 16, fontWeight: '500', color: '#1E293B', letterSpacing: 1 },
   primaryButton: {
     backgroundColor: '#2563EB',
     height: 60,
