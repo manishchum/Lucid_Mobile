@@ -22,7 +22,12 @@ try {
     try {
       const { getMobileDeviceId } = require('./src/utils/deviceId');
       await getMobileDeviceId();
-      const cachedUserJson = await AsyncStorage.getItem('@auth_cached_user');
+      const primaryKey = '@auth_cached_user';
+      const legacyKey = '@cached_user';
+      let cachedUserJson = await AsyncStorage.getItem(primaryKey);
+      if (!cachedUserJson) {
+        cachedUserJson = await AsyncStorage.getItem(legacyKey);
+      }
       if (cachedUserJson) {
         const cachedUser = JSON.parse(cachedUserJson);
         if (!resolvedUserId) resolvedUserId = cachedUser.userId || cachedUser.user_id;
