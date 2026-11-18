@@ -22,24 +22,16 @@ import { APP_ROUTES, STACK_ROUTES } from "../../navigations/Routes";
 import { useFeatureGating, FEATURES } from "../../hooks/useFeatureGating";
 
 import SignOutModal from "../modals/SignOutModal";
+import { toE164Phone } from "../../utils/countries";
 
 const { width } = Dimensions.get("window");
 const DRAWER_WIDTH = width * 0.78;
-
-function toE164(rawPhone: string): string {
-  const digits = rawPhone.replace(/[^\d]/g, "");
-  if (digits.length === 10) return `+91${digits}`;
-  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
-  if (digits.length === 11 && digits.startsWith("0"))
-    return `+91${digits.slice(1)}`;
-  return rawPhone.startsWith("+") ? rawPhone : `+91${digits}`;
-}
 
 export default function AppDrawer() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { isDrawerOpen, closeDrawer } = useDrawer();
-  const { cachedUser, phoneNumber, logout } = useAuth();
+  const { cachedUser, phoneNumber, selectedCountry, logout } = useAuth();
   const { hasFeature } = useFeatureGating();
   const [showSignOutModal, setShowSignOutModal] = useState(false);
 
@@ -57,7 +49,7 @@ export default function AppDrawer() {
       try {
         const phone = cachedUser?.phone || phoneNumber;
         if (phone) {
-          const normalizedPhone = toE164(phone);
+          const normalizedPhone = toE164Phone(phone, selectedCountry);
           const response = await getUserByPhone(normalizedPhone);
           if (response?.user) {
             setUser(response.user);
@@ -70,7 +62,7 @@ export default function AppDrawer() {
     if (cachedUser || phoneNumber) {
       fetchUserData();
     }
-  }, [cachedUser, phoneNumber]);
+  }, [cachedUser, phoneNumber, selectedCountry]);
 
   const [shouldRender, setShouldRender] = useState(isDrawerOpen);
 

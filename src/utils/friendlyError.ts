@@ -28,12 +28,25 @@ const HTTP_STATUS_RE = /\b(\d{3})\b/;
 export function friendlyError(err: unknown): string {
   if (!err) return "Something went wrong. Please try again later.";
 
-  const msg =
-    err instanceof Error
-      ? err.message
-      : typeof err === "string"
-        ? err
-        : "";
+  let msg = "";
+  let statusFromProp: number | undefined;
+
+  if (err instanceof Error) {
+    msg = err.message;
+    if (typeof (err as any).status === "number") {
+      statusFromProp = (err as any).status;
+    }
+  } else if (typeof err === "string") {
+    msg = err;
+  } else if (err && typeof err === "object") {
+    const obj = err as Record<string, any>;
+    if (typeof obj.message === "string") {
+      msg = obj.message;
+    }
+    if (typeof obj.status === "number") {
+      statusFromProp = obj.status;
+    }
+  }
 
   const lower = msg.toLowerCase();
 
@@ -80,8 +93,9 @@ export function friendlyError(err: unknown): string {
 
   // ── HTTP status codes ─────────────────────────────────────────────────────
   const match = HTTP_STATUS_RE.exec(msg);
-  if (match) {
-    const code = parseInt(match[1], 10);
+  const code =
+    statusFromProp ?? (match ? parseInt(match[1], 10) : undefined);
+  if (code !== undefined) {
 
     if (code === 400)
       return "Invalid request. Please check your input and try again.";
@@ -146,6 +160,13 @@ export function friendlyError(err: unknown): string {
   }
 
   // ── Validation / input ────────────────────────────────────────────────────
+  if (
+    lower.includes("phone") &&
+    (lower.includes("invalid") || lower.includes("format") || lower.includes("valid phone"))
+  ) {
+    return "Please enter a valid phone number.";
+  }
+
   if (
     lower.includes("validation") ||
     lower.includes("invalid input") ||

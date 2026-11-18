@@ -1,9 +1,5 @@
 import { logger } from "../utils/UnifiedLogger";
-import { getFirebaseToken } from "./users/Request";
-
-const EXPO_API_URL =
-  process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
-const API_BASE_URL = `${EXPO_API_URL}/api`;
+import { apiFetch, ApiError, API_BASE_URL } from "./client";
 
 export interface EvaluationParameter {
   name: string;
@@ -68,30 +64,13 @@ export interface UserRoleplayDataResponse {
   };
 }
 
-async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = await getFirebaseToken();
-  const headers = new Headers(options.headers || {});
-  headers.set("Content-Type", "application/json");
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
-
-  return response;
-}
-
 export async function getUserRoleplayData(email: string): Promise<UserRoleplayDataResponse | null> {
   try {
     // 1. Try bootstrap endpoint first for both scenarios and company limits
     const bootstrapUrl = `${API_BASE_URL}/roleplay/bootstrap`;
-    const res = await fetchWithAuth(bootstrapUrl);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && data.data) {
+    try {
+      const data = await apiFetch<any>(bootstrapUrl, { method: "GET" });
+      if (data?.success && data?.data) {
         return {
           scenarios: data.data.scenarios || [],
           limits: {
@@ -100,24 +79,23 @@ export async function getUserRoleplayData(email: string): Promise<UserRoleplayDa
           },
         };
       }
+    } catch (bootstrapErr: any) {
+      if (bootstrapErr instanceof ApiError && bootstrapErr.status === 401) {
+        return null;
+      }
+      logger.warn("[RoleplayAPI] Bootstrap unavailable, falling back to /roleplay/scenarios:", bootstrapErr?.message);
     }
 
     // 2. Fallback to /roleplay/scenarios endpoint
     const scenariosUrl = `${API_BASE_URL}/roleplay/scenarios`;
-    const scenariosRes = await fetchWithAuth(scenariosUrl);
-    if (scenariosRes.ok) {
-      const scenariosData = await scenariosRes.json();
-      const scenariosList = Array.isArray(scenariosData.data)
-        ? scenariosData.data
-        : (scenariosData.scenarios || []);
-      return {
-        scenarios: scenariosList,
-        limits: { roleplayLimit: 5, retryLimit: 3 },
-      };
-    }
-
-    logger.error(`[RoleplayAPI] Failed to fetch roleplay data (bootstrap: ${res.status}, scenarios: ${scenariosRes.status})`);
-    return null;
+    const scenariosData = await apiFetch<any>(scenariosUrl, { method: "GET" });
+    const scenariosList = Array.isArray(scenariosData?.data)
+      ? scenariosData.data
+      : (scenariosData?.scenarios || []);
+    return {
+      scenarios: scenariosList,
+      limits: { roleplayLimit: 5, retryLimit: 3 },
+    };
   } catch (e) {
     logger.error("[RoleplayAPI] Error fetching user roleplay data:", e);
     return null;
@@ -130,8 +108,9 @@ export async function createRoleplaySession(
 ): Promise<{ id: string } | null> {
   try {
     const url = `${API_BASE_URL}/roleplay/sessions`;
-    const res = await fetchWithAuth(url, {
+    const result = await apiFetch<any>(url, {
       method: "POST",
+      userId: employeeId,
       body: JSON.stringify({
         employee_id: employeeId,
         scenario_id: scenario.scenario_id,
@@ -140,13 +119,7 @@ export async function createRoleplaySession(
         scenario_difficulty: scenario.difficulty || "Medium",
       }),
     });
-    if (!res.ok) {
-      const errText = await res.text();
-      logger.error(`[RoleplayAPI] createRoleplaySession failed (${res.status}):`, errText);
-      return null;
-    }
-    const result = await res.json();
-    return result.data || result;
+    return result?.data || result;
   } catch (e) {
     logger.error("[RoleplayAPI] Error creating session:", e);
     return null;
@@ -160,7 +133,7 @@ export async function updateRoleplaySession(
 ): Promise<boolean> {
   try {
     const url = `${API_BASE_URL}/roleplay/sessions/${sessionId}`;
-    const res = await fetchWithAuth(url, {
+    await apiFetch(url, {
       method: "PUT",
       body: JSON.stringify({
         conversation_transcript: transcript,
@@ -168,7 +141,7 @@ export async function updateRoleplaySession(
         message_count: transcript.length,
       }),
     });
-    return res.ok;
+    return true;
   } catch (e) {
     logger.error("[RoleplayAPI] Error updating session:", e);
     return false;
@@ -182,20 +155,15 @@ export async function generateRoleplayAssessment(
 ): Promise<RoleplayAssessment | null> {
   try {
     const url = `${API_BASE_URL}/roleplay/sessions/${sessionId}/assessment`;
-    const res = await fetchWithAuth(url, {
+    const data = await apiFetch<any>(url, {
       method: "POST",
+      timeoutMs: 60_000,
       body: JSON.stringify({
         scenario_id: scenarioId,
         conversation_transcript: transcript,
       }),
     });
-    if (!res.ok) {
-      const errText = await res.text();
-      logger.error(`[RoleplayAPI] generateRoleplayAssessment failed (${res.status}):`, errText);
-      return null;
-    }
-    const data = await res.json();
-    return data.assessment || data;
+    return data?.assessment || data;
   } catch (e) {
     logger.error("[RoleplayAPI] Error generating assessment:", e);
     return null;
@@ -209,20 +177,15 @@ export async function finishRoleplaySession(
 ): Promise<{ session: any; assessment: RoleplayAssessment } | null> {
   try {
     const url = `${API_BASE_URL}/roleplay/finish`;
-    const res = await fetchWithAuth(url, {
+    return await apiFetch(url, {
       method: "POST",
+      timeoutMs: 60_000,
       body: JSON.stringify({
         session_id: sessionId,
         conversation_transcript: transcript,
         duration_seconds: durationSeconds || 0,
       }),
     });
-    if (!res.ok) {
-      const errText = await res.text();
-      logger.error(`[RoleplayAPI] finishRoleplaySession failed (${res.status}):`, errText);
-      return null;
-    }
-    return await res.json();
   } catch (e) {
     logger.error("[RoleplayAPI] Error finishing session:", e);
     return null;
@@ -232,15 +195,11 @@ export async function finishRoleplaySession(
 export async function getUserRoleplayReports(employeeId: string): Promise<RoleplaySession[]> {
   try {
     const url = `${API_BASE_URL}/roleplay/reports/${encodeURIComponent(employeeId)}`;
-    const res = await fetchWithAuth(url);
-    if (!res.ok) {
-      logger.error(`[RoleplayAPI] getUserRoleplayReports failed (${res.status})`);
-      return [];
-    }
-    const data = await res.json();
+    const data = await apiFetch<any>(url, {
+      method: "GET",
+      userId: employeeId,
+    });
 
-    // Defensive extraction — handle all possible backend response shapes
-    // Actual shape: { success: true, data: { sessions: [...], stats: {...} } }
     if (Array.isArray(data?.data?.sessions)) return data.data.sessions;
     if (Array.isArray(data?.sessions)) return data.sessions;
     if (Array.isArray(data?.data)) return data.data;
@@ -254,4 +213,3 @@ export async function getUserRoleplayReports(employeeId: string): Promise<Rolepl
     return [];
   }
 }
-

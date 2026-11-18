@@ -14,6 +14,8 @@ export const FEATURES = {
   TASK_MANAGEMENT: "taskManagement",
   KPI: "kpi",
   ROLE_PLAY: "rolePlay",
+  ROLE_PLAY_OPENAI: "rolePlayOpenai",
+  ROLE_PLAY_GEMINI: "rolePlayGemini",
   SPRINTVERSE: "sprintverse",
   REPORTS: "reports",
   GAMIFICATION: "gamification",
@@ -33,6 +35,8 @@ const FEATURE_CONFIG: Record<FeatureName, { requiredAddons: Addon[] }> = {
   [FEATURES.TASK_MANAGEMENT]: { requiredAddons: ["task_management"] },
   [FEATURES.KPI]: { requiredAddons: ["kpi"] },
   [FEATURES.ROLE_PLAY]: { requiredAddons: ["role_play"] },
+  [FEATURES.ROLE_PLAY_OPENAI]: { requiredAddons: ["role_play_openai"] },
+  [FEATURES.ROLE_PLAY_GEMINI]: { requiredAddons: ["role_play_gemini"] },
   [FEATURES.SPRINTVERSE]: { requiredAddons: ["sprintverse"] },
   [FEATURES.REPORTS]: { requiredAddons: ["reports"] },
   [FEATURES.GAMIFICATION]: { requiredAddons: ["gamification"] },
@@ -54,6 +58,13 @@ export function useFeatureGating() {
 
   const getAvailableTier = (): Tier | null => deriveFrontendTier(addons);
 
+  const getRoleplayEngine = (): "gemini" | "openai" => {
+    if (addons.includes("role_play_gemini")) return "gemini";
+    if (addons.includes("role_play_openai")) return "openai";
+    // Fallback: Gemini Live
+    return "gemini";
+  };
+
   const hasFeature = (featureName: FeatureName | string): boolean => {
     // While addons haven't loaded yet, hide all gated features to prevent
     // a flash of locked content before the tenant data arrives.
@@ -72,6 +83,7 @@ export function useFeatureGating() {
     addonsKnown,
     getAvailableAddons,
     getAvailableTier,
+    getRoleplayEngine,
     hasFeature,
   };
 }

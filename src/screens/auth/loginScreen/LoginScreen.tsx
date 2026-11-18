@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -7,29 +7,99 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  useWindowDimensions,
   Modal,
   StyleSheet,
   ActivityIndicator,
   Keyboard,
+  FlatList,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "../../../contex/AuthContext";
+import { useAuth, ForcedLogoutReason } from "../../../contex/AuthContext";
 import styles from "./style";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNetworkStatus } from "../../../hooks/network/useNetworkStatus";
 import NoInternetModal from "../../../components/networkModal/NetworkModal";
+import { logger } from "../../../utils/UnifiedLogger";
+import { friendlyError } from "../../../utils/friendlyError";
+import { maskPhone } from "../../../utils/sanitizer";
+import {
+  COUNTRIES,
+  CountryItem,
+  formatDisplayPhone,
+  isValidLocalPhone,
+  sanitizeLocalPhoneInput,
+} from "../../../utils/countries";
+
+interface ForcedLogoutCopy {
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
+  iconBg: string;
+  iconColor: string;
+  title: string;
+  message: string;
+}
+
+function getForcedLogoutCopy(
+  reason: Exclude<ForcedLogoutReason, null>,
+): ForcedLogoutCopy {
+  switch (reason) {
+    case "session_terminated":
+      return {
+        icon: "cellphone-lock",
+        iconBg: "#FEF3C7",
+        iconColor: "#D97706",
+        title: "Signed Out on This Device",
+        message:
+          "You were logged out because your account was signed in on another mobile device.",
+      };
+    case "session_expired":
+      return {
+        icon: "clock-alert-outline",
+        iconBg: "#EFF6FF",
+        iconColor: "#2563EB",
+        title: "Session Expired",
+        message:
+          "Your 30-day session has expired for security. Please sign in again to continue.",
+      };
+    case "company_deactivated":
+      return {
+        icon: "domain-off",
+        iconBg: "#FEE2E2",
+        iconColor: "#EF4444",
+        title: "Company Access Suspended",
+        message:
+          "Your company's access has been suspended. Please contact your administrator.",
+      };
+    case "user_deactivated":
+    default:
+      return {
+        icon: "account-off-outline",
+        iconBg: "#FEE2E2",
+        iconColor: "#EF4444",
+        title: "Account Deactivated",
+        message:
+          "Your account has been deactivated. Please contact your administrator.",
+      };
+  }
+}
 
 export default function LoginScreen() {
-  const { width } = useWindowDimensions();
-  const { phoneNumber, setPhoneNumber, sendOTP, checkUserExists } = useAuth();
+  const {
+    phoneNumber,
+    setPhoneNumber,
+    selectedCountry,
+    setSelectedCountry,
+    sendOTP,
+    forcedLogoutReason,
+    clearForcedLogoutReason,
+  } = useAuth();
   const [error, setError] = useState("");
-  const [errorDetails, setErrorDetails] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showNotRegisteredModal, setShowNotRegisteredModal] = useState(false);
   const [showAccessDeniedModal, setShowAccessDeniedModal] = useState(false);
   const [accessDeniedMessage, setAccessDeniedMessage] = useState("");
   const [showNoInternet, setShowNoInternet] = useState(false);
+  const [showCountryModal, setShowCountryModal] = useState(false);
+  const [countryQuery, setCountryQuery] = useState("");
   const insets = useSafeAreaInsets();
   const isOnline = useNetworkStatus();
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,9 +112,23 @@ export default function LoginScreen() {
     };
   }, []);
 
-  const triggerSendCode = async (phoneToVerify: string) => {
-    const cleanNumber = phoneToVerify.replace(/\D/g, "");
-    if (cleanNumber.length !== 10) return;
+  const filteredCountries = useMemo(() => {
+    const q = countryQuery.trim().toLowerCase();
+    if (!q) return COUNTRIES;
+    return COUNTRIES.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.dialCode.includes(q) ||
+        c.code.toLowerCase().includes(q),
+    );
+  }, [countryQuery]);
+
+  const triggerSendCode = async (
+    phoneToVerify: string,
+    countryToUse: CountryItem = selectedCountry,
+  ) => {
+    const cleanNumber = sanitizeLocalPhoneInput(phoneToVerify, countryToUse);
+    if (!isValidLocalPhone(cleanNumber, countryToUse) || isLoading) return;
 
     if (isOnline === false) {
       setShowNoInternet(true);
@@ -53,66 +137,82 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     setError("");
-    setErrorDetails("");
     Keyboard.dismiss();
 
     try {
-      // Send OTP — explicitly pass the clean 10-digit phone number
-      const result = await sendOTP(cleanNumber);
+      const result = await sendOTP(cleanNumber, countryToUse);
       if (!result.success) {
+        console.error("[LoginScreen] OTP send failed:", {
+          phone: maskPhone(`${countryToUse.dialCode} ${cleanNumber}`),
+          status: result.status,
+          message: result.message,
+          details: result.details,
+          retryAfter: result.retryAfter,
+        });
+        logger.error("[LoginScreen] OTP send failed:", result);
+
         if (result.status === 404) {
           setShowNotRegisteredModal(true);
         } else if (result.status === 403) {
           setAccessDeniedMessage(
-            result.message || "Access Denied. Your account or company is inactive. Please contact your administrator."
+            result.message ||
+              "Access Denied. Your account or company is inactive. Please contact your administrator.",
           );
           setShowAccessDeniedModal(true);
         } else {
-          setError(result.message || "Failed to send OTP. Please try again.");
-          if (result.details) {
-            setErrorDetails(result.details);
-          }
+          setError(friendlyError(result));
         }
       }
     } catch (err: any) {
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
-      setError(`Connection failed: ${err?.message || "Please check connection"}`);
-      setErrorDetails(`Target: ${apiUrl}/api/auth/send-otp | ${err?.name || "Error"} ${err?.cause ? JSON.stringify(err.cause) : ""}`);
+      console.error("[LoginScreen] Unexpected error sending OTP:", err);
+      logger.error("[LoginScreen] Unexpected error sending OTP:", err);
+      setError(friendlyError(err));
     } finally {
       setIsLoading(false);
     }
   };
 
   const handlePhoneChange = (txt: string) => {
-    let cleanTxt = txt.replace(/[^0-9]/g, "");
-
-    // Handle user pasting with country code (+91) or leading 0
-    if (cleanTxt.startsWith("91") && cleanTxt.length > 10) {
-      cleanTxt = cleanTxt.slice(2);
-    } else if (cleanTxt.startsWith("0") && cleanTxt.length > 10) {
-      cleanTxt = cleanTxt.slice(1);
-    }
-
-    // Limit to 10 digits
-    if (cleanTxt.length > 10) {
-      cleanTxt = cleanTxt.slice(0, 10);
-    }
+    const cleanTxt = sanitizeLocalPhoneInput(txt, selectedCountry);
 
     setPhoneNumber(cleanTxt);
     setError("");
-    setErrorDetails("");
 
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
     }
 
-    if (cleanTxt.length === 10) {
+    if (
+      selectedCountry.autoSendDigits !== null &&
+      cleanTxt.length === selectedCountry.autoSendDigits
+    ) {
       debounceTimerRef.current = setTimeout(() => {
-        triggerSendCode(cleanTxt);
+        triggerSendCode(cleanTxt, selectedCountry);
       }, 300);
     }
   };
+
+  const handleSelectCountry = (country: CountryItem) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    setSelectedCountry(country);
+    setError("");
+    setCountryQuery("");
+    setShowCountryModal(false);
+  };
+
+  const phoneReady = isValidLocalPhone(phoneNumber, selectedCountry);
+  const showManualSendButton =
+    !isLoading &&
+    phoneReady &&
+    (selectedCountry.autoSendDigits === null || Boolean(error));
+
+  const forcedCopy = forcedLogoutReason
+    ? getForcedLogoutCopy(forcedLogoutReason)
+    : null;
 
   return (
     <>
@@ -145,18 +245,31 @@ export default function LoginScreen() {
             </View>
 
             <View style={[styles.inputContainer, error && styles.inputError]}>
-              <View style={styles.countryPicker}>
-                <Text style={styles.flag}>🇮🇳</Text>
-                <Text style={styles.countryCode}>+91</Text>
+              <TouchableOpacity
+                style={styles.countryPicker}
+                onPress={() => !isLoading && setShowCountryModal(true)}
+                activeOpacity={0.7}
+                disabled={isLoading}
+                accessibilityRole="button"
+                accessibilityLabel="Select country dial code"
+              >
+                <Text style={styles.flag}>{selectedCountry.flag}</Text>
+                <Text style={styles.countryCode}>{selectedCountry.dialCode}</Text>
+                <MaterialCommunityIcons
+                  name="chevron-down"
+                  size={18}
+                  color="#64748B"
+                  style={{ marginLeft: 4 }}
+                />
                 <View style={styles.divider} />
-              </View>
+              </TouchableOpacity>
 
               <TextInput
                 style={styles.input}
                 keyboardType="phone-pad"
                 value={phoneNumber}
                 onChangeText={handlePhoneChange}
-                maxLength={16}
+                maxLength={selectedCountry.maxDigits + 5}
                 placeholder="Enter phone number"
                 placeholderTextColor="#64748B"
                 editable={!isLoading}
@@ -164,32 +277,179 @@ export default function LoginScreen() {
             </View>
 
             {error ? (
-              <View style={{ marginTop: 6, marginBottom: 4 }}>
+              <View style={styles.errorContainer}>
+                <MaterialCommunityIcons
+                  name="alert-circle-outline"
+                  size={16}
+                  color="#EF4444"
+                  style={{ marginRight: 6 }}
+                />
                 <Text style={styles.errorTextBelow}>{error}</Text>
-                {errorDetails ? (
-                  <Text style={{ fontSize: 11, color: "#94A3B8", marginTop: 2, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" }}>
-                    {errorDetails}
-                  </Text>
-                ) : null}
               </View>
             ) : null}
 
             {isLoading ? (
               <View style={styles.statusIndicator}>
                 <ActivityIndicator size="small" color="#2563EB" />
-                <Text style={styles.statusText}>Sending verification code...</Text>
+                <Text style={styles.statusText}>
+                  Sending verification code...
+                </Text>
               </View>
-            ) : error && phoneNumber.replace(/\D/g, "").length === 10 ? (
+            ) : showManualSendButton ? (
               <TouchableOpacity
-                style={{ marginTop: 12, alignItems: "center", paddingVertical: 8 }}
-                onPress={() => triggerSendCode(phoneNumber.replace(/\D/g, "").slice(-10))}
+                style={styles.primaryButton}
+                onPress={() => triggerSendCode(phoneNumber, selectedCountry)}
+                activeOpacity={0.85}
               >
-                <Text style={styles.linkText}>Tap to Retry</Text>
+                <View style={styles.buttonContent}>
+                  <Text style={styles.buttonText}>
+                    {error ? "Tap to Retry" : "Send Verification Code"}
+                  </Text>
+                  <MaterialCommunityIcons
+                    name="arrow-right"
+                    size={18}
+                    color="#FFFFFF"
+                  />
+                </View>
               </TouchableOpacity>
             ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Country Picker Modal */}
+      <Modal
+        visible={showCountryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCountryModal(false)}
+      >
+        <View style={pickerStyles.overlay}>
+          <View
+            style={[
+              pickerStyles.sheet,
+              { paddingBottom: Math.max(insets.bottom, 16) },
+            ]}
+          >
+            <View style={pickerStyles.header}>
+              <Text style={pickerStyles.headerTitle}>Select Country</Text>
+              <TouchableOpacity
+                onPress={() => setShowCountryModal(false)}
+                style={pickerStyles.closeBtn}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={22}
+                  color="#475569"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={pickerStyles.searchBox}>
+              <MaterialCommunityIcons
+                name="magnify"
+                size={20}
+                color="#94A3B8"
+                style={{ marginRight: 8 }}
+              />
+              <TextInput
+                style={pickerStyles.searchInput}
+                placeholder="Search country name or dial code"
+                placeholderTextColor="#94A3B8"
+                value={countryQuery}
+                onChangeText={setCountryQuery}
+                autoCorrect={false}
+              />
+              {countryQuery ? (
+                <TouchableOpacity onPress={() => setCountryQuery("")}>
+                  <MaterialCommunityIcons
+                    name="close-circle"
+                    size={18}
+                    color="#94A3B8"
+                  />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            <FlatList
+              data={filteredCountries}
+              keyExtractor={(item) => item.code}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => {
+                const isSelected = item.code === selectedCountry.code;
+                return (
+                  <TouchableOpacity
+                    style={[
+                      pickerStyles.row,
+                      isSelected && pickerStyles.rowSelected,
+                    ]}
+                    onPress={() => handleSelectCountry(item)}
+                  >
+                    <Text style={pickerStyles.rowFlag}>{item.flag}</Text>
+                    <Text style={pickerStyles.rowName} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={pickerStyles.rowDial}>{item.dialCode}</Text>
+                    {isSelected ? (
+                      <MaterialCommunityIcons
+                        name="check-circle"
+                        size={18}
+                        color="#2563EB"
+                        style={{ marginLeft: 8 }}
+                      />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              }}
+              ListEmptyComponent={
+                <Text style={pickerStyles.emptyText}>
+                  No matching countries found
+                </Text>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Branded Forced Logout / Displacement / Session Expiry Modal */}
+      <Modal
+        visible={Boolean(forcedCopy)}
+        transparent
+        animationType="fade"
+        onRequestClose={clearForcedLogoutReason}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.card}>
+            <View
+              style={[
+                modalStyles.iconContainer,
+                { backgroundColor: forcedCopy?.iconBg ?? "#FEE2E2" },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={forcedCopy?.icon ?? "alert-circle-outline"}
+                size={36}
+                color={forcedCopy?.iconColor ?? "#EF4444"}
+              />
+            </View>
+
+            <Text style={modalStyles.title}>
+              {forcedCopy?.title ?? "Signed Out"}
+            </Text>
+            <Text style={modalStyles.message}>
+              {forcedCopy?.message ?? "Please sign in again to continue."}
+            </Text>
+
+            <TouchableOpacity
+              style={modalStyles.button}
+              onPress={clearForcedLogoutReason}
+              activeOpacity={0.85}
+            >
+              <Text style={modalStyles.buttonText}>OK, Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Not Registered Modal */}
       <Modal
@@ -203,7 +463,7 @@ export default function LoginScreen() {
             <View style={modalStyles.iconContainer}>
               <MaterialCommunityIcons
                 name="account-off-outline"
-                size={40}
+                size={38}
                 color="#EF4444"
               />
             </View>
@@ -211,7 +471,9 @@ export default function LoginScreen() {
             <Text style={modalStyles.title}>Not Registered</Text>
             <Text style={modalStyles.message}>
               The number{" "}
-              <Text style={modalStyles.phoneHighlight}>+91 {phoneNumber}</Text>{" "}
+              <Text style={modalStyles.phoneHighlight}>
+                {formatDisplayPhone(phoneNumber, selectedCountry)}
+              </Text>{" "}
               is not registered with Lucid. Please contact your administrator to
               get access.
             </Text>
@@ -238,7 +500,7 @@ export default function LoginScreen() {
             <View style={modalStyles.iconContainer}>
               <MaterialCommunityIcons
                 name="shield-alert-outline"
-                size={40}
+                size={38}
                 color="#EF4444"
               />
             </View>
@@ -264,31 +526,112 @@ export default function LoginScreen() {
   );
 }
 
+const pickerStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "75%",
+    paddingTop: 18,
+    paddingHorizontal: 20,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#0F172A",
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 13,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#F1F5F9",
+  },
+  rowSelected: {
+    backgroundColor: "#EFF6FF",
+  },
+  rowFlag: {
+    fontSize: 22,
+    marginRight: 12,
+  },
+  rowName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1E293B",
+    marginRight: 8,
+  },
+  rowDial: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  emptyText: {
+    textAlign: "center",
+    color: "#94A3B8",
+    paddingVertical: 28,
+    fontSize: 14,
+  },
+});
+
 const modalStyles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 32,
+    paddingHorizontal: 24,
   },
   card: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 28,
+    borderRadius: 24,
+    padding: 26,
     alignItems: "center",
     width: "100%",
-    shadowColor: "#000",
+    maxWidth: 350,
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 20,
     elevation: 10,
   },
   iconContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "#FEF2F2",
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "#FEE2E2",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
@@ -296,27 +639,27 @@ const modalStyles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#1E293B",
+    color: "#0F172A",
     marginBottom: 10,
     textAlign: "center",
   },
   message: {
     fontSize: 14,
-    color: "#64748B",
+    color: "#475569",
     textAlign: "center",
-    lineHeight: 22,
+    lineHeight: 21,
     marginBottom: 24,
   },
   phoneHighlight: {
-    color: "#1E293B",
+    color: "#0F172A",
     fontWeight: "700",
   },
   button: {
     backgroundColor: "#2563EB",
-    paddingVertical: 14,
-    paddingHorizontal: 40,
-    borderRadius: 12,
+    height: 48,
+    borderRadius: 14,
     width: "100%",
+    justifyContent: "center",
     alignItems: "center",
   },
   buttonText: {

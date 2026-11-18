@@ -21,18 +21,11 @@ import { User } from "../../api/users/Dto";
 import FeedbackCard from "../../components/feedback/FeedbackCard";
 import RefreshSpinner from "../../components/pullToRefresh/RefreshSpinner";
 import SignOutModal from "../../components/modals/SignOutModal";
-
-function toE164(rawPhone: string): string {
-  const digits = rawPhone.replace(/[^\d]/g, "");
-  if (digits.length === 10) return `+91${digits}`;
-  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
-  if (digits.length === 11 && digits.startsWith("0"))
-    return `+91${digits.slice(1)}`;
-  return rawPhone.startsWith("+") ? rawPhone : `+91${digits}`;
-}
+import { toE164Phone } from "../../utils/countries";
+import { maskPhone } from "../../utils/sanitizer";
 
 export default function ProfileScreen() {
-  const { phoneNumber, cachedUser, logout } = useAuth();
+  const { phoneNumber, selectedCountry, cachedUser, logout } = useAuth();
   const navigation = useNavigation<any>();
   const [showSignOutModal, setShowSignOutModal] = useState(false);
 
@@ -106,13 +99,14 @@ export default function ProfileScreen() {
   const fetchUserData = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     try {
-      if (phoneNumber) {
-        const normalizedPhone = toE164(phoneNumber);
+      const targetPhone = cachedUser?.phone || phoneNumber;
+      if (targetPhone) {
+        const normalizedPhone = toE164Phone(targetPhone, selectedCountry);
         const response = await getUserByPhone(normalizedPhone);
         if (response?.user) {
           setUser(response.user);
         } else {
-          console.warn("[ProfileScreen] No user found for", normalizedPhone);
+          console.warn("[ProfileScreen] No user found for", maskPhone(normalizedPhone));
         }
       }
     } catch (error) {
@@ -120,7 +114,7 @@ export default function ProfileScreen() {
     } finally {
       setLoading(false);
     }
-  }, [phoneNumber]);
+  }, [cachedUser?.phone, phoneNumber, selectedCountry]);
 
   useEffect(() => {
     fetchUserData(true);

@@ -1,4 +1,5 @@
 import { Platform, Dimensions, PixelRatio, AppState } from "react-native";
+import { maskEmail, maskPhone, maskName } from "./sanitizer";
 
 /**
  * Interface representing all timing checkpoints and milestones
@@ -161,7 +162,7 @@ class HomePerformanceMeter {
     }
     console.log(`* RESOLVED CARDS               : ${metadata.content?.resolvedCardsCount ?? 0}`);
     console.log(`* COMPLETED / PROGRESS         : ${metadata.content?.completedModulesCount ?? 0} modules (${metadata.content?.progressPercentage ?? 0}%)`);
-    console.log(`* USER ID                      : ${metadata.user?.userId ?? "guest"}`);
+    console.log(`* USER ID                      : ${metadata.user?.userId ? metadata.user.userId.slice(0, 8) + "..." : "guest"}`);
     console.log(`* COMPLETED TIMESTAMP          : ${new Date(now).toISOString()}`);
     console.log("=".repeat(82) + "\n");
   }
@@ -271,10 +272,10 @@ class HomePerformanceMeter {
     console.log("\n" + subDivider);
     console.log(`USER & TENANT METADATA:`);
     console.log(subDivider);
-    console.log(`   * User ID        : ${metadata.user?.userId ?? "N/A"}`);
-    console.log(`   * Name           : ${metadata.user?.name ?? "N/A"}`);
-    console.log(`   * Email          : ${metadata.user?.email ?? "N/A"}`);
-    console.log(`   * Phone          : ${metadata.user?.phone ?? "N/A"}`);
+    console.log(`   * User ID        : ${metadata.user?.userId ? metadata.user.userId.slice(0, 8) + "..." : "N/A"}`);
+    console.log(`   * Name           : ${metadata.user?.name ? maskName(metadata.user.name) : "N/A"}`);
+    console.log(`   * Email          : ${metadata.user?.email ? maskEmail(metadata.user.email) : "N/A"}`);
+    console.log(`   * Phone          : ${metadata.user?.phone ? maskPhone(metadata.user.phone) : "N/A"}`);
     console.log(`   * Company ID     : ${metadata.user?.companyId ?? "N/A"}`);
 
     console.log("\n" + subDivider);

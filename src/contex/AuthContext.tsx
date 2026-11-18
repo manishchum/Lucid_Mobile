@@ -4,20 +4,33 @@ import React, {
   useState,
   useEffect,
   useRef,
+  useCallback,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "expo-secure-store";
+import NetInfo from "@react-native-community/netinfo";
 import { AppState, AppStateStatus } from "react-native";
 import {
-  getUserByPhone,
-  recordUserLogin,
-  getCompanyActiveStatus,
+  ApiError,
+  AuthMeResponse,
+  WS_BASE_URL,
+  getAuthMe,
+  getFirebaseToken,
+  refreshFirebaseToken,
   sendOtpApi,
   verifyOtpApi,
-  JWT_TOKEN_KEY,
 } from "../api/users/Request";
 import { onSessionInvalid, SessionInvalidReason } from "../api/sessionEvents";
+import {
+  CountryItem,
+  DEFAULT_COUNTRY,
+  getCountryByCode,
+  parseE164Phone,
+  sanitizeLocalPhoneInput,
+  toE164Phone,
+} from "../utils/countries";
+import { getMobileDeviceId } from "../utils/deviceId";
 import { logger } from "../utils/UnifiedLogger";
+import { maskPhone } from "../utils/sanitizer";
 import { offlineQueue } from "../utils/offlineQueue";
 import { appStorage } from "../utils/appStorage";
 import { purgeAllMobileLocalCache } from "../utils/cacheManager";
@@ -31,7 +44,7 @@ import {
 
 export interface CachedUser {
   userId: string;
-  firebaseUid: string; // firebase_uid from users table
+  firebaseUid: string; // firebase_uid from users table (optional on /auth/me payload)
   name: string;
   email: string;
   phone: string;
@@ -40,11 +53,6 @@ export interface CachedUser {
   sub_function_id: string | null;
   managerId: string | null;
   isActive: boolean;
-}
-
-export interface CheckUserResult {
-  status: "active" | "inactive" | "not_registered" | "company_invalid";
-  user?: CachedUser;
 }
 
 export interface VerifyOtpResult {
@@ -58,248 +66,553 @@ export interface SendOtpResult {
   success: boolean;
   status?: number;
   message?: string;
+  retryAfter?: number;
   details?: string;
 }
+
+export type ForcedLogoutReason =
+  | "user_deactivated"
+  | "company_deactivated"
+  | "session_terminated"
+  | "session_expired"
+  | null;
+
+export type SessionStatus = "unknown" | "verified" | "offline_grace";
 
 interface AuthContextType {
   user: any;
   isInitializing: boolean;
   isLoggedIn: boolean;
   phoneNumber: string;
+  selectedCountry: CountryItem;
+  setSelectedCountry: (country: CountryItem) => void;
   otpStep: boolean;
-  confirmation: any;
+  setOtpStep: (step: boolean) => void;
   cachedUser: CachedUser | null;
-  forcedLogoutReason:
-    | "user_deactivated"
-    | "company_deactivated"
-    | "session_terminated"
-    | null;
+  authMeData: AuthMeResponse | null;
+  sessionStatus: SessionStatus;
+  forcedLogoutReason: ForcedLogoutReason;
   clearForcedLogoutReason: () => void;
   setPhoneNumber: (phone: string) => void;
-  checkUserExists: (phone: string) => Promise<CheckUserResult>;
-  sendOTP: (phoneOverride?: string) => Promise<SendOtpResult>;
-  verifyOTP: (otp: string, phoneOverride?: string) => Promise<VerifyOtpResult>;
+  sendOTP: (
+    phoneOverride?: string,
+    countryOverride?: CountryItem,
+  ) => Promise<SendOtpResult>;
+  verifyOTP: (
+    otp: string,
+    phoneOverride?: string,
+    countryOverride?: CountryItem,
+  ) => Promise<VerifyOtpResult>;
+  revalidateSession: (options?: {
+    force?: boolean;
+    isColdStart?: boolean;
+  }) => Promise<boolean>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const CACHED_USER_KEY = "@auth_cached_user";
 const PHONE_NUMBER_KEY = "@auth_phone_number";
+const COUNTRY_CODE_KEY = "@auth_country_code";
 
-function toE164(rawPhone: string): string {
-  // Strip everything except digits and a leading +
-  let digits = rawPhone.replace(/[^\d+]/g, "");
+function mapEmployeeDataToCachedUser(
+  emp: any,
+  fallbackFirebaseUid: string = "",
+): CachedUser {
+  return {
+    userId: String(emp.user_id || ""),
+    firebaseUid: String(emp.firebase_uid || fallbackFirebaseUid || ""),
+    name: String(emp.name || ""),
+    email: String(emp.email || ""),
+    phone: String(emp.phone || ""),
+    companyId: String(emp.company_id || ""),
+    function_id: emp.function_id ?? null,
+    sub_function_id: emp.sub_function_id ?? null,
+    managerId: emp.manager_id ?? null,
+    isActive: emp.is_active !== false,
+  };
+}
 
-  // Already correctly formatted (+91xxxxxxxxxx = 13 chars)
-  if (digits.startsWith("+91") && digits.length === 13) {
-    return digits;
+function isConnectivityError(err: unknown): boolean {
+  if (err instanceof ApiError) {
+    return (
+      err.code === "NETWORK_ERROR" ||
+      err.code === "TIMEOUT" ||
+      err.status === 0 ||
+      err.status === 408 ||
+      err.status >= 500
+    );
+  }
+  return true;
+}
+
+function mapApiErrorToForcedReason(
+  err: ApiError,
+): Exclude<ForcedLogoutReason, null> | null {
+  if (err.code === "SESSION_TERMINATED") return "session_terminated";
+  if (err.code === "SESSION_EXPIRED") return "session_expired";
+  if (err.code === "COMPANY_DEACTIVATED") return "company_deactivated";
+  if (err.code === "ACCOUNT_DEACTIVATED" || err.status === 404) {
+    return "user_deactivated";
   }
 
-  // Strip any leading + before further processing
-  digits = digits.replace(/^\+/, "");
-
-  // 91xxxxxxxxxx (12 digits, country code, no +)
-  if (digits.length === 12 && digits.startsWith("91")) {
-    return `+${digits}`;
-  }
-
-  // 0xxxxxxxxxxx (11 digits, leading 0 — old local format)
-  if (digits.length === 11 && digits.startsWith("0")) {
-    return `+91${digits.slice(1)}`;
-  }
-
-  // xxxxxxxxxx (bare 10-digit number — the expected normal case)
-  if (digits.length === 10) {
-    return `+91${digits}`;
-  }
-
-  // If longer than 10 digits (e.g. pasted with prefix or country code)
-  if (digits.length > 10) {
-    if (digits.startsWith("91")) {
-      return `+91${digits.slice(2, 12)}`;
+  if (err.status === 401) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes("session_replaced") || msg.includes("another device")) {
+      return "session_terminated";
     }
-    return `+91${digits.slice(-10)}`;
+    return "session_expired";
   }
 
-  // Fallback — couldn't confidently normalize, return best-effort
-  console.warn("[Auth] toE164 — unexpected phone format:", rawPhone);
-  return digits.startsWith("91") ? `+${digits}` : `+91${digits}`;
+  if (err.status === 403) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes("company") || msg.includes("organization")) {
+      return "company_deactivated";
+    }
+    return "user_deactivated";
+  }
+
+  return null;
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
+  const initialCountry = getCountryByCode(
+    appStorage.getString(COUNTRY_CODE_KEY),
+  );
+  const [selectedCountry, setSelectedCountryState] =
+    useState<CountryItem>(initialCountry);
   const [user, setUser] = useState<any>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [phoneNumber, setPhoneNumber] = useState<string>(() => {
-    const val = appStorage.getString(PHONE_NUMBER_KEY) || "";
-    const clean = val.replace(/\D/g, "");
-    return clean.length === 10 ? clean : "";
-  });
+  const [phoneNumber, setPhoneNumberState] = useState<string>("");
   const [otpStep, setOtpStep] = useState(false);
-  const [confirmation, setConfirmation] = useState<any>(null);
-  const [cachedUser, setCachedUser] = useState<CachedUser | null>(
-    () => appStorage.getObject<CachedUser>(CACHED_USER_KEY),
+  const [cachedUser, setCachedUserState] = useState<CachedUser | null>(() =>
+    appStorage.getObject<CachedUser>(CACHED_USER_KEY),
   );
-  const [forcedLogoutReason, setForcedLogoutReason] = useState<
-    "user_deactivated" | "company_deactivated" | "session_terminated" | null
-  >(null);
+  const [authMeData, setAuthMeData] = useState<AuthMeResponse | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>("unknown");
+  const [forcedLogoutReason, setForcedLogoutReason] =
+    useState<ForcedLogoutReason>(null);
 
   const ACCOUNT_STATUS_CHECK_INTERVAL_MS = 15 * 60 * 1000;
   const lastCheckedAtRef = useRef<number>(0);
-  const isCheckingRef = useRef(false);
-  // Ref mirror of forcedLogoutReason — readable synchronously before React flushes state.
-  const forcedLogoutReasonRef = useRef<typeof forcedLogoutReason>(null);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const selectedCountryRef = useRef<CountryItem>(initialCountry);
+  const cachedUserRef = useRef<CachedUser | null>(cachedUser);
+  const isLoggedInRef = useRef<boolean>(false);
+  const sessionStatusRef = useRef<SessionStatus>("unknown");
+  const isSigningInRef = useRef<boolean>(false);
+  const isHandlingForcedLogoutRef = useRef<boolean>(false);
+  const revalidateInFlightRef = useRef<Promise<boolean> | null>(null);
+  const forcedLogoutReasonRef = useRef<ForcedLogoutReason>(null);
+  const authWsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    homePerfMeter.markAuthStart();
+    selectedCountryRef.current = selectedCountry;
+  }, [selectedCountry]);
 
-    // 1. Restore cached data from AsyncStorage
-    const restoreCachedData = async () => {
-      try {
-        const storedUserJson = await AsyncStorage.getItem(CACHED_USER_KEY);
-        const storedPhone = await AsyncStorage.getItem(PHONE_NUMBER_KEY);
+  useEffect(() => {
+    cachedUserRef.current = cachedUser;
+  }, [cachedUser]);
 
-        if (storedPhone) {
-          const cleanStored = storedPhone.replace(/\D/g, "");
-          if (cleanStored.length === 10) {
-            setPhoneNumber(cleanStored);
-            appStorage.setString(PHONE_NUMBER_KEY, cleanStored);
-          }
-        }
+  useEffect(() => {
+    isLoggedInRef.current = isLoggedIn;
+  }, [isLoggedIn]);
 
-        if (storedUserJson) {
-          try {
-            const user: CachedUser = JSON.parse(storedUserJson);
-            setCachedUser(user);
-            appStorage.setObject(CACHED_USER_KEY, user);
-            console.log("[Auth] Restored cachedUser from AsyncStorage:", user.userId);
-          } catch (e) {
-            console.error("[Auth] Error parsing cachedUser:", e);
-          }
-        }
-      } catch (err) {
-        console.error("[Auth] Error restoring cached auth data:", err);
-      }
-    };
-    restoreCachedData();
+  useEffect(() => {
+    sessionStatusRef.current = sessionStatus;
+  }, [sessionStatus]);
 
-    // 2. Listen to Firebase native authentication state
-    const unsubscribe = onAuthStateChanged(getAuth(), (fbUser) => {
-      setUser(fbUser);
-      if (fbUser) {
-        setIsLoggedIn(true);
-        console.log("[Auth] Native Firebase session is active:", fbUser.uid);
-      } else {
-        setIsLoggedIn(false);
-        console.log("[Auth] Native Firebase session is inactive");
-      }
-      setIsInitializing(false);
-      homePerfMeter.markAuthReady();
+  const setSelectedCountry = useCallback((country: CountryItem) => {
+    selectedCountryRef.current = country;
+    setSelectedCountryState(country);
+    appStorage.setString(COUNTRY_CODE_KEY, country.code);
+    AsyncStorage.setItem(COUNTRY_CODE_KEY, country.code).catch(() => {});
+
+    setPhoneNumberState((prev) => {
+      return sanitizeLocalPhoneInput(prev, country);
     });
-
-    return unsubscribe;
   }, []);
 
-  const checkUserExists = async (phone: string): Promise<CheckUserResult> => {
-    try {
-      const normalizedPhone = toE164(phone);
-      const response = await getUserByPhone(normalizedPhone);
-      if (!response?.user) {
-        console.log(
-          "[Auth] checkUserExists — no user found for phone:",
-          normalizedPhone,
-        );
-        return { status: "not_registered" };
-      }
-      if (!response.user.is_active) {
-        console.log(
-          "[Auth] checkUserExists — user is inactive:",
-          response.user.user_id,
-        );
-        return { status: "inactive" };
-      }
-      if (
-        !response.user.company_id ||
-        (response.user as any).company_name === null ||
-        (response.user as any).company_name === ""
-      ) {
-        console.log(
-          "[Auth] checkUserExists — company is invalid/not found for user:",
-          response.user.user_id,
-        );
-        return { status: "company_invalid" };
-      }
+  const setPhoneNumber = useCallback((phone: string) => {
+    const clean = sanitizeLocalPhoneInput(phone, selectedCountryRef.current);
+    setPhoneNumberState(clean);
+  }, []);
 
-      const user: CachedUser = {
-        userId: response.user.user_id,
-        firebaseUid: response.user.firebase_uid ?? "",
-        name: response.user.name,
-        email: response.user.email,
-        phone: response.user.phone,
-        companyId: response.user.company_id,
-        function_id: response.user.function_id,
-        sub_function_id: response.user.sub_function_id,
-        managerId: response.user.manager_id,
-        isActive: response.user.is_active,
-      };
-      setCachedUser(user);
+  const persistCachedUser = useCallback(
+    async (nextUser: CachedUser, countryOverride?: CountryItem) => {
+      cachedUserRef.current = nextUser;
+      setCachedUserState(nextUser);
+      appStorage.setObject(CACHED_USER_KEY, nextUser);
+
+      if (nextUser.phone) {
+        const parsed = parseE164Phone(
+          nextUser.phone,
+          countryOverride ?? selectedCountryRef.current,
+        );
+        if (parsed.localNumber) {
+          setPhoneNumberState(parsed.localNumber);
+        }
+        if (parsed.country) {
+          selectedCountryRef.current = parsed.country;
+          setSelectedCountryState(parsed.country);
+          appStorage.setString(COUNTRY_CODE_KEY, parsed.country.code);
+          AsyncStorage.setItem(COUNTRY_CODE_KEY, parsed.country.code).catch(
+            () => {},
+          );
+        }
+      }
 
       try {
-        await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(user));
-        console.log("[Auth] ✅ Saved cachedUser to AsyncStorage:", user.userId);
+        await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(nextUser));
       } catch (storageError) {
-        console.error(
+        logger.error(
           "[Auth] Error saving cachedUser to AsyncStorage:",
           storageError,
         );
       }
+    },
+    [],
+  );
 
-      console.log("[Auth] checkUserExists ✅ cached user:", user.userId);
-      recordUserLogin(user.userId).catch((e) =>
-        console.warn("[Auth] recordUserLogin warning:", e),
-      );
-      return { status: "active", user };
-    } catch (error) {
-      console.error("[Auth] checkUserExists error:", error);
-      throw error;
+  const performLogoutInternal = useCallback(async () => {
+    if (authWsRef.current) {
+      try {
+        authWsRef.current.close();
+      } catch {}
+      authWsRef.current = null;
     }
-  };
 
-  const sendOTP = async (phoneOverride?: string): Promise<SendOtpResult> => {
     try {
+      await signOut(getAuth()).catch((err) => {
+        logger.warn("[Auth] Firebase signOut warning:", err);
+      });
+    } catch {}
+
+    cachedUserRef.current = null;
+    isLoggedInRef.current = false;
+    sessionStatusRef.current = "unknown";
+    setCachedUserState(null);
+    setAuthMeData(null);
+    setSessionStatus("unknown");
+    setIsLoggedIn(false);
+    setPhoneNumberState("");
+    setOtpStep(false);
+    appStorage.removeItem(PHONE_NUMBER_KEY);
+    AsyncStorage.removeItem(PHONE_NUMBER_KEY).catch(() => {});
+
+    await purgeAllMobileLocalCache();
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      logger.info("[Auth] Logging out from Firebase and purging local caches...");
+      await performLogoutInternal();
+      logger.info("[Auth] All mobile local caches purged successfully on sign out.");
+    } catch (error) {
+      logger.error("[Auth] Logout Error:", error);
+    }
+  }, [performLogoutInternal]);
+
+  const handleForcedInvalidation = useCallback(
+    async (reason: Exclude<ForcedLogoutReason, null>) => {
+      if (isHandlingForcedLogoutRef.current) return;
+      isHandlingForcedLogoutRef.current = true;
+      try {
+        logger.warn(`[Auth] Forced session invalidation: ${reason}`);
+        forcedLogoutReasonRef.current = reason;
+        setForcedLogoutReason(reason);
+        await performLogoutInternal();
+      } finally {
+        isHandlingForcedLogoutRef.current = false;
+      }
+    },
+    [performLogoutInternal],
+  );
+
+  const clearForcedLogoutReason = useCallback(() => {
+    forcedLogoutReasonRef.current = null;
+    setForcedLogoutReason(null);
+  }, []);
+
+  const hydrateFromAuthMe = useCallback(
+    async (me: AuthMeResponse, firebaseUid?: string) => {
+      setAuthMeData(me);
+      if (me.employeeData) {
+        const mappedUser = mapEmployeeDataToCachedUser(
+          me.employeeData,
+          firebaseUid,
+        );
+        await persistCachedUser(mappedUser);
+      }
+      const activeComp = me.tenant?.activeCompany;
+      if (activeComp?.company_id) {
+        const existingComp =
+          appStorage.getObject<any>(`@company_${activeComp.company_id}`) || {};
+        appStorage.setObject(`@company_${activeComp.company_id}`, {
+          ...existingComp,
+          ...activeComp,
+          learning_style:
+            activeComp.learning_style_enabled ??
+            (activeComp as any).learning_style ??
+            existingComp.learning_style ??
+            null,
+        });
+      }
+      sessionStatusRef.current = "verified";
+      setSessionStatus("verified");
+      isLoggedInRef.current = true;
+      setIsLoggedIn(true);
+    },
+    [persistCachedUser],
+  );
+
+  const revalidateSession = useCallback(
+    async (options?: { force?: boolean; isColdStart?: boolean }): Promise<boolean> => {
+      const force = Boolean(options?.force);
+      const isColdStart = Boolean(options?.isColdStart);
+
+      if (revalidateInFlightRef.current) {
+        return revalidateInFlightRef.current;
+      }
+
+      const now = Date.now();
+      if (
+        !force &&
+        !isColdStart &&
+        sessionStatusRef.current === "verified" &&
+        now - lastCheckedAtRef.current < ACCOUNT_STATUS_CHECK_INTERVAL_MS
+      ) {
+        return true;
+      }
+
+      const runValidation = async (): Promise<boolean> => {
+        const currentFbUser = getAuth().currentUser;
+        if (!currentFbUser) {
+          return false;
+        }
+
+        await getMobileDeviceId();
+        lastCheckedAtRef.current = Date.now();
+
+        try {
+          const me = await getAuthMe({
+            timeoutMs: isColdStart ? 10_000 : 12_000,
+            retries: 0,
+            suppressSessionInvalidEvent: true,
+          });
+          await hydrateFromAuthMe(me, currentFbUser.uid);
+          return true;
+        } catch (err: any) {
+          if (err instanceof ApiError) {
+            const terminalReason = mapApiErrorToForcedReason(err);
+            if (terminalReason) {
+              await handleForcedInvalidation(terminalReason);
+              return false;
+            }
+          }
+
+          if (isConnectivityError(err)) {
+            if (isColdStart) {
+              if (cachedUserRef.current && cachedUserRef.current.isActive !== false) {
+                logger.warn(
+                  "[Auth] Cold start offline/unreachable with cachedUser — entering offline_grace.",
+                );
+                sessionStatusRef.current = "offline_grace";
+                setSessionStatus("offline_grace");
+                isLoggedInRef.current = true;
+                setIsLoggedIn(true);
+                return false;
+              }
+
+              logger.warn(
+                "[Auth] Cold start offline with no cached user — showing login screen.",
+              );
+              sessionStatusRef.current = "unknown";
+              setSessionStatus("unknown");
+              isLoggedInRef.current = false;
+              setIsLoggedIn(false);
+              return false;
+            }
+
+            logger.warn(
+              "[Auth] Session revalidation unreachable — holding in offline_grace until reconnect.",
+            );
+            sessionStatusRef.current = "offline_grace";
+            setSessionStatus("offline_grace");
+            return false;
+          }
+
+          logger.warn("[Auth] Unexpected revalidation error:", err);
+          return false;
+        }
+      };
+
+      const promise = runValidation().finally(() => {
+        if (revalidateInFlightRef.current === promise) {
+          revalidateInFlightRef.current = null;
+        }
+      });
+      revalidateInFlightRef.current = promise;
+      return promise;
+    },
+    [hydrateFromAuthMe, handleForcedInvalidation],
+  );
+
+  // Register mandatory pre-replay validation on reconnect before offlineQueue replays
+  useEffect(() => {
+    offlineQueue.setPreReplayValidator(async () => {
+      if (!getAuth().currentUser) return false;
+      return revalidateSession({ force: true });
+    });
+    return () => {
+      offlineQueue.setPreReplayValidator(null);
+    };
+  }, [revalidateSession]);
+
+  // Boot: restore AsyncStorage fallback cache + subscribe to Firebase Auth state
+  useEffect(() => {
+    homePerfMeter.markAuthStart();
+    let mounted = true;
+
+    const restoreCachedData = async () => {
+      try {
+        const [storedUserJson, storedCountryCode] = await Promise.all([
+          AsyncStorage.getItem(CACHED_USER_KEY),
+          AsyncStorage.getItem(COUNTRY_CODE_KEY),
+        ]);
+
+        // Clean up any stale unauthenticated phone number persisted by previous app versions
+        appStorage.removeItem(PHONE_NUMBER_KEY);
+        AsyncStorage.removeItem(PHONE_NUMBER_KEY).catch(() => {});
+
+        if (!mounted) return;
+
+        let resolvedCountry = getCountryByCode(
+          storedCountryCode || appStorage.getString(COUNTRY_CODE_KEY),
+        );
+
+        if (storedUserJson) {
+          try {
+            const parsedUser: CachedUser = JSON.parse(storedUserJson);
+            cachedUserRef.current = parsedUser;
+            setCachedUserState(parsedUser);
+            appStorage.setObject(CACHED_USER_KEY, parsedUser);
+            if (parsedUser.phone) {
+              const parsedPhone = parseE164Phone(
+                parsedUser.phone,
+                resolvedCountry,
+              );
+              resolvedCountry = parsedPhone.country;
+            }
+            logger.info(
+              "[Auth] Restored cachedUser from AsyncStorage:",
+              parsedUser.userId,
+            );
+          } catch (e) {
+            logger.error("[Auth] Error parsing cachedUser:", e);
+          }
+        }
+
+        selectedCountryRef.current = resolvedCountry;
+        setSelectedCountryState(resolvedCountry);
+        appStorage.setString(COUNTRY_CODE_KEY, resolvedCountry.code);
+      } catch (err) {
+        logger.error("[Auth] Error restoring cached auth data:", err);
+      }
+    };
+
+    const restorePromise = restoreCachedData();
+    const deviceIdPromise = getMobileDeviceId();
+
+    const unsubscribe = onAuthStateChanged(getAuth(), async (fbUser) => {
+      await Promise.all([restorePromise, deviceIdPromise]);
+      if (!mounted) return;
+
+      setUser(fbUser);
+
+      if (!fbUser) {
+        sessionStatusRef.current = "unknown";
+        setSessionStatus("unknown");
+        isLoggedInRef.current = false;
+        setIsLoggedIn(false);
+        setAuthMeData(null);
+        setIsInitializing(false);
+        homePerfMeter.markAuthReady();
+        logger.info("[Auth] Native Firebase session is inactive");
+        return;
+      }
+
+      if (isSigningInRef.current) {
+        logger.debug(
+          "[Auth] Firebase auth change during active OTP sign-in — awaiting verifyOTP bootstrap.",
+        );
+        return;
+      }
+
+      logger.info(
+        "[Auth] Cold-start Firebase session detected — validating via /api/auth/me:",
+        fbUser.uid,
+      );
+      await revalidateSession({ force: true, isColdStart: true });
+      if (!mounted) return;
+
+      setIsInitializing(false);
+      homePerfMeter.markAuthReady();
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [revalidateSession]);
+
+  const sendOTP = async (
+    phoneOverride?: string,
+    countryOverride?: CountryItem,
+  ): Promise<SendOtpResult> => {
+    try {
+      const activeCountry = countryOverride ?? selectedCountryRef.current;
       const raw =
         phoneOverride && typeof phoneOverride === "string" && phoneOverride.trim()
           ? phoneOverride.trim()
           : phoneNumber;
 
-      const cleanDigits = raw.replace(/\D/g, "").slice(-10);
-      if (cleanDigits.length === 10) {
-        setPhoneNumber(cleanDigits);
-        appStorage.setString(PHONE_NUMBER_KEY, cleanDigits);
-        AsyncStorage.setItem(PHONE_NUMBER_KEY, cleanDigits).catch(() => {});
+      const cleanLocal = raw.startsWith("+")
+        ? parseE164Phone(raw, activeCountry).localNumber
+        : sanitizeLocalPhoneInput(raw, activeCountry);
+
+      if (cleanLocal) {
+        setPhoneNumberState(cleanLocal);
       }
 
-      const phone = toE164(cleanDigits.length === 10 ? cleanDigits : raw);
-      console.log("[Auth] Sending OTP via backend API to:", phone);
+      const phone = raw.startsWith("+")
+        ? toE164Phone(raw, activeCountry)
+        : toE164Phone(cleanLocal || raw, activeCountry);
+
+      logger.info("[Auth] Sending OTP via backend API to:", maskPhone(phone));
       const res = await sendOtpApi(phone);
       if (res.success) {
         setOtpStep(true);
-        return { success: true };
+        return { success: true, retryAfter: res.retry_after };
       }
       return { success: false, message: res.message || "Failed to send OTP." };
     } catch (error: any) {
-      console.error("[Auth] OTP Send Error:", error);
+      logger.error("[Auth] OTP Send Error:", error);
       const detailInfo = [
         error?.name ? `Type: ${error.name}` : null,
         error?.cause ? `Cause: ${JSON.stringify(error.cause)}` : null,
-        `Target: ${process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai"}/api/auth/send-otp`
-      ].filter(Boolean).join(" | ");
+        `Target: ${process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai"}/api/auth/send-otp`,
+      ]
+        .filter(Boolean)
+        .join(" | ");
 
       return {
         success: false,
         status: error?.status,
+        retryAfter: error?.retryAfter,
         message: error?.message || "Failed to send OTP.",
         details: detailInfo,
       };
@@ -308,56 +621,93 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const verifyOTP = async (
     otp: string,
-    phoneOverride?: string
+    phoneOverride?: string,
+    countryOverride?: CountryItem,
   ): Promise<VerifyOtpResult> => {
     try {
+      const activeCountry = countryOverride ?? selectedCountryRef.current;
       const raw =
         phoneOverride && typeof phoneOverride === "string" && phoneOverride.trim()
           ? phoneOverride.trim()
-          : phoneNumber || appStorage.getString(PHONE_NUMBER_KEY) || "";
+          : phoneNumber;
 
-      const cleanDigits = raw.replace(/\D/g, "").slice(-10);
-      const phone = toE164(cleanDigits.length === 10 ? cleanDigits : raw);
-      console.log("[Auth] Verifying OTP via backend API for:", phone);
+      const cleanLocal = raw.startsWith("+")
+        ? parseE164Phone(raw, activeCountry).localNumber
+        : sanitizeLocalPhoneInput(raw, activeCountry);
+      const phone = raw.startsWith("+")
+        ? toE164Phone(raw, activeCountry)
+        : toE164Phone(cleanLocal || raw, activeCountry);
+
+      logger.info("[Auth] Verifying OTP via backend API for:", maskPhone(phone));
       const res = await verifyOtpApi(phone, otp);
       if (res.success && res.token) {
-        // Exchange custom token for a Firebase session on the device
-        console.log("[Auth] Signing in with Firebase custom token...");
-        await signInWithCustomToken(getAuth(), res.token);
+        isSigningInRef.current = true;
+        try {
+          logger.info("[Auth] Signing in with Firebase custom token...");
+          const credential = await signInWithCustomToken(getAuth(), res.token);
+          setUser(credential.user);
 
-        if (cleanDigits.length === 10) {
-          await AsyncStorage.setItem(PHONE_NUMBER_KEY, cleanDigits);
+          if (cleanLocal) {
+            setPhoneNumberState(cleanLocal);
+          }
+
+          clearForcedLogoutReason();
+
+          // Single authoritative bootstrap via GET /api/auth/me
+          try {
+            const me = await getAuthMe({
+              timeoutMs: 12_000,
+              retries: 0,
+              suppressSessionInvalidEvent: true,
+            });
+            await hydrateFromAuthMe(me, credential.user.uid);
+          } catch (meErr: any) {
+            if (meErr instanceof ApiError) {
+              const terminalReason = mapApiErrorToForcedReason(meErr);
+              if (terminalReason) {
+                await performLogoutInternal();
+                return {
+                  success: false,
+                  message:
+                    meErr.message ||
+                    "Your account or session is no longer valid.",
+                };
+              }
+            }
+
+            // Transient network hiccup immediately after verify-otp: fall back to verify-otp payload
+            if (res.user) {
+              const fallbackUser = mapEmployeeDataToCachedUser(
+                res.user,
+                credential.user.uid,
+              );
+              await persistCachedUser(fallbackUser, activeCountry);
+              if (res.company && res.user?.company_id) {
+                appStorage.setObject(
+                  `@company_${res.user.company_id}`,
+                  res.company,
+                );
+              }
+              sessionStatusRef.current = "offline_grace";
+              setSessionStatus("offline_grace");
+              isLoggedInRef.current = true;
+              setIsLoggedIn(true);
+            } else {
+              throw meErr;
+            }
+          }
+
+          setOtpStep(false);
+          setIsInitializing(false);
+          homePerfMeter.markAuthReady();
+          return { success: true };
+        } finally {
+          isSigningInRef.current = false;
         }
-
-        if (res.user) {
-          const user: CachedUser = {
-            userId: res.user.user_id,
-            firebaseUid: res.user.firebase_uid ?? "",
-            name: res.user.name,
-            email: res.user.email,
-            phone: res.user.phone,
-            companyId: res.user.company_id,
-            function_id: res.user.function_id,
-            sub_function_id: res.user.sub_function_id,
-            managerId: res.user.manager_id,
-            isActive: res.user.is_active,
-          };
-          setCachedUser(user);
-          appStorage.setObject(CACHED_USER_KEY, user);
-          appStorage.setString(PHONE_NUMBER_KEY, phoneNumber);
-          await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(user));
-        }
-
-        if (res.company && res.user?.company_id) {
-          appStorage.setObject(`@company_${res.user.company_id}`, res.company);
-        }
-
-        setOtpStep(false);
-        return { success: true };
       }
       return { success: false, message: "Invalid OTP code. Please try again." };
     } catch (error: any) {
-      console.error("[Auth] OTP Verification Error:", error);
+      logger.error("[Auth] OTP Verification Error:", error);
       const msg: string = error?.message || "Invalid OTP code.";
       const isInvalidated =
         msg.includes("invalidated") ||
@@ -379,149 +729,242 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const logout = async () => {
-    try {
-      console.log("[Auth] Logging out from Firebase...");
-      await signOut(getAuth()).catch((err) => {
-        console.warn("[Auth] Firebase signOut warning:", err);
-      });
-
-      setCachedUser(null);
-      setPhoneNumber("");
-      setOtpStep(false);
-      setConfirmation(null);
-
-      // Invalidate and purge ALL mobile local caches (MMKV, memory maps, AsyncStorage, SecureStore, in-flight requests, offline queue)
-      await purgeAllMobileLocalCache();
-      console.log("[Auth] All mobile local caches purged successfully on sign out.");
-    } catch (error) {
-      console.error("[Auth] Logout Error:", error);
-    }
-  };
-
-  // ==================== PERIODIC ACCOUNT-STATUS VERIFICATION ====================
-  const verifyAccountStatus = async (force = false) => {
-    if (!cachedUser) return;
-    if (isCheckingRef.current) return;
-
-    const now = Date.now();
-    if (
-      !force &&
-      now - lastCheckedAtRef.current < ACCOUNT_STATUS_CHECK_INTERVAL_MS
-    ) {
-      return;
-    }
-
-    isCheckingRef.current = true;
-    lastCheckedAtRef.current = now;
-
-    try {
-      // 1. Re-check the user's own active status (reuses the existing by-phone lookup).
-      const userResponse = await getUserByPhone(cachedUser.phone);
-      if (!userResponse?.user) {
-        // User record vanished entirely — treat like deactivation.
-        console.warn("[Auth] verifyAccountStatus — user no longer found");
-        forcedLogoutReasonRef.current = "user_deactivated";
-        setForcedLogoutReason("user_deactivated");
-        await logout();
-        return;
-      }
-      if (!userResponse.user.is_active) {
-        console.warn("[Auth] verifyAccountStatus — user is now inactive");
-        forcedLogoutReasonRef.current = "user_deactivated";
-        setForcedLogoutReason("user_deactivated");
-        await logout();
-        return;
-      }
-
-      // 2. Check the company's active status.
-      const companyActive = await getCompanyActiveStatus(
-        cachedUser.companyId,
-        cachedUser.userId,
-      );
-      if (companyActive === false) {
-        console.warn("[Auth] verifyAccountStatus — company is now inactive");
-        forcedLogoutReasonRef.current = "company_deactivated";
-        setForcedLogoutReason("company_deactivated");
-        await logout();
-        return;
-      }
-    } catch (err) {
-      // Network/API failure — fail open, don't punish the user for a
-      // flaky connection. Just try again on the next check.
-      console.warn(
-        "[Auth] verifyAccountStatus check failed, will retry later:",
-        err,
-      );
-    } finally {
-      isCheckingRef.current = false;
-    }
-  };
-
-  const clearForcedLogoutReason = () => setForcedLogoutReason(null);
-
+  // Global 401/403/WS session invalidation bus listener
   useEffect(() => {
     const unsubscribe = onSessionInvalid((reason: SessionInvalidReason) => {
       logger.warn("[Auth] sessionEvents — received invalid session:", reason);
-      const mapped =
+      const mapped: Exclude<ForcedLogoutReason, null> =
         reason === "COMPANY_DEACTIVATED"
           ? "company_deactivated"
           : reason === "SESSION_TERMINATED"
             ? "session_terminated"
-            : "user_deactivated"; // covers ACCOUNT_DEACTIVATED + UNKNOWN
-      setForcedLogoutReason(mapped);
-      logout();
+            : reason === "SESSION_EXPIRED"
+              ? "session_expired"
+              : "user_deactivated";
+      handleForcedInvalidation(mapped);
     });
     return unsubscribe;
-  }, []);
+  }, [handleForcedInvalidation]);
 
+  // Foreground resume validation (immediate on background/inactive -> active),
+  // offline-grace reconnect validation, and 15-min foreground health check (no inactivity timeout)
   useEffect(() => {
-    if (!cachedUser) return;
+    if (!isLoggedIn || !cachedUser?.userId) return;
 
-    // Check once shortly after login/restore.
-    verifyAccountStatus(true);
-
-    // Re-check whenever the app comes back to the foreground.
     const handleAppStateChange = (nextState: AppStateStatus) => {
-      if (nextState === "active") {
-        verifyAccountStatus();
+      const prevState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (prevState !== "active" && nextState === "active") {
+        logger.info(
+          "[Auth] App returned to foreground — validating session via /api/auth/me",
+        );
+        revalidateSession({ force: true }).catch(() => {});
       }
     };
-    const appStateSub = AppState.addEventListener(
-      "change",
-      handleAppStateChange,
-    );
 
-    // Also re-check periodically while the app stays open in the foreground.
+    const appStateSub = AppState.addEventListener("change", handleAppStateChange);
+
+    const netInfoUnsub = NetInfo.addEventListener((state) => {
+      if (
+        state.isConnected &&
+        state.isInternetReachable &&
+        sessionStatusRef.current === "offline_grace"
+      ) {
+        logger.info(
+          "[Auth] Network reconnected while in offline_grace — validating session via /api/auth/me",
+        );
+        revalidateSession({ force: true })
+          .then((valid) => {
+            if (valid) {
+              offlineQueue.replayQueue().catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
+    });
+
     const interval = setInterval(() => {
       if (AppState.currentState === "active") {
-        verifyAccountStatus();
+        revalidateSession({ force: false }).catch(() => {});
       }
     }, ACCOUNT_STATUS_CHECK_INTERVAL_MS);
 
     return () => {
       appStateSub.remove();
+      netInfoUnsub();
       clearInterval(interval);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cachedUser?.userId]);
+  }, [isLoggedIn, cachedUser?.userId, revalidateSession]);
+
+  // Dedicated foreground Auth WebSocket (`WS /api/auth/ws`) for instant active displacement
+  useEffect(() => {
+    if (!isLoggedIn || !cachedUser?.userId) {
+      if (authWsRef.current) {
+        try {
+          authWsRef.current.close();
+        } catch {}
+        authWsRef.current = null;
+      }
+      return;
+    }
+
+    let active = true;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let pingInterval: ReturnType<typeof setInterval> | null = null;
+    let retryDelay = 1500;
+    let isForeground = AppState.currentState === "active";
+
+    const cleanupTimers = () => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+      }
+    };
+
+    const closeSocket = () => {
+      cleanupTimers();
+      if (authWsRef.current) {
+        try {
+          authWsRef.current.close();
+        } catch {}
+        authWsRef.current = null;
+      }
+    };
+
+    const connectAuthWS = async (forceRefreshToken = false) => {
+      if (!active || !isForeground) return;
+      try {
+        const [deviceId, token] = await Promise.all([
+          getMobileDeviceId(),
+          forceRefreshToken ? refreshFirebaseToken() : getFirebaseToken(),
+        ]);
+        if (!active || !isForeground || !deviceId || !token) return;
+
+        closeSocket();
+
+        const wsUrl = `${WS_BASE_URL}/auth/ws?token=${encodeURIComponent(token)}&device_id=${encodeURIComponent(deviceId)}&platform=mobile`;
+        logger.info("[AuthWS] Connecting to dedicated auth WebSocket...");
+        const ws = new WebSocket(wsUrl);
+        authWsRef.current = ws;
+
+        ws.onopen = () => {
+          logger.info("[AuthWS] Connected");
+          retryDelay = 1500;
+          pingInterval = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              try {
+                ws.send(JSON.stringify({ type: "ping" }));
+              } catch {}
+            }
+          }, 25_000);
+        };
+
+        ws.onmessage = async (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload?.type === "pong") return;
+
+            if (
+              payload?.type === "force_logout" ||
+              payload?.reason === "session_replaced"
+            ) {
+              const targetPlatform = String(payload?.platform || "").toLowerCase();
+              const keepDeviceId = payload?.keep_device_id;
+              const currentDeviceId = await getMobileDeviceId();
+              if (
+                targetPlatform === "mobile" &&
+                Boolean(keepDeviceId) &&
+                Boolean(currentDeviceId) &&
+                keepDeviceId !== currentDeviceId
+              ) {
+                logger.warn(
+                  "[AuthWS] Displaced by another mobile login — forcing logout",
+                );
+                closeSocket();
+                handleForcedInvalidation("session_terminated");
+              }
+            }
+          } catch {}
+        };
+
+        ws.onclose = (event) => {
+          cleanupTimers();
+          if (authWsRef.current === ws) {
+            authWsRef.current = null;
+          }
+          if (!active) return;
+
+          if (event?.code === 4001) {
+            logger.warn("[AuthWS] Closed with 4001 (session displaced)");
+            handleForcedInvalidation("session_terminated");
+            return;
+          }
+
+          if (isForeground) {
+            const shouldRefreshNext = event?.code === 1008;
+            reconnectTimer = setTimeout(() => {
+              retryDelay = Math.min(retryDelay * 2, 30_000);
+              connectAuthWS(shouldRefreshNext);
+            }, retryDelay);
+          }
+        };
+
+        ws.onerror = () => {
+          // Handled safely via onclose retry loop
+        };
+      } catch (err) {
+        logger.warn("[AuthWS] Connection setup warning:", err);
+      }
+    };
+
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        isForeground = true;
+        if (!authWsRef.current || authWsRef.current.readyState !== WebSocket.OPEN) {
+          connectAuthWS(false);
+        }
+      } else if (nextState === "background" || nextState === "inactive") {
+        isForeground = false;
+        closeSocket();
+      }
+    });
+
+    if (isForeground) {
+      connectAuthWS(false);
+    }
+
+    return () => {
+      active = false;
+      sub.remove();
+      closeSocket();
+    };
+  }, [isLoggedIn, cachedUser?.userId, handleForcedInvalidation]);
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        isLoggedIn,
         isInitializing,
+        isLoggedIn,
         phoneNumber,
+        selectedCountry,
+        setSelectedCountry,
         otpStep,
-        confirmation,
+        setOtpStep,
         cachedUser,
+        authMeData,
+        sessionStatus,
         forcedLogoutReason,
         clearForcedLogoutReason,
         setPhoneNumber,
-        checkUserExists,
         sendOTP,
         verifyOTP,
+        revalidateSession,
         logout,
       }}
     >

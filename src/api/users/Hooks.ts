@@ -6,8 +6,8 @@ import { logger } from "../../utils/UnifiedLogger";
 import { homePerfMeter } from "../../utils/homePerformanceMeter";
 import { useTenant } from "../../contex/TenantContext";
 import { useNetworkStatus } from "../../hooks/network/useNetworkStatus";
+import { toE164Phone } from "../../utils/countries";
 import {
-  getUserByEmail,
   getUserByPhone,
   getUserRoles,
   getProcessedModules,
@@ -130,42 +130,6 @@ async function reconcilePlaceholderTitles(
   return { cards: nextCards, changed };
 }
 
-// ==================== USER BY EMAIL HOOK ====================
-interface UseGetUserByEmailReturn {
-  user: User | null;
-  isLoading: boolean;
-  error: Error | null;
-  refetch: () => Promise<void>;
-}
-
-export const useGetUserByEmail = (
-  email: string | null,
-): UseGetUserByEmailReturn => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  const fetchUser = async () => {
-    if (!email) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response: UserResponse = await getUserByEmail(email);
-      setUser(response.user);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error("Failed to fetch user"));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (email) fetchUser();
-  }, [email]);
-
-  return { user, isLoading, error, refetch: fetchUser };
-};
-
 // ==================== USER BY PHONE HOOK ====================
 interface UseGetUserByPhoneReturn {
   user: User | null;
@@ -186,18 +150,7 @@ export const useGetUserByPhone = (
     setIsLoading(true);
     setError(null);
     try {
-      // Defensive normalization — backend strictly expects +91XXXXXXXXXX.
-      const digits = phone.replace(/[^\d]/g, "");
-      const normalizedPhone =
-        phone.startsWith("+91") && phone.length === 13
-          ? phone
-          : digits.length === 10
-            ? `+91${digits}`
-            : digits.length === 12 && digits.startsWith("91")
-              ? `+${digits}`
-              : digits.length === 11 && digits.startsWith("0")
-                ? `+91${digits.slice(1)}`
-                : phone;
+      const normalizedPhone = toE164Phone(phone);
       const response: UserResponse = await getUserByPhone(normalizedPhone);
       setUser(response.user);
     } catch (err) {

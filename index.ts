@@ -11,8 +11,8 @@ import App from './App';
 try {
   setBackgroundMessageHandler(getMessaging(), async (remoteMessage: any) => {
     const type = remoteMessage.data?.type || "";
-    const userId = remoteMessage.data?.userId || "";
-    const companyId = remoteMessage.data?.companyId || "";
+    const userId = remoteMessage.data?.userId || remoteMessage.data?.user_id || "";
+    const companyId = remoteMessage.data?.companyId || remoteMessage.data?.company_id || "";
 
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
 
@@ -20,7 +20,14 @@ try {
     let resolvedUserId = userId;
     let resolvedCompanyId = companyId;
     try {
-      const cachedUserJson = await AsyncStorage.getItem('@cached_user');
+      const { getMobileDeviceId } = require('./src/utils/deviceId');
+      await getMobileDeviceId();
+      const primaryKey = '@auth_cached_user';
+      const legacyKey = '@cached_user';
+      let cachedUserJson = await AsyncStorage.getItem(primaryKey);
+      if (!cachedUserJson) {
+        cachedUserJson = await AsyncStorage.getItem(legacyKey);
+      }
       if (cachedUserJson) {
         const cachedUser = JSON.parse(cachedUserJson);
         if (!resolvedUserId) resolvedUserId = cachedUser.userId || cachedUser.user_id;
@@ -33,14 +40,19 @@ try {
     // COST-02: Only fetch what this specific notification type actually needs.
     // Avoid the previous pattern of always fetching dashboard + categories + items.
     const needsDashboard =
+      type === "MODULE_ASSIGNED" ||
       type === "sprint_assigned" ||
       type === "sprint_updated" ||
+      type === "task_assigned" ||
+      type === "task_updated" ||
       type === "dashboard_update" ||
       type === ""; // unknown type — refresh dashboard as a safe default
 
     const needsContent =
       type === "content_updated" ||
-      type === "categories_updated";
+      type === "categories_updated" ||
+      type === "new_content" ||
+      type === "library_update";
 
     if (needsDashboard && resolvedUserId) {
       try {

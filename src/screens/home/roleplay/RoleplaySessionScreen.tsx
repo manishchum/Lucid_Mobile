@@ -40,11 +40,12 @@ import {
   createRoleplaySession,
   finishRoleplaySession,
 } from "../../../api/roleplay";
-import { getFirebaseToken } from "../../../api/users/Request";
+import { getFirebaseToken, apiFetch, API_BASE_URL } from "../../../api/users/Request";
 import { STACK_ROUTES, APP_ROUTES } from "../../../navigations/Routes";
 import { useAuth } from "../../../contex/AuthContext";
 import { useFeatureGating, FEATURES } from "../../../hooks/useFeatureGating";
 import { logger } from "../../../utils/UnifiedLogger";
+import { maskUrl } from "../../../utils/sanitizer";
 
 const EXPO_API_URL =
   process.env.EXPO_PUBLIC_API_URL || "https://api.workfloww.ai";
@@ -330,50 +331,42 @@ export default function RoleplaySessionScreen({
       try {
         setIsBotSpeaking(true);
 
-        const ttsUrl = `${EXPO_API_URL}/api/tts`;
-        const token = await getFirebaseToken().catch(() => null);
-
-        const response = await fetch(ttsUrl, {
+        const ttsUrl = `${API_BASE_URL}/tts`;
+        const data = await apiFetch<any>(ttsUrl, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
+          userId: cachedUser?.userId,
           body: JSON.stringify({
             text: cleanText,
             voiceGender,
           }),
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          const audioBase64 = data.audio;
-          if (audioBase64) {
-            const tempFileUri = `${FileSystem.cacheDirectory}roleplay_agent_${Date.now()}.mp3`;
-            await FileSystem.writeAsStringAsync(tempFileUri, audioBase64, {
-              encoding: FileSystem.EncodingType.Base64,
-            });
+        const audioBase64 = data?.audio;
+        if (audioBase64) {
+          const tempFileUri = `${FileSystem.cacheDirectory}roleplay_agent_${Date.now()}.mp3`;
+          await FileSystem.writeAsStringAsync(tempFileUri, audioBase64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
 
-            await setAudioModeAsync({ playsInSilentMode: true });
-            const player = createAudioPlayer({ uri: tempFileUri });
-            soundRef.current = player;
+          await setAudioModeAsync({ playsInSilentMode: true });
+          const player = createAudioPlayer({ uri: tempFileUri });
+          soundRef.current = player;
 
-            player.addListener("playbackStatusUpdate", (status: any) => {
-              if (
-                status.playing === false &&
-                status.currentTime >= status.duration &&
-                status.duration > 0
-              ) {
-                setIsBotSpeaking(false);
-                try {
-                  player.remove();
-                } catch {}
-                soundRef.current = null;
-              }
-            });
-            player.play();
-            return;
-          }
+          player.addListener("playbackStatusUpdate", (status: any) => {
+            if (
+              status.playing === false &&
+              status.currentTime >= status.duration &&
+              status.duration > 0
+            ) {
+              setIsBotSpeaking(false);
+              try {
+                player.remove();
+              } catch {}
+              soundRef.current = null;
+            }
+          });
+          player.play();
+          return;
         }
         setIsBotSpeaking(false);
       } catch (err) {
@@ -381,7 +374,7 @@ export default function RoleplaySessionScreen({
         setIsBotSpeaking(false);
       }
     },
-    [voiceGender]
+    [voiceGender, cachedUser?.userId]
   );
 
   // ── Play Accumulated Bot Audio Chunks from Realtime WS (PCM16 -> WAV) ───────
@@ -656,7 +649,7 @@ export default function RoleplaySessionScreen({
       const host = EXPO_API_URL.replace(/^https?:\/\//, "").replace(/\/$/, "");
       const wsUrl = `${wsProtocol}//${host}/api/roleplay/realtime?token=${token}`;
 
-      logger.info("[RoleplaySession] Connecting WS:", wsUrl);
+      logger.info("[RoleplaySession] Connecting WS:", maskUrl(wsUrl));
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
@@ -679,6 +672,7 @@ export default function RoleplaySessionScreen({
             employeeId,
             sessionId: createdSessionId,
             voiceGender,
+            provider: config?.engine || "gemini",
           })
         );
 
@@ -713,6 +707,21 @@ export default function RoleplaySessionScreen({
               }
               break;
 
+            case "transcript_chunk":
+              if (data.text) {
+                setTranscript((prev) => {
+                  const last = prev[prev.length - 1];
+                  if (last && last.role === "assistant_chunk") {
+                    return [
+                      ...prev.slice(0, -1),
+                      { role: "assistant_chunk", text: last.text + data.text },
+                    ];
+                  }
+                  return [...prev, { role: "assistant_chunk", text: data.text }];
+                });
+              }
+              break;
+
             case "bot_transcription":
               if (data.text) {
                 const text = data.text.trim();
@@ -725,6 +734,13 @@ export default function RoleplaySessionScreen({
                 playBotAudioChunks(text);
               } else {
                 setIsBotSpeaking(false);
+              }
+              break;
+
+            case "response.done":
+              // When turn audio completes, ensure any accumulated chunks play
+              if (botAudioChunksRef.current.length > 0 && !soundRef.current) {
+                playBotAudioChunks();
               }
               break;
 
@@ -758,6 +774,11 @@ export default function RoleplaySessionScreen({
               break;
 
             case "audio_end":
+              setIsBotSpeaking(false);
+              break;
+
+            case "error":
+              logger.warn("[RoleplaySession] Server error:", data.message);
               setIsBotSpeaking(false);
               break;
 
