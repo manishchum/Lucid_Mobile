@@ -249,33 +249,9 @@ export const postModuleChat = async (
   return result;
 };
 
-// 1. Get user by email
 export { PresignedUploadResponse, getPresignedUploadUrlApi } from "../../services/storageUpload";
 
-
-export const getUserByEmail = async (email: string): Promise<UserResponse> => {
-  try {
-    const url = `${API_BASE_URL}/users/by-email/${encodeURIComponent(email)}`;
-    logger.debug("[Request] getUserByEmail →", maskUrl(url));
-    const json = await apiFetch<UserResponse>(url, {
-      method: "GET",
-    });
-    if (json.user) {
-      logger.debug("[Request] getUserByEmail ✅ user_id:", json.user.user_id);
-    } else {
-      logger.error(
-        "[Request] getUserByEmail — user is null:",
-        JSON.stringify(json),
-      );
-    }
-    return json;
-  } catch (error) {
-    logger.error("[Request] Error fetching user by email:", error);
-    throw error;
-  }
-};
-
-// 1b. Get user by phone
+// 1. Get user by phone
 export const getUserByPhone = async (phone: string): Promise<UserResponse> => {
   try {
     const url = `${API_BASE_URL}/users/by-phone/${encodeURIComponent(phone)}`;
@@ -887,17 +863,7 @@ export const getTasks = async (
   forceFresh: boolean = false,
 ): Promise<TasksResponse> => {
   try {
-    let resolvedUserId = userId;
-    if (resolvedUserId && !isUuidFormat(resolvedUserId)) {
-      try {
-        const res = await getUserByEmail(resolvedUserId);
-        if (res?.user?.user_id) resolvedUserId = res.user.user_id;
-      } catch (e) {
-        logger.warn("[Request] getTasks — Failed client resolution, fallback to /me:", e);
-        resolvedUserId = "me";
-      }
-    }
-    const targetId = resolvedUserId && resolvedUserId.trim() ? resolvedUserId : "me";
+    const targetId = userId && isUuidFormat(userId) ? userId : "me";
     const url = `${API_BASE_URL}/task-manager/tasks/user/${encodeURIComponent(targetId)}`;
     logger.debug("[Request] getTasks →", url, "forceFresh:", forceFresh);
     const json = await apiFetch<any>(url, {
@@ -923,20 +889,6 @@ export const getTasks = async (
 };
 
 // ── Submit quiz answers + get GPT feedback ────────────────────────────────────
-
-export const getUserByEmailForQuiz = async (
-  email: string,
-  userId: string,
-): Promise<any | null> => {
-  try {
-    const url = `${API_BASE_URL}/users/by-email/${encodeURIComponent(email)}`;
-    const json = await apiFetch<any>(url, { method: "GET", userId });
-    return json?.user ?? null;
-  } catch (err) {
-    logger.warn("[Quiz] getUserByEmailForQuiz error:", err);
-    return null;
-  }
-};
 
 /**
  * POST /module-progress
@@ -992,10 +944,9 @@ export const postModuleProgress = async (
  *   sending [] or the wrong ID also causes 403.
  *
  * Flow:
- *   1. GET /users/by-email/:email      (non-blocking, parity with web)
+ *   1. POST /module-progress           (non-blocking)
  *   2. POST /gpt-feedback
- *   3. POST /module-progress           (non-blocking)
- *   4. GET  /employee-assessments      (non-blocking background refresh)
+ *   3. GET  /employee-assessments      (non-blocking background refresh)
  */
 export const submitQuizForGrading = async (
   assessmentId: string,
@@ -1009,21 +960,6 @@ export const submitQuizForGrading = async (
 ): Promise<any | null> => {
   try {
     if (!dbUserId) throw new Error("No authenticated user ID provided");
-
-    // Step 1 — non-blocking parity with web
-    if (employeeName && employeeName.includes("@")) {
-      apiFetch<any>(
-        `${API_BASE_URL}/users/by-email/${encodeURIComponent(employeeName)}`,
-        {
-          method: "GET",
-          userId: dbUserId,
-        },
-      )
-        .then(() => logger.debug("[Quiz] Step 1 by-email ✅"))
-        .catch((e) =>
-          logger.warn("[Quiz] Step 1 by-email failed (non-blocking):", e),
-        );
-    }
 
     // Convert integer indices → string option texts (matches web module quiz page)
     const userAnswers = answerIndices.map((selectedIdx, i) => {
@@ -1138,15 +1074,7 @@ export const submitFormatAnswer = async (
     formatAnswer,
   } = input;
 
-  let resolvedUserId = userId;
-  if (resolvedUserId && !isUuidFormat(resolvedUserId)) {
-    try {
-      const res = await getUserByEmail(resolvedUserId);
-      if (res?.user?.user_id) resolvedUserId = res.user.user_id;
-    } catch (e) {
-      logger.warn("[Request] submitFormatAnswer — Failed to resolve userId to UUID:", e);
-    }
-  }
+  const resolvedUserId = userId;
 
   const url = `${API_BASE_URL}/task-manager/tasks/submit`;
 
@@ -1218,15 +1146,7 @@ export const submitTaskAnswer = async (
   payload: TaskSubmissionPayload,
 ): Promise<TaskSubmissionResponse> => {
   try {
-    let resolvedUserId = payload.user_id || userId;
-    if (resolvedUserId && !isUuidFormat(resolvedUserId)) {
-      try {
-        const res = await getUserByEmail(resolvedUserId);
-        if (res?.user?.user_id) resolvedUserId = res.user.user_id;
-      } catch (e) {
-        logger.warn("[Request] submitTaskAnswer — Failed to resolve userId to UUID:", e);
-      }
-    }
+    const resolvedUserId = payload.user_id || userId;
     const url = `${API_BASE_URL}/task-manager/tasks/submit`;
 
     // Map internal submission_type → the wire value the API actually expects.
